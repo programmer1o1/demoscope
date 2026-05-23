@@ -1,0 +1,1304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>demoscope: __DEMO_NAME__</title>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  height: 100%;
+  overflow: hidden;
+}
+:root {
+  --bg: #0d1117;
+  --panel: #161b22;
+  --grid: #21262d;
+  --border: #30363d;
+  --text: #e6edf3;
+  --muted: #8b949e;
+  --accent: #58a6ff;
+  --death: #ff4d4d;
+  --tele: #00e5cc;
+  --round: #ffd700;
+  --uber: #cc44ff;
+  --sidebar: 300px;
+}
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+header {
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+header h1 {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  flex-shrink: 0;
+}
+.meta-tag {
+  background: var(--grid);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.meta-tag span { color: var(--text); }
+/* Main layout */
+.app-body {
+  display: flex;
+  flex-direction: row;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+/* Sidebar */
+.sidebar {
+  width: var(--sidebar);
+  min-width: var(--sidebar);
+  max-width: var(--sidebar);
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.sidebar::-webkit-scrollbar { width: 5px; }
+.sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+.sidebar-section {
+  border-bottom: 1px solid var(--border);
+  padding: 10px 12px;
+}
+.sidebar-section:last-child { border-bottom: none; }
+.section-title {
+  font-size: 10px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+/* Lives */
+.life-list { display: flex; flex-direction: column; gap: 4px; }
+.life-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  padding: 3px 5px;
+  border-radius: 4px;
+  transition: background 0.1s;
+  font-size: 12px;
+  color: var(--text);
+  user-select: none;
+}
+.life-item:hover { background: var(--grid); }
+.life-item input[type=checkbox] { accent-color: var(--accent); cursor: pointer; }
+.life-color {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
+}
+/* Camera buttons */
+.btn-group { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+.cam-btn {
+  background: var(--grid);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.cam-btn:hover { background: #2d333b; }
+.cam-btn.active { background: #1f3a5f; border-color: var(--accent); color: var(--accent); }
+/* Stats */
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 0;
+  font-size: 12px;
+}
+.stat-label { color: var(--muted); }
+.stat-val { color: var(--text); font-weight: 600; }
+/* Event log */
+#event-log {
+  max-height: 180px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+#event-log::-webkit-scrollbar { width: 5px; }
+#event-log::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+table { width: 100%; border-collapse: collapse; }
+th {
+  position: sticky;
+  top: 0;
+  background: var(--grid);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  text-align: left;
+  padding: 3px 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+td { padding: 2px 6px; border-bottom: 1px solid var(--grid); font-size: 11px; color: var(--muted); }
+td.ev-name { color: var(--text); font-weight: 600; }
+tr { cursor: pointer; transition: background 0.1s; }
+tr:hover td { background: var(--grid); color: var(--text); }
+tr.highlight-row td { background: #1f3a5f; color: var(--text); }
+/* Canvas area */
+.canvas-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+}
+#threejs-container {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background: #0d1117;
+  min-height: 0;
+}
+#threejs-container canvas {
+  display: block;
+}
+/* Timeline */
+.timeline-area {
+  flex-shrink: 0;
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+  padding: 6px 12px 4px 12px;
+}
+.timeline-label {
+  font-size: 10px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+#timeline-wrap {
+  position: relative;
+  height: 36px;
+  cursor: pointer;
+  user-select: none;
+}
+#timeline-canvas {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+}
+#tl-tooltip {
+  position: absolute;
+  top: -22px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 6px;
+  font-size: 10px;
+  pointer-events: none;
+  white-space: nowrap;
+  display: none;
+  color: var(--text);
+}
+/* Event bottom area */
+.bottom-events {
+  flex-shrink: 0;
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+  padding: 6px 12px;
+}
+.bottom-events-header {
+  font-size: 10px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+#bottom-event-log {
+  max-height: 100px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+/* Tooltip */
+#tooltip {
+  position: fixed;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 5px 9px;
+  font-size: 11px;
+  pointer-events: none;
+  display: none;
+  z-index: 999;
+  color: var(--text);
+  max-width: 220px;
+}
+/* Playhead info */
+#playhead-info {
+  position: absolute;
+  bottom: 6px;
+  right: 10px;
+  font-size: 10px;
+  color: var(--muted);
+  background: rgba(13,17,23,0.7);
+  padding: 2px 6px;
+  border-radius: 3px;
+  pointer-events: none;
+}
+/* Follow/FPS mode indicator */
+#cam-mode-badge {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--accent);
+  background: rgba(13,17,23,0.8);
+  padding: 2px 7px;
+  border-radius: 3px;
+  pointer-events: none;
+  display: none;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+</style>
+</head>
+<body>
+<div id="tooltip"></div>
+
+<header>
+  <h1>demoscope &mdash; <span>__DEMO_NAME__</span></h1>
+  <div class="meta-tag">Map: <span id="m-map">-</span></div>
+  <div class="meta-tag">Client: <span id="m-client">-</span></div>
+  <div class="meta-tag">Duration: <span id="m-dur">-</span></div>
+  <div class="meta-tag">Usercmds: <span id="m-cmds">-</span></div>
+  <div class="meta-tag">Lives: <span id="m-lives" style="color:var(--accent)">-</span></div>
+  <div class="meta-tag">Deaths: <span id="m-deaths" style="color:var(--death)">-</span></div>
+  <div class="meta-tag">Teleports: <span id="m-teles" style="color:var(--tele)">-</span></div>
+</header>
+
+<div class="app-body">
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="sidebar-section">
+      <div class="section-title" id="lives-toggle" onclick="toggleLivesPanel()" style="cursor:pointer;user-select:none;display:flex;justify-content:space-between;align-items:center">
+        <span>Lives</span><span id="lives-chevron" style="font-size:10px;opacity:0.6">&#9660;</span>
+      </div>
+      <div class="life-list" id="life-list"></div>
+    </div>
+    <div class="sidebar-section">
+      <div class="section-title">Playback</div>
+      <div class="btn-group">
+        <button class="cam-btn" id="btn-play" onclick="togglePlay()">&#9654; Play</button>
+        <button class="cam-btn" onclick="seekToStart()" title="Rewind">&#9664;&#9664;</button>
+      </div>
+      <div class="btn-group" style="margin-top:4px">
+        <button class="cam-btn" id="spd-05" onclick="setSpeed(0.5)">0.5&#215;</button>
+        <button class="cam-btn active" id="spd-1"  onclick="setSpeed(1)">1&#215;</button>
+        <button class="cam-btn" id="spd-2"  onclick="setSpeed(2)">2&#215;</button>
+        <button class="cam-btn" id="spd-5"  onclick="setSpeed(5)">5&#215;</button>
+        <button class="cam-btn" id="spd-10" onclick="setSpeed(10)">10&#215;</button>
+      </div>
+      <div id="playback-info" style="font-size:11px;color:var(--muted);padding-top:6px;font-variant-numeric:tabular-nums">
+        0.0s / 0.0s
+      </div>
+    </div>
+    <div class="sidebar-section">
+      <div class="section-title">Camera</div>
+      <div class="btn-group">
+        <button class="cam-btn active" id="btn-orbit" onclick="setCameraMode('orbit')">Orbit</button>
+        <button class="cam-btn" id="btn-follow" onclick="setCameraMode('follow')">Follow</button>
+        <button class="cam-btn" id="btn-fps" onclick="setCameraMode('fps')">First Person</button>
+      </div>
+      <div class="btn-group">
+        <button class="cam-btn" onclick="resetCamera()">Reset View</button>
+      </div>
+    </div>
+    <div class="sidebar-section">
+      <div class="section-title">Statistics</div>
+      <div id="stats-content"></div>
+    </div>
+    <div class="sidebar-section">
+      <div class="section-title">Events</div>
+      <div id="event-log">
+        <table id="event-table">
+          <thead>
+            <tr>
+              <th style="width:52px">Time</th>
+              <th style="width:120px">Event</th>
+              <th>Details</th>
+            </tr>
+          </thead>
+          <tbody id="event-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Canvas area -->
+  <div class="canvas-area">
+    <div id="threejs-container">
+      <div id="cam-mode-badge"></div>
+      <div id="playhead-info"></div>
+    </div>
+
+    <!-- Timeline -->
+    <div class="timeline-area">
+      <div class="timeline-label">Timeline</div>
+      <div id="timeline-wrap">
+        <canvas id="timeline-canvas"></canvas>
+        <div id="tl-tooltip"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── Embedded data ────────────────────────────────────────────────────────────
+const META = __META__;
+const CMDS = __CMDS__;
+const LIFE_BREAKS = __LIFE_BREAKS__;
+const TELEPORT_BREAKS = __TELEPORT_BREAKS__;
+const EVENTS = __EVENTS__;
+const WORLD_POSITIONS = __WORLD_POSITIONS__;
+const BSP_VERTS = __BSP_VERTS__;
+const BSP_IDX   = __BSP_IDX__;
+const BSP_SPAWN = __BSP_SPAWN__;
+
+// ── BVH for BSP collision ─────────────────────────────────────────────────────
+class BVH {
+  constructor(tris) {
+    this.tris = tris;
+    this.n    = tris.length / 9;
+    // Build: leaf ids array, bounding boxes
+    const ids = new Int32Array(this.n);
+    for (let i = 0; i < this.n; i++) ids[i] = i;
+    this.nodes = [];
+    this._build(ids, 0, this.n);
+  }
+
+  _bounds(ids, l, r) {
+    let x0= Infinity,y0= Infinity,z0= Infinity, x1=-Infinity,y1=-Infinity,z1=-Infinity;
+    for (let i=l;i<r;i++) {
+      const b=ids[i]*9, t=this.tris;
+      for (let j=0;j<9;j+=3) { x0=Math.min(x0,t[b+j]); x1=Math.max(x1,t[b+j]); y0=Math.min(y0,t[b+j+1]); y1=Math.max(y1,t[b+j+1]); z0=Math.min(z0,t[b+j+2]); z1=Math.max(z1,t[b+j+2]); }
+    }
+    return [x0,y0,z0,x1,y1,z1];
+  }
+
+  _build(ids, l, r) {
+    const nodeIdx = this.nodes.length;
+    const bb = this._bounds(ids, l, r);
+    if (r - l <= 6) { this.nodes.push({leaf:true, l, r, ids:ids.slice(l,r), bb}); return nodeIdx; }
+    const dx=bb[3]-bb[0], dy=bb[4]-bb[1], dz=bb[5]-bb[2];
+    const axis = dx>dy&&dx>dz ? 0 : dy>dz ? 1 : 2;
+    const mid = l + ((r-l)>>1);
+    // Partial sort by centroid on chosen axis
+    ids.subarray(l,r).sort((a,b) => {
+      const ca = this.tris[a*9+axis]+this.tris[a*9+axis+3]+this.tris[a*9+axis+6];
+      const cb = this.tris[b*9+axis]+this.tris[b*9+axis+3]+this.tris[b*9+axis+6];
+      return ca-cb;
+    });
+    this.nodes.push({leaf:false, l, r, left:null, right:null, bb});
+    const lc = this._build(ids, l, mid);
+    const rc = this._build(ids, mid, r);
+    this.nodes[nodeIdx].left  = lc;
+    this.nodes[nodeIdx].right = rc;
+    return nodeIdx;
+  }
+
+  _hitAABB(bb, ox,oy,oz, idx,idy,idz, tmax) {
+    let t0=-Infinity, t1=tmax;
+    const axes = [[bb[0],bb[3],ox,idx],[bb[1],bb[4],oy,idy],[bb[2],bb[5],oz,idz]];
+    for (const [mn,mx,o,id] of axes) {
+      let a=(mn-o)*id, b=(mx-o)*id;
+      if (a>b) { const tmp=a; a=b; b=tmp; }
+      t0=Math.max(t0,a); t1=Math.min(t1,b);
+      if (t0>t1) return false;
+    }
+    return true;
+  }
+
+  // Returns {t, nx,ny,nz} of nearest hit along ray [ox+t*dx, oy+t*dy, oz+t*dz], t in [0,1]
+  cast(ox,oy,oz, dx,dy,dz) {
+    const EPS=1e-6;
+    const idx=Math.abs(dx)>EPS?1/dx:dx>=0?1e15:-1e15;
+    const idy=Math.abs(dy)>EPS?1/dy:dy>=0?1e15:-1e15;
+    const idz=Math.abs(dz)>EPS?1/dz:dz>=0?1e15:-1e15;
+    let best=null, bestT=1;
+    const stack=[0];
+    while (stack.length) {
+      const n=this.nodes[stack.pop()];
+      if (!n||!this._hitAABB(n.bb,ox,oy,oz,idx,idy,idz,bestT)) continue;
+      if (n.leaf) {
+        for (const ti of n.ids) {
+          const b=ti*9, t=this.tris;
+          const ax=t[b],ay=t[b+1],az=t[b+2], bx=t[b+3],by=t[b+4],bz=t[b+5], cx=t[b+6],cy=t[b+7],cz=t[b+8];
+          const ex=bx-ax,ey=by-ay,ez=bz-az, fx=cx-ax,fy=cy-ay,fz=cz-az;
+          const hx=dy*fz-dz*fy, hy=dz*fx-dx*fz, hz=dx*fy-dy*fx;
+          const det=ex*hx+ey*hy+ez*hz;
+          if (Math.abs(det)<EPS) continue;
+          const f=1/det, sx=ox-ax,sy=oy-ay,sz=oz-az;
+          const u=f*(sx*hx+sy*hy+sz*hz);
+          if (u<0||u>1) continue;
+          const qx=sy*ez-sz*ey,qy=sz*ex-sx*ez,qz=sx*ey-sy*ex;
+          const v=f*(dx*qx+dy*qy+dz*qz);
+          if (v<0||u+v>1) continue;
+          const tt=f*(fx*qx+fy*qy+fz*qz);
+          if (tt>EPS&&tt<bestT) {
+            bestT=tt;
+            // unnormalised face normal
+            const nx=ey*fz-ez*fy, ny=ez*fx-ex*fz, nz=ex*fy-ey*fx;
+            const nl=Math.sqrt(nx*nx+ny*ny+nz*nz)||1;
+            best={t:tt,nx:nx/nl,ny:ny/nl,nz:nz/nl};
+          }
+        }
+      } else {
+        stack.push(n.left,n.right);
+      }
+    }
+    return best;
+  }
+}
+// ─── Dead-reckon positions ────────────────────────────────────────────────────
+const POSITIONS = new Array(CMDS.length);
+const POSITIONS3D = new Array(CMDS.length);
+{
+  let px = 0, py = 0, pz = 0, vz = 0, onGround = true, prevJump = false;
+  POSITIONS[0] = [0, 0];
+  POSITIONS3D[0] = [0, 0, 0];
+  for (let i = 1; i < CMDS.length; i++) {
+    const [tick, , yaw, fwd, side, btns] = CMDS[i];
+    const prevTick = CMDS[i-1][0];
+    const dt = Math.min(0.1, Math.max(0, (tick - prevTick) / 66));
+    const yr = yaw * Math.PI / 180;
+    const sc = (btns & 4) ? 0.66 : 1.0;
+    px += (fwd * Math.cos(yr) + side * Math.sin(yr)) * sc * dt;
+    py += (fwd * Math.sin(yr) - side * Math.cos(yr)) * sc * dt;
+    const jump = !!(btns & 2);
+    if (jump && !prevJump && onGround) { vz = 290; onGround = false; }
+    pz += vz * dt; vz -= 800 * dt;
+    if (pz <= 0) { pz = 0; vz = 0; onGround = true; }
+    prevJump = jump;
+    POSITIONS[i] = [px, py];
+    POSITIONS3D[i] = [px, py, pz];
+  }
+}
+
+// ─── World position interpolation ────────────────────────────────────────────
+function interpolateWorldPositions(worldPos, cmds) {
+  if (worldPos.length === 0) return null;
+  const result = new Array(cmds.length);
+  let wi = 0;
+  for (let ci = 0; ci < cmds.length; ci++) {
+    const tick = cmds[ci][0];
+    while (wi < worldPos.length - 1 && worldPos[wi + 1][0] <= tick) wi++;
+    if (wi >= worldPos.length - 1) {
+      result[ci] = [worldPos[worldPos.length - 1][1], worldPos[worldPos.length - 1][2], worldPos[worldPos.length - 1][3]];
+    } else {
+      const [t0, x0, y0, z0] = worldPos[wi];
+      const [t1, x1, y1, z1] = worldPos[wi + 1];
+      const span = t1 - t0;
+      const f = span > 0 ? (tick - t0) / span : 0;
+      result[ci] = [x0 + f * (x1 - x0), y0 + f * (y1 - y0), z0 + f * (z1 - z0)];
+    }
+  }
+  return result;
+}
+
+// Continuous dead-reckoned path (single accumulation, no per-life reset).
+let finalPositions;
+{
+  const worldInterp = interpolateWorldPositions(WORLD_POSITIONS, CMDS);
+  finalPositions = (worldInterp && WORLD_POSITIONS.length > 10) ? worldInterp : POSITIONS3D;
+}
+
+// ─── Life segments ────────────────────────────────────────────────────────────
+const N = CMDS.length;
+const breaks = LIFE_BREAKS.slice().sort((a, b) => a - b);
+const lifeSegments = [];
+{
+  let segStart = 0;
+  for (const brk of breaks) {
+    if (brk > segStart) lifeSegments.push({ start: segStart, end: brk - 1 });
+    segStart = brk;
+  }
+  lifeSegments.push({ start: segStart, end: N - 1 });
+}
+
+// ─── Utility ──────────────────────────────────────────────────────────────────
+const TICK_RATE = 66.0;
+function tickToSec(tick) { return tick / TICK_RATE; }
+
+const EV_COLORS = {
+  player_death:           '#ff4d4d',
+  player_teleported:      '#00e5cc',
+  teamplay_round_start:   '#ffd700',
+  teamplay_round_win:     '#ffd700',
+  teamplay_round_active:  '#ffd700',
+  player_chargedeployed:  '#cc44ff',
+  player_spawn:           '#88ff88',
+};
+
+function hslToRgb(h, s, l) {
+  s /= 100; l /= 100;
+  const k = n => (n + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = n => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  return [Math.round(f(0)*255), Math.round(f(8)*255), Math.round(f(4)*255)];
+}
+
+function lifeHue(i) { return (i * 47) % 360; }
+function lifeCssColor(i) { return `hsl(${lifeHue(i)}, 70%, 60%)`; }
+function lifeThreeColor(i) {
+  const [r, g, b] = hslToRgb(lifeHue(i), 70, 60);
+  return new THREE.Color(r/255, g/255, b/255);
+}
+
+function findCmdIdx(tick) {
+  let lo = 0, hi = CMDS.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (CMDS[mid][0] < tick) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+// ─── Header meta ─────────────────────────────────────────────────────────────
+document.getElementById('m-map').textContent    = META.map;
+document.getElementById('m-client').textContent = META.client;
+document.getElementById('m-dur').textContent    = META.duration.toFixed(1) + 's';
+document.getElementById('m-cmds').textContent   = META.ncmds.toLocaleString();
+document.getElementById('m-lives').textContent  = lifeSegments.length;
+document.getElementById('m-deaths').textContent = EVENTS.filter(e => e.event === 'player_death').length;
+document.getElementById('m-teles').textContent  = EVENTS.filter(e => e.event === 'player_teleported').length;
+
+// ─── Three.js scene ───────────────────────────────────────────────────────────
+const container = document.getElementById('threejs-container');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setClearColor(0x0d1117);
+container.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(60, 1, 1, 200000);
+
+// Compute centroid and bounds
+let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity;
+for (const [x, y, z] of finalPositions) {
+  if (x < minX) minX = x; if (x > maxX) maxX = x;
+  if (y < minY) minY = y; if (y > maxY) maxY = y;
+  if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+}
+const cx = (minX + maxX) / 2;
+const cy = (minY + maxY) / 2;
+const cz = (minZ + maxZ) / 2;
+const sceneSpan = Math.max(maxX - minX, maxY - minY, maxZ - minZ, 1000);
+
+// Camera initial position — Three.js uses Y-up; TF2 z→Three.js Y, TF2 y→Three.js Z
+const tcx = cx, tcy = cz, tcz = cy;   // Three.js scene centroid
+camera.position.set(tcx, tcy + sceneSpan * 1.2, tcz + sceneSpan * 1.5);
+camera.lookAt(tcx, tcy, tcz);
+
+// Lighting
+const ambientLight = new THREE.AmbientLight(0x404060, 0.5);
+scene.add(ambientLight);
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+dirLight.position.set(tcx + sceneSpan, tcy + sceneSpan * 2, tcz + sceneSpan);
+scene.add(dirLight);
+
+// Grid
+const gridSize = Math.max(sceneSpan * 2, 10000);
+const gridHelper = new THREE.GridHelper(gridSize, 40, 0x1e3a5a, 0x1e2830);
+gridHelper.position.set(tcx, 0, tcz);
+scene.add(gridHelper);
+
+// OrbitControls
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.target.set(tcx, tcy, tcz);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.screenSpacePanning = true;
+controls.update();
+
+// BSP mesh overlay removed.
+
+// ─── Eureka / teleporter arcs ────────────────────────────────────────────────
+// For every teleport break: draw a bezier arc from the departure position
+// (last frame of the previous segment) to the spawn (first frame of the next).
+if (TELEPORT_BREAKS.length > 0 && finalPositions.length > 1) {
+  const arcMat = new THREE.LineBasicMaterial({ color: 0x00e5ff, linewidth: 2,
+                                               transparent: true, opacity: 0.9 });
+  const depMat = new THREE.MeshBasicMaterial({ color: 0x00e5ff, side: THREE.DoubleSide,
+                                               transparent: true, opacity: 0.85 });
+  const depGeom = new THREE.RingGeometry(28, 44, 24);
+
+  for (const b of TELEPORT_BREAKS) {
+    if (b <= 0 || b >= finalPositions.length) continue;
+    const dep = finalPositions[b - 1]; // where the player stood before teleport
+    const arr = finalPositions[b];     // BSP_SPAWN = start of the next segment
+
+    // Three.js coords (TF2 x→X, TF2 z→Y, TF2 y→Z)
+    const v0 = new THREE.Vector3(dep[0], dep[2], dep[1]);
+    const v2 = new THREE.Vector3(arr[0], arr[2], arr[1]);
+
+    // Arc: lift the midpoint so it arcs visibly overhead
+    const mid = v0.clone().lerp(v2, 0.5);
+    mid.y += Math.max(400, v0.distanceTo(v2) * 0.45);
+
+    const curve  = new THREE.QuadraticBezierCurve3(v0, mid, v2);
+    const arcGeo = new THREE.BufferGeometry().setFromPoints(curve.getPoints(60));
+    scene.add(new THREE.Line(arcGeo, arcMat));
+
+    // Departure ring (flat on the floor at departure position)
+    const depRing = new THREE.Mesh(depGeom, depMat);
+    depRing.position.copy(v0);
+    depRing.rotation.x = -Math.PI / 2;
+    scene.add(depRing);
+
+    // Arrival ring at spawn
+    const arrRing = new THREE.Mesh(depGeom, depMat.clone());
+    arrRing.position.copy(v2);
+    arrRing.rotation.x = -Math.PI / 2;
+    scene.add(arrRing);
+  }
+}
+
+// ─── Path lines per life ──────────────────────────────────────────────────────
+// Coordinate mapping: TF2 (x,y,z) → Three.js (x, z, y) so TF2-z is height
+function tf2ToThree(x, y, z) { return new THREE.Vector3(x, z, y); }
+
+const lifeObjects = []; // THREE.Group per life
+
+for (let li = 0; li < lifeSegments.length; li++) {
+  const seg = lifeSegments[li];
+  const group = new THREE.Group();
+  const segLen = seg.end - seg.start + 1;
+
+  if (segLen >= 2) {
+    const positions = new Float32Array(segLen * 3);
+    const colors = new Float32Array(segLen * 3);
+    const baseColor = lifeThreeColor(li);
+    const endColor = new THREE.Color(1.0, 0.2, 0.1);
+
+    for (let j = 0; j < segLen; j++) {
+      const idx = seg.start + j;
+      const [px, py, pz] = finalPositions[idx];
+      const t = j / (segLen - 1);
+      positions[j * 3]     = px;
+      positions[j * 3 + 1] = pz;  // TF2 z → Three.js Y (height)
+      positions[j * 3 + 2] = py;  // TF2 y → Three.js Z (depth)
+
+      const r = baseColor.r + t * (endColor.r - baseColor.r);
+      const g = baseColor.g + t * (endColor.g - baseColor.g);
+      const b = baseColor.b + t * (endColor.b - baseColor.b);
+      colors[j * 3]     = r;
+      colors[j * 3 + 1] = g;
+      colors[j * 3 + 2] = b;
+    }
+
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    const mat = new THREE.LineBasicMaterial({ vertexColors: true, linewidth: 2 });
+    const line = new THREE.Line(geom, mat);
+    group.add(line);
+  }
+
+  scene.add(group);
+  lifeObjects.push(group);
+}
+
+// ─── Death markers ────────────────────────────────────────────────────────────
+const deathEvents = EVENTS.filter(e => e.event === 'player_death');
+for (const ev of deathEvents) {
+  const idx = findCmdIdx(ev.tick);
+  const [px, py, pz] = finalPositions[Math.min(idx, finalPositions.length - 1)];
+  const group = new THREE.Group();
+  group.position.set(px, pz + 10, py);
+
+  const redMat = new THREE.MeshBasicMaterial({ color: 0xff3333 });
+  const sphere = new THREE.Mesh(new THREE.SphereGeometry(12, 8, 8), redMat);
+  group.add(sphere);
+
+  // Crossed lines forming X
+  const crossMat = new THREE.LineBasicMaterial({ color: 0xff0000 });
+  const xGeom1 = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(-20, 0, -20), new THREE.Vector3(20, 0, 20)
+  ]);
+  const xGeom2 = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(20, 0, -20), new THREE.Vector3(-20, 0, 20)
+  ]);
+  group.add(new THREE.Line(xGeom1, crossMat));
+  group.add(new THREE.Line(xGeom2, crossMat));
+  scene.add(group);
+}
+
+// ─── Teleport portals ────────────────────────────────────────────────────────
+const teleEvents = EVENTS.filter(e => e.event === 'player_teleported');
+const teleRings = [];
+for (const ev of teleEvents) {
+  const idx = findCmdIdx(ev.tick);
+  const [px, py, pz] = finalPositions[Math.min(idx, finalPositions.length - 1)];
+  const group = new THREE.Group();
+  group.position.set(px, pz + 40, py);
+
+  const ringGeom = new THREE.RingGeometry(40, 55, 32);
+  const ringMat = new THREE.MeshBasicMaterial({
+    color: 0x00e5cc,
+    side: THREE.DoubleSide,
+    transparent: true,
+    opacity: 0.85,
+  });
+  const ring = new THREE.Mesh(ringGeom, ringMat);
+  ring.rotation.x = Math.PI / 2;
+  group.add(ring);
+
+  // Glow ring (larger, more transparent)
+  const glowGeom = new THREE.RingGeometry(55, 75, 32);
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: 0x00ffee,
+    side: THREE.DoubleSide,
+    transparent: true,
+    opacity: 0.25,
+  });
+  const glow = new THREE.Mesh(glowGeom, glowMat);
+  glow.rotation.x = Math.PI / 2;
+  group.add(glow);
+
+  scene.add(group);
+  teleRings.push(group);
+}
+
+// ─── Round event markers (gold spheres) ──────────────────────────────────────
+const roundEvents = EVENTS.filter(e =>
+  e.event === 'teamplay_round_start' || e.event === 'teamplay_round_win' || e.event === 'teamplay_round_active'
+);
+for (const ev of roundEvents) {
+  const idx = findCmdIdx(ev.tick);
+  const [px, py, pz] = finalPositions[Math.min(idx, finalPositions.length - 1)];
+  const goldMat = new THREE.MeshBasicMaterial({ color: 0xffd700, transparent: true, opacity: 0.9 });
+  const sphere = new THREE.Mesh(new THREE.SphereGeometry(18, 10, 10), goldMat);
+  sphere.position.set(px, pz + 30, py);
+  scene.add(sphere);
+}
+
+// ─── Player avatar + view cone ────────────────────────────────────────────────
+const playerGroup = new THREE.Group();
+
+const avatarGeom = new THREE.BoxGeometry(20, 72, 20);
+const avatarMat = new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.9 });
+const avatarMesh = new THREE.Mesh(avatarGeom, avatarMat);
+avatarMesh.position.y = 36; // center at feet
+playerGroup.add(avatarMesh);
+
+// Arrow helper for view direction
+const arrowDir = new THREE.Vector3(1, 0, 0);
+const arrowHelper = new THREE.ArrowHelper(arrowDir, new THREE.Vector3(0, 50, 0), 200, 0xff4444, 30, 20);
+playerGroup.add(arrowHelper);
+
+// View cone (transparent yellow)
+const coneGeom = new THREE.ConeGeometry(150, 400, 8, 1, true);
+const coneMat = new THREE.MeshBasicMaterial({
+  color: 0xffcc00,
+  transparent: true,
+  opacity: 0.07,
+  side: THREE.DoubleSide,
+  depthWrite: false,
+});
+const coneMesh = new THREE.Mesh(coneGeom, coneMat);
+coneMesh.position.y = 50;
+playerGroup.add(coneMesh);
+
+scene.add(playerGroup);
+
+// ─── Playhead state ───────────────────────────────────────────────────────────
+let currentCmdIdx = 0;
+let cameraMode = 'orbit'; // 'orbit', 'follow', 'fps'
+
+// ── Playback state ───────────────────────────────────────────────────────────
+let isPlaying = false;
+let playbackSpeed = 1.0;
+let playbackGameTick = CMDS.length > 0 ? CMDS[0][0] : 0;  // current position in game ticks
+let lastPlayTimestamp = 0;
+const totalDuration = CMDS.length > 1 ? (CMDS[CMDS.length-1][0] - CMDS[0][0]) / 66.0 : 0;
+
+let livesOpen = true;
+function toggleLivesPanel() {
+  livesOpen = !livesOpen;
+  document.getElementById('life-list').style.display = livesOpen ? '' : 'none';
+  document.getElementById('lives-chevron').innerHTML = livesOpen ? '&#9660;' : '&#9654;';
+}
+
+function togglePlay() {
+  isPlaying = !isPlaying;
+  document.getElementById('btn-play').innerHTML = isPlaying ? '&#9646;&#9646; Pause' : '&#9654; Play';
+  if (isPlaying) {
+    lastPlayTimestamp = performance.now();
+    // If at end, restart
+    if (currentCmdIdx >= CMDS.length - 1) seekToStart();
+  }
+}
+
+function seekToStart() {
+  isPlaying = false;
+  document.getElementById('btn-play').innerHTML = '&#9654; Play';
+  playbackGameTick = CMDS.length > 0 ? CMDS[0][0] : 0;
+  updatePlayhead(0);
+}
+
+function setSpeed(s) {
+  playbackSpeed = s;
+  [0.5, 1, 2, 5, 10].forEach(v => {
+    const el = document.getElementById('spd-' + (v === 0.5 ? '05' : v));
+    if (el) el.classList.toggle('active', v === s);
+  });
+}
+
+// Space bar shortcut
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space' && e.target === document.body) { e.preventDefault(); togglePlay(); }
+});
+
+function updatePlayhead(idx) {
+  if (!isPlaying) { playbackGameTick = CMDS[idx]?.[0] ?? playbackGameTick; }
+  currentCmdIdx = Math.max(0, Math.min(CMDS.length - 1, idx));
+  const [px, py, pz] = finalPositions[currentCmdIdx];
+  const [, pitch, yaw] = CMDS[currentCmdIdx];
+
+  // Update player position (TF2 y→Z, z→Y in Three.js)
+  playerGroup.position.set(px, pz, py);
+
+  // Compute look direction from yaw+pitch
+  const yawR = yaw * Math.PI / 180;
+  const pitchR = pitch * Math.PI / 180;
+  const dx =  Math.cos(pitchR) * Math.cos(yawR);
+  const dz =  Math.cos(pitchR) * Math.sin(yawR);
+  const dy = -Math.sin(pitchR);
+  const dir = new THREE.Vector3(dx, dy, dz).normalize();
+
+  arrowHelper.setDirection(dir);
+
+  // Orient cone to look direction
+  const coneAxis = new THREE.Vector3(0, 1, 0);
+  const quat = new THREE.Quaternion().setFromUnitVectors(coneAxis, dir);
+  coneMesh.quaternion.copy(quat);
+  coneMesh.position.set(dir.x * 200, 50 + dir.y * 200, dir.z * 200);
+
+  // Update highlight in sidebar
+  const lifeItems = document.querySelectorAll('.life-item');
+  lifeItems.forEach((el, i) => {
+    const seg = lifeSegments[i];
+    if (seg && currentCmdIdx >= seg.start && currentCmdIdx <= seg.end) {
+      el.style.background = 'rgba(31,58,95,0.5)';
+    } else {
+      el.style.background = '';
+    }
+  });
+
+  // Update playhead info
+  const sec = tickToSec(CMDS[currentCmdIdx][0]);
+  document.getElementById('playhead-info').textContent =
+    `T=${CMDS[currentCmdIdx][0]}  ${sec.toFixed(2)}s  pos=(${px.toFixed(0)}, ${py.toFixed(0)}, ${pz.toFixed(0)})  speed=${Math.hypot(CMDS[currentCmdIdx][3], CMDS[currentCmdIdx][4]).toFixed(0)} u/s`;
+
+  drawTimeline();
+}
+
+// ─── Camera modes ─────────────────────────────────────────────────────────────
+const defaultCamPos = camera.position.clone();
+const defaultCamTarget = new THREE.Vector3(tcx, tcy, tcz);
+
+function setCameraMode(mode) {
+  cameraMode = mode;
+  document.querySelectorAll('.cam-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('btn-' + mode)?.classList.add('active');
+
+  const badge = document.getElementById('cam-mode-badge');
+  if (mode === 'follow') {
+    controls.enabled = true;   // keep orbit/pan/zoom enabled while following
+    controls.enablePan = true;
+    badge.textContent = 'Follow Player (drag to orbit)';
+    badge.style.display = 'block';
+  } else if (mode === 'fps') {
+    controls.enabled = false;
+    badge.textContent = 'First Person';
+    badge.style.display = 'block';
+  } else {
+    controls.enabled = true;
+    badge.style.display = 'none';
+  }
+}
+
+function resetCamera() {
+  setCameraMode('orbit');
+  camera.position.copy(defaultCamPos);
+  controls.target.copy(defaultCamTarget);
+  controls.update();
+}
+
+// ─── Sidebar: lives ───────────────────────────────────────────────────────────
+const lifeList = document.getElementById('life-list');
+for (let li = 0; li < lifeSegments.length; li++) {
+  const seg = lifeSegments[li];
+  const dur = ((CMDS[seg.end][0] - CMDS[seg.start][0]) / 66).toFixed(0);
+  const label = document.createElement('label');
+  label.className = 'life-item';
+  label.innerHTML = `
+    <input type="checkbox" checked onchange="toggleLife(${li}, this.checked)">
+    <span class="life-color" style="background:${lifeCssColor(li)}"></span>
+    Life ${li + 1} (${dur}s)
+  `;
+  lifeList.appendChild(label);
+}
+
+function toggleLife(i, visible) {
+  if (lifeObjects[i]) lifeObjects[i].visible = visible;
+}
+
+// ─── Stats ────────────────────────────────────────────────────────────────────
+{
+  let totalDist = 0;
+  let maxSpeed = 0;
+  for (let i = 1; i < finalPositions.length; i++) {
+    const [x0, y0, z0] = finalPositions[i-1];
+    const [x1, y1, z1] = finalPositions[i];
+    totalDist += Math.sqrt((x1-x0)**2 + (y1-y0)**2 + (z1-z0)**2);
+    const spd = Math.hypot(CMDS[i][3], CMDS[i][4]);
+    if (spd > maxSpeed) maxSpeed = spd;
+  }
+  const statsEl = document.getElementById('stats-content');
+  const stats = [
+    ['Distance', (totalDist / 1000).toFixed(1) + ' ku'],
+    ['Max Speed', maxSpeed.toFixed(0) + ' u/s'],
+    ['Duration', META.duration.toFixed(1) + 's'],
+    ['Lives', lifeSegments.length],
+    ['Deaths', EVENTS.filter(e => e.event === 'player_death').length],
+    ['Teleports', EVENTS.filter(e => e.event === 'player_teleported').length],
+  ];
+  statsEl.innerHTML = stats.map(([label, val]) =>
+    `<div class="stat-row"><span class="stat-label">${label}</span><span class="stat-val">${val}</span></div>`
+  ).join('');
+}
+
+// ─── Event log ────────────────────────────────────────────────────────────────
+const tbody = document.getElementById('event-tbody');
+const allEventRows = [];
+
+function formatEventDetails(ev) {
+  const skip = new Set(['event', 'tick', 'posIdx']);
+  const parts = [];
+  for (const [k, v] of Object.entries(ev)) {
+    if (skip.has(k)) continue;
+    if (v === null || v === undefined) continue;
+    parts.push(`${k}: ${typeof v === 'number' ? (Number.isInteger(v) ? v : v.toFixed(2)) : v}`);
+  }
+  return parts.join(' · ');
+}
+
+EVENTS.forEach((ev, idx) => {
+  const tr = document.createElement('tr');
+  const sec = tickToSec(ev.tick).toFixed(1);
+  const color = EV_COLORS[ev.event] || '#8b949e';
+  tr.innerHTML = `
+    <td>${sec}s</td>
+    <td class="ev-name" style="color:${color}">${ev.event}</td>
+    <td>${formatEventDetails(ev)}</td>
+  `;
+  tr.addEventListener('click', () => {
+    updatePlayhead(findCmdIdx(ev.tick));
+    allEventRows.forEach(r => r.classList.remove('highlight-row'));
+    tr.classList.add('highlight-row');
+    tr.scrollIntoView({ block: 'nearest' });
+  });
+  tbody.appendChild(tr);
+  allEventRows.push(tr);
+});
+
+// ─── Timeline ─────────────────────────────────────────────────────────────────
+const tlCanvas = document.getElementById('timeline-canvas');
+const tlTooltip = document.getElementById('tl-tooltip');
+let tlDragging = false;
+
+function drawTimeline() {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = tlCanvas.getBoundingClientRect();
+  const W = rect.width;
+  const H = rect.height;
+  tlCanvas.width  = W * dpr;
+  tlCanvas.height = H * dpr;
+  const ctx = tlCanvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  const pad = 10;
+  const pw  = W - pad * 2;
+
+  ctx.fillStyle = '#161b22';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = '#21262d';
+  ctx.fillRect(pad, H * 0.28, pw, H * 0.44);
+
+  if (N < 2) return;
+  const minTick = CMDS[0][0], maxTick = CMDS[N - 1][0];
+
+  // Event ticks
+  const evColorsMap = {
+    player_death:           '#ff4d4d',
+    player_teleported:      '#00e5cc',
+    teamplay_round_start:   '#ffd700',
+    teamplay_round_win:     '#ffd700',
+    teamplay_round_active:  '#ffd700',
+    player_chargedeployed:  '#cc44ff',
+  };
+  for (const ev of EVENTS) {
+    const color = evColorsMap[ev.event];
+    if (!color) continue;
+    const t = (ev.tick - minTick) / (maxTick - minTick);
+    const x = pad + t * pw;
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.85;
+    ctx.fillRect(x - 1.5, H * 0.2, 3, H * 0.6);
+  }
+  ctx.globalAlpha = 1;
+
+  // Progress fill
+  const tPlayhead = currentCmdIdx / (N - 1);
+  ctx.fillStyle = 'rgba(31, 58, 95, 0.6)';
+  ctx.fillRect(pad, H * 0.28, pw * tPlayhead, H * 0.44);
+
+  // Life segment markers
+  for (const brk of LIFE_BREAKS) {
+    const t = brk / (N - 1);
+    const x = pad + t * pw;
+    ctx.strokeStyle = '#88ff88';
+    ctx.globalAlpha = 0.5;
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x, H * 0.28); ctx.lineTo(x, H * 0.72); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  // Knob
+  const knobX = pad + tPlayhead * pw;
+  ctx.beginPath();
+  ctx.arc(knobX, H / 2, 6, 0, Math.PI * 2);
+  ctx.fillStyle = 'white';
+  ctx.fill();
+  ctx.strokeStyle = '#30363d';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // Labels
+  ctx.fillStyle = '#8b949e';
+  ctx.font = '9px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText('0s', pad, H);
+  ctx.textAlign = 'right';
+  ctx.fillText(META.duration.toFixed(0) + 's', W - pad, H);
+  ctx.textAlign = 'center';
+  ctx.fillText(tickToSec(CMDS[currentCmdIdx][0]).toFixed(1) + 's', knobX, H);
+}
+
+function tlEventAt(mx, W) {
+  if (N < 2) return null;
+  const pad = 10, pw = W - pad * 2;
+  const minTick = CMDS[0][0], maxTick = CMDS[N - 1][0];
+  for (const ev of EVENTS) {
+    const t = (ev.tick - minTick) / (maxTick - minTick);
+    const x = pad + t * pw;
+    if (Math.abs(mx - x) < 7) return ev;
+  }
+  return null;
+}
+
+function tlHandleSeek(clientX) {
+  const rect = tlCanvas.getBoundingClientRect();
+  const mx = clientX - rect.left;
+  const W  = rect.width;
+  const pad = 10, pw = W - pad * 2;
+  const t = Math.max(0, Math.min(1, (mx - pad) / pw));
+  updatePlayhead(Math.round(t * (CMDS.length - 1)));
+}
+
+tlCanvas.addEventListener('mousedown', (e) => { tlDragging = true; tlHandleSeek(e.clientX); });
+tlCanvas.addEventListener('mousemove', (e) => {
+  if (tlDragging) { tlHandleSeek(e.clientX); return; }
+  const rect = tlCanvas.getBoundingClientRect();
+  const ev = tlEventAt(e.clientX - rect.left, rect.width);
+  if (ev) {
+    tlTooltip.style.display = 'block';
+    tlTooltip.style.left = (e.clientX - rect.left - 10) + 'px';
+    tlTooltip.textContent = `${ev.event} @ ${tickToSec(ev.tick).toFixed(1)}s`;
+  } else {
+    tlTooltip.style.display = 'none';
+  }
+});
+window.addEventListener('mouseup', () => { tlDragging = false; });
+
+// ─── Resize handler ───────────────────────────────────────────────────────────
+function onResize() {
+  const w = container.clientWidth;
+  const h = container.clientHeight;
+  if (w > 0 && h > 0) {
+    renderer.setSize(w, h);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  }
+  drawTimeline();
+}
+
+const resizeObserver = new ResizeObserver(onResize);
+resizeObserver.observe(container);
+onResize();
+
+// ─── Animation loop ───────────────────────────────────────────────────────────
+let animFrame;
+const followOffset = new THREE.Vector3();
+const lerpTarget = new THREE.Vector3();
+
+function animate() {
+  animFrame = requestAnimationFrame(animate);
+
+  // Teleport ring spin
+  const t = performance.now() * 0.001;
+  for (const ring of teleRings) {
+    ring.rotation.y = t * 1.2;
+  }
+
+  // Camera follow modes (when NOT playing — playback handles its own camera)
+  if (!isPlaying) {
+    if (cameraMode === 'follow') {
+      // Slide the orbit target to the player — user keeps full orbit/zoom control
+      const [px, py, pz] = finalPositions[currentCmdIdx];
+      lerpTarget.set(px, pz + 50, py);
+      controls.target.lerp(lerpTarget, 0.08);
+      controls.update();
+    } else if (cameraMode === 'fps') {
+      const [px, py, pz] = finalPositions[currentCmdIdx];
+      const [, pitch, yaw] = CMDS[currentCmdIdx];
+      camera.position.set(px, pz + 64, py);
+      const yawR = yaw * Math.PI / 180;
+      const pitchR = pitch * Math.PI / 180;
+      camera.lookAt(
+        px + Math.cos(pitchR) * Math.cos(yawR) * 200,
+        pz + 64 - Math.sin(pitchR) * 200,
+        py + Math.cos(pitchR) * Math.sin(yawR) * 200
+      );
+    }
+  }
+
+  // ── Playback advance ──────────────────────────────────────────────────────
+  if (isPlaying && CMDS.length > 1) {
+    const now = performance.now();
+    const elapsedSec = (now - lastPlayTimestamp) / 1000;
+    lastPlayTimestamp = now;
+    playbackGameTick += elapsedSec * 66 * playbackSpeed;
+
+    // Binary-search: lo = last cmd whose tick ≤ playbackGameTick
+    let lo = 0, hi = CMDS.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (CMDS[mid][0] <= playbackGameTick) lo = mid; else hi = mid - 1;
+    }
+
+    // Discrete UI updates (timeline, sidebar, event log) only on cmd change
+    if (lo !== currentCmdIdx) updatePlayhead(lo);
+
+    // ── Sub-cmd interpolation for silky-smooth avatar ──────────────────────
+    // Compute frac ∈ [0,1]: how far between cmd lo and cmd lo+1 we are
+    const n1 = Math.min(lo + 1, CMDS.length - 1);
+    const t0 = CMDS[lo][0], t1 = CMDS[n1][0];
+    const frac = (t1 > t0) ? Math.max(0, Math.min(1, (playbackGameTick - t0) / (t1 - t0))) : 0;
+
+    // Interpolate world position
+    const p0 = finalPositions[lo], p1 = finalPositions[n1];
+    const ix = p0[0] + frac * (p1[0] - p0[0]);
+    const iy = p0[1] + frac * (p1[1] - p0[1]);
+    const iz = p0[2] + frac * (p1[2] - p0[2]);
+    playerGroup.position.set(ix, iz, iy);   // Three.js: Y=TF2-z, Z=TF2-y
+
+    // Interpolate view angles (yaw needs wraparound handling)
+    const [, pitch0, yaw0] = CMDS[lo];
+    const [, pitch1, yaw1] = CMDS[n1];
+    let dYaw = yaw1 - yaw0;
+    if (dYaw >  180) dYaw -= 360;
+    if (dYaw < -180) dYaw += 360;
+    const iYaw   = yaw0   + frac * dYaw;
+    const iPitch = pitch0 + frac * (pitch1 - pitch0);
+    const yR = iYaw   * Math.PI / 180;
+    const pR = iPitch * Math.PI / 180;
+    const idir = new THREE.Vector3(
+       Math.cos(pR) * Math.cos(yR),
+      -Math.sin(pR),
+       Math.cos(pR) * Math.sin(yR)
+    ).normalize();
+    arrowHelper.setDirection(idir);
+    const cqa = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), idir);
+    coneMesh.quaternion.copy(cqa);
+    coneMesh.position.set(idir.x * 200, 50 + idir.y * 200, idir.z * 200);
+
+    // Feed interpolated position to camera follow modes
+    if (cameraMode === 'follow') {
+      lerpTarget.set(ix, iz + 50, iy);
+      controls.target.lerp(lerpTarget, 0.08);
+      controls.update();
+    } else if (cameraMode === 'fps') {
+      camera.position.set(ix, iz + 64, iy);
+      camera.lookAt(ix + idir.x * 200, iz + 64 + idir.y * 200, iy + idir.z * 200);
+    }
+
+    if (lo >= CMDS.length - 1) {
+      isPlaying = false;
+      document.getElementById('btn-play').innerHTML = '&#9654; Play';
+    }
+
+    // Update time display
+    const elInfo = document.getElementById('playback-info');
+    if (elInfo) {
+      const curSec = (CMDS[lo][0] - CMDS[0][0]) / 66.0;
+      elInfo.textContent = curSec.toFixed(1) + 's / ' + totalDuration.toFixed(1) + 's';
+    }
+  }
+
+  if (cameraMode === 'orbit') controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+
+// ─── Initial update ───────────────────────────────────────────────────────────
+updatePlayhead(0);
+drawTimeline();
+
+</script>
+</body>
+</html>

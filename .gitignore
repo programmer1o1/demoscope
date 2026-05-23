@@ -1,0 +1,17 @@
+# Build output
+/target
+
+# Generated HTML visualizations (but keep the embedded Rust template)
+*.html
+!src/template.html
+
+# Test data (large binary game files — keep locally, don't publish)
+DEMOS TESTING/
+
+# macOS
+.DS_Store
+
+# Editor artifacts
+*.swp
+*.swo
+.vscode/

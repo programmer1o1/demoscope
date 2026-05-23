@@ -1,0 +1,9 @@
+[package]
+name = "demoscope"
+version = "0.1.0"
+edition = "2024"
+description = "Fast parser and 3D visualiser for Source Engine HL2DEMO files"
+repository = "https://github.com/programmer1o1/demoscope"
+
+[dependencies]
+base64 = "0.21"
