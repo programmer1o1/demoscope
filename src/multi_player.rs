@@ -40,6 +40,7 @@ pub struct MultiPlayerData {
     pub tracks: HashMap<u32, Vec<(i32, f32, f32, f32)>>,
     pub names: HashMap<u32, PlayerMeta>,
     pub life_states: HashMap<u32, Vec<(i32, u8)>>,
+    pub observer_modes: HashMap<u32, Vec<(i32, u8)>>,
     pub yaws: HashMap<u32, Vec<(i32, f32, f32)>>,
     pub weapons: HashMap<u32, Vec<(i32, i32)>>,
     pub weapon_classes: HashMap<i32, String>,
@@ -70,7 +71,8 @@ fn wrap_raw(raw: player_tracks::PlayerTrackData) -> Result<MultiPlayerData, Box<
         .or_else(|| if raw.tracks.contains_key(&1) { Some(1) } else { raw.tracks.keys().min().copied() });
     Ok(MultiPlayerData {
         map: raw.map, server: raw.server, duration: raw.duration, ticks: raw.ticks,
-        tracks: raw.tracks, names, life_states: raw.life_states, yaws: raw.yaws,
+        tracks: raw.tracks, names, life_states: raw.life_states,
+        observer_modes: raw.observer_modes, yaws: raw.yaws,
         weapons: raw.weapons, weapon_classes: raw.weapon_classes,
         primary_entity,
     })

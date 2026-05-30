@@ -1769,6 +1769,17 @@ fn multi_life_states_to_json(data: &multi_player::MultiPlayerData) -> String {
     format!("{{{}}}", entries.join(","))
 }
 
+fn multi_observer_modes_to_json(data: &multi_player::MultiPlayerData) -> String {
+    // Per-entity observer-mode transitions: entity_id → [[tick, mode], ...].
+    // mode 0 = playing; non-zero = spectating. Same shape as life-states.
+    let mut entries: Vec<String> = data.observer_modes.iter().map(|(eid, states)| {
+        let pts: Vec<String> = states.iter().map(|(t, m)| format!("[{},{}]", t, m)).collect();
+        format!("\"{}\":[{}]", eid, pts.join(","))
+    }).collect();
+    entries.sort();
+    format!("{{{}}}", entries.join(","))
+}
+
 fn multi_weapons_to_json(data: &multi_player::MultiPlayerData) -> String {
     // Per-player active-weapon stream: entity_id → [[tick, weapon_eid], ...].
     let mut entries: Vec<String> = data.weapons.iter().map(|(eid, w)| {
@@ -2187,7 +2198,7 @@ pub fn generate_html_string(
     // Multi-player entity tracks - always extracted now. If the native decoder
     // can't make sense of the demo we fall back to empty objects so the
     // template still parses (legacy single-POV view will still render).
-    let (multi_tracks_json, multi_names_json, multi_life_json, multi_yaws_json, multi_weps_json, multi_wep_classes_json, primary_eid_json) = {
+    let (multi_tracks_json, multi_names_json, multi_life_json, multi_obs_json, multi_yaws_json, multi_weps_json, multi_wep_classes_json, primary_eid_json) = {
         eprint!("  Extracting multi-player tracks ...");
         io::stderr().flush().ok();
         match multi_player::extract_from_bytes(data) {
@@ -2206,6 +2217,7 @@ pub fn generate_html_string(
                     multi_tracks_to_json(&data),
                     multi_names_to_json(&data),
                     multi_life_states_to_json(&data),
+                    multi_observer_modes_to_json(&data),
                     multi_yaws_to_json(&data),
                     multi_weapons_to_json(&data),
                     multi_weapon_classes_to_json(&data),
@@ -2214,13 +2226,14 @@ pub fn generate_html_string(
             }
             Err(e) => {
                 eprintln!(" failed: {}", e);
-                ("{}".to_string(), "{}".to_string(), "{}".to_string(), "{}".to_string(), "{}".to_string(), "{}".to_string(), "null".to_string())
+                ("{}".to_string(), "{}".to_string(), "{}".to_string(), "{}".to_string(), "{}".to_string(), "{}".to_string(), "{}".to_string(), "null".to_string())
             }
         }
     };
     html = html.replace("__ENTITY_TRACKS__", &multi_tracks_json);
     html = html.replace("__ENTITY_NAMES__", &multi_names_json);
     html = html.replace("__ENTITY_LIFE_STATES__", &multi_life_json);
+    html = html.replace("__ENTITY_OBSERVER__", &multi_obs_json);
     html = html.replace("__ENTITY_YAWS__", &multi_yaws_json);
     html = html.replace("__ENTITY_WEAPONS__", &multi_weps_json);
     html = html.replace("__WEAPON_CLASSES__", &multi_wep_classes_json);

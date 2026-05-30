@@ -611,6 +611,12 @@ const PRIMARY_ENTITY = __PRIMARY_ENTITY__;
 // This is the authoritative state - player_death/spawn game events sometimes
 // have userid mismatches when slots are reused, so we no longer rely on them.
 const ENTITY_LIFE_STATES = __ENTITY_LIFE_STATES__;
+// entity_id → [[tick, observerMode], ...] from DT_BasePlayer::m_iObserverMode.
+// 0 = playing; non-zero = spectating (deathcam / chase / roaming). While
+// spectating, the engine streams this player's m_vecOrigin as the *watched*
+// target's position, so we treat these windows as "not shown": the path line
+// is broken across them and the avatar is hidden (see mpShownIntervals).
+const ENTITY_OBSERVER = __ENTITY_OBSERVER__;
 // entity_id → [[tick, yawDeg], ...] eye-angle yaw stream (Source convention:
 // degrees, +Y world axis = 90°). Drives the local-frame WSAD reconstruction
 // in the input panel for non-recorder primaries.
@@ -745,6 +751,25 @@ function isSampleTeleport(t0, x0, y0, z0, t1, x1, y1, z1) {
   const dtSec = dtTicks / TICK_RATE;
   const velSq = distSq / (dtSec * dtSec);
   return velSq > TELEPORT_VEL_SQ;
+}
+
+// Tracking-gap break for path lines. When a player leaves the recorder's PVS
+// (very common on big public servers - 111.dem has 43 players) the engine
+// stops sending their m_vecOrigin entirely: no updates, no death/observer
+// event. They reappear seconds later somewhere else, and a straight line
+// between the two samples would slice "hard lines" across the map. So we also
+// break when the gap is long AND the player moved a meaningful distance across
+// it - a short hop over a long gap means they barely moved, so the straight
+// line is still accurate and we keep it. At normal run speed (~250 u/s) a
+// player covers < 375u in 1.5s, so this never trips on continuous movement;
+// it only fires on the unobserved jumps. (Fast in-PVS jumps are still caught
+// by the velocity check above.)
+const MP_GAP_MAX_SEC = 1.5;
+const MP_GAP_MIN_DIST_SQ = 400 * 400;
+function isSampleGap(t0, x0, y0, z0, t1, x1, y1, z1) {
+  if ((t1 - t0) <= MP_GAP_MAX_SEC * TICK_RATE) return false;
+  const dx = x1 - x0, dy = y1 - y0, dz = (z1 !== undefined ? z1 - z0 : 0);
+  return dx*dx + dy*dy + dz*dz > MP_GAP_MIN_DIST_SQ;
 }
 // Forward-declared so drawTimeline (called during startup) can safely read
 // them before the rounds setup block initialises them.
@@ -1276,6 +1301,69 @@ function mpIsAliveAt(eid, tick) {
   return false;
 }
 
+// Spectating windows (m_iObserverMode != 0) per entity as [start, end) ticks.
+// While spectating, m_vecOrigin tracks the *watched* player, so these windows
+// must be excluded from anything that draws this player.
+function mpObserveIntervals(eid) {
+  const trans = ENTITY_OBSERVER[eid] || [];
+  const lastTick = CMDS.length > 0 ? CMDS[CMDS.length - 1][0] : 0;
+  const ivs = [];
+  let since = null;
+  for (const [t, mode] of trans) {
+    if (mode !== 0) { if (since === null) since = t; }
+    else if (since !== null) { ivs.push([since, t]); since = null; }
+  }
+  if (since !== null) ivs.push([since, lastTick + 1]);
+  return ivs;
+}
+
+// base minus holes, both [start,end) interval lists. Used to carve spectating
+// windows out of the alive intervals.
+function subtractIntervals(base, holes) {
+  if (!holes || !holes.length) return base.map(iv => iv.slice());
+  let cur = base.map(iv => iv.slice());
+  for (const [hs, he] of holes) {
+    const next = [];
+    for (const [s, e] of cur) {
+      if (he <= s || hs >= e) { next.push([s, e]); continue; } // disjoint
+      if (hs > s) next.push([s, hs]);  // piece before the hole
+      if (he < e) next.push([he, e]);  // piece after the hole
+    }
+    cur = next;
+  }
+  return cur;
+}
+
+// "Shown" intervals = alive (m_lifeState) with spectating windows removed.
+// Every rendering path keys off these so a player is only ever drawn while
+// their m_vecOrigin is genuinely their own. mpAliveIntervals stays lifeState-
+// only so the Lives panel / death counts are unaffected.
+const mpShownIntervals = new Map();
+for (const eid of Object.keys(ENTITY_TRACKS)) {
+  const alive = mpAliveIntervals.get(eid) || [];
+  mpShownIntervals.set(eid, subtractIntervals(alive, mpObserveIntervals(eid)));
+}
+
+function mpIsShownAt(eid, tick) {
+  const ivs = mpShownIntervals.get(eid);
+  if (!ivs) return mpIsAliveAt(eid, tick); // no track → fall back to alive
+  for (const [s, e] of ivs) {
+    if (tick >= s && tick < e) return true;
+  }
+  return false;
+}
+
+// Index of the shown interval containing `tick`, or -1. Two samples with
+// different indices straddle a death/spectate gap and must not be joined.
+function mpShownIvIndexAt(eid, tick) {
+  const ivs = mpShownIntervals.get(eid);
+  if (!ivs) return -1;
+  for (let i = 0; i < ivs.length; i++) {
+    if (tick >= ivs[i][0] && tick < ivs[i][1]) return i;
+  }
+  return -1;
+}
+
 // Render the Lives panel as the primary entity's life intervals. Each life
 // gets one row with duration + click-to-seek. Updates when primary changes.
 function refreshMpLives() {
@@ -1327,16 +1415,16 @@ function refreshMpLives() {
   }
 }
 
-// Hard-prune: drop samples that fall outside an entity's alive intervals.
-// The engine ships m_vecOrigin updates for dead players (teleporting them
-// onto whoever the spectator is watching), and filtering at the sample
-// level keeps no rendering path from picking those up.
+// Hard-prune: drop samples that fall outside an entity's *shown* intervals
+// (alive AND not spectating). The engine ships m_vecOrigin updates for dead /
+// spectating players - teleporting them onto whoever they're watching - and
+// filtering at the sample level keeps no rendering path from picking those up.
 //
 // Skipped for sparse-sample entities (≤ 2 samples) - their position data
 // is too thin to filter without erasing it entirely. Spectators with a
 // single tick-0 sample fall into this case.
 for (const [eid, samples] of Object.entries(ENTITY_TRACKS)) {
-  const ivs = mpAliveIntervals.get(eid);
+  const ivs = mpShownIntervals.get(eid);
   if (!ivs || ivs.length === 0) continue;
   if (samples.length <= 2) continue;
   ENTITY_TRACKS[eid] = samples.filter(s => {
@@ -1419,22 +1507,29 @@ const mpEntities = []; // [{ eid, name, color, samples, pathGroup, avatar, label
           pathGroup.add(new THREE.Line(geom, lineMat));
         }
       } else if (samples.length >= 2) {
-      let runAlive = mpIsAliveAt(eid, samples[0][0]);
+      // Walk the (already shown-pruned) samples and split into runs. A run
+      // breaks on a teleport OR whenever two consecutive samples fall in
+      // different shown intervals - i.e. a death/spectate gap sits between
+      // them. Without the interval-index check the two alive samples
+      // bracketing a death would be joined by a sharp line straight across
+      // wherever the player respawned / was spectating from.
+      let runIv = mpShownIvIndexAt(eid, samples[0][0]);
       for (let j = 1; j < samples.length; j++) {
         const [t0, ax, ay, az] = samples[j - 1];
         const [t1, bx, by, bz] = samples[j];
         // Velocity-based teleport check (per-player samples may be 1-4s
         // apart in slow-tick games like CS:S, so a flat distance threshold
         // would treat normal running as a teleport).
-        const jumped = isSampleTeleport(t0, ax, ay, az, t1, bx, by, bz);
-        const aliveNow = mpIsAliveAt(eid, t1);
-        if (jumped || aliveNow !== runAlive) {
-          if (runAlive) runs.push([runStart, j - 1]);
+        const jumped = isSampleTeleport(t0, ax, ay, az, t1, bx, by, bz)
+                    || isSampleGap(t0, ax, ay, az, t1, bx, by, bz);
+        const ivNow = mpShownIvIndexAt(eid, t1);
+        if (jumped || ivNow !== runIv) {
+          if (runIv !== -1) runs.push([runStart, j - 1]);
           runStart = j;
-          runAlive = aliveNow;
+          runIv = ivNow;
         }
       }
-      if (runAlive) runs.push([runStart, samples.length - 1]);
+      if (runIv !== -1) runs.push([runStart, samples.length - 1]);
       for (const [s, e] of runs) {
         const len = e - s + 1;
         if (len < 2) continue;
@@ -1600,7 +1695,7 @@ function mpPrimaryPositionAt(tick) {
     const fp = finalPositions[idx];
     return { x: fp[0], y: -fp[1], z: fp[2] };
   }
-  if (!mpIsAliveAt(e.eid, tick)) return null;
+  if (!mpIsShownAt(e.eid, tick)) return null;
   const s = mpSampleAt(e.samples, tick);
   if (!s) return null;
   return { x: s[1], y: s[2], z: s[3] };
@@ -1746,19 +1841,21 @@ function updateMultiPlayer(currentTick) {
   const H = renderer.domElement.clientHeight;
   for (const e of mpEntities) {
     if (!e.enabled) continue; // player switched off via sidebar checkbox
-    // Apply the life-state filter whenever we have ANY life-state data for
-    // the entity - including sparse-sample primaries (the recorder/spec)
-    // whose m_vecOrigin never updates but whose m_lifeState does. Without
-    // this their avatar stays glued to the camera position even after death,
-    // overlapping the player they're spectating.
+    // Hide the avatar+label whenever the player isn't "shown" at this tick -
+    // i.e. dead (m_lifeState) or spectating (m_iObserverMode). Applied
+    // whenever we have ANY such state data, including sparse-sample primaries
+    // (the recorder/spec) whose m_vecOrigin never updates but whose state
+    // props do. Without this the avatar stays glued to the camera / spectated
+    // target after death, overlapping whoever they're watching.
     // "Hide specs" toggle: drop any non-primary entity with <3 samples.
     if (hideSpecsActive && isSpectatorEntity(e)) {
       e.avatar.visible = false;
       e.label.style.display = 'none';
       continue;
     }
-    const hasLifeData = (ENTITY_LIFE_STATES[e.eid] || []).length > 0;
-    if (hasLifeData && !mpIsAliveAt(e.eid, currentTick)) {
+    const hasStateData = (ENTITY_LIFE_STATES[e.eid] || []).length > 0
+                      || (ENTITY_OBSERVER[e.eid] || []).length > 0;
+    if (hasStateData && !mpIsShownAt(e.eid, currentTick)) {
       e.avatar.visible = false;
       e.label.style.display = 'none';
       continue;
@@ -3318,8 +3415,19 @@ function toggleConsoleOverlay() {
 }
 
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && consoleOverlay.classList.contains('open')) {
+  if (e.key !== 'Escape') return;
+  // First Esc closes the console overlay if it's open.
+  if (consoleOverlay.classList.contains('open')) {
     consoleOverlay.classList.remove('open');
+    return;
+  }
+  // Otherwise, when running embedded in the in-browser viewer (this page is
+  // an iframe), ask the host to return to the file picker. Once the user
+  // clicks into the 3D view keyboard focus lives in this iframe, so the
+  // host's own Esc listener never sees the event - we forward it explicitly.
+  // Harmless when opened standalone (window.parent === window, no listener).
+  if (window.parent && window.parent !== window) {
+    window.parent.postMessage('demoscope:back', '*');
   }
 });
 
@@ -4073,7 +4181,7 @@ function drawMinimap() {
 
   if (MP_ACTIVE) {
     // Draw per-entity track lines for every enabled multi-player entity.
-    // Path-line samples are already pruned to alive intervals, so any
+    // Path-line samples are already pruned to shown intervals, so any
     // remaining samples are real player movement.
     for (const e of mpEntities) {
       if (!e.enabled || !routesVisible) continue;
@@ -4108,18 +4216,25 @@ function drawMinimap() {
       if (samples.length < 2) continue;
       mmCtx.beginPath();
       let penDown = false;
+      let curIv = -1;
       for (let j = 0; j < samples.length; j++) {
         const x = samples[j][1], y = -samples[j][2];
+        const ivNow = mpShownIvIndexAt(e.eid, samples[j][0]);
         if (!penDown) {
           mmCtx.moveTo(mmX(x), mmY(y));
-          penDown = true;
+          penDown = true; curIv = ivNow;
         } else {
           const [t0, px2, py2, pz2] = samples[j-1];
           const [t1, bx, by, bz] = samples[j];
-          // Velocity-based break - same rule as the 3D path-line.
-          if (isSampleTeleport(t0, px2, py2, pz2, t1, bx, by, bz)) {
+          // Break on a teleport, a tracking gap (left PVS), OR a death/
+          // spectate gap (samples straddle different shown intervals) - same
+          // rules as the 3D path.
+          if (ivNow !== curIv
+              || isSampleTeleport(t0, px2, py2, pz2, t1, bx, by, bz)
+              || isSampleGap(t0, px2, py2, pz2, t1, bx, by, bz)) {
             mmCtx.stroke(); mmCtx.beginPath();
             mmCtx.moveTo(mmX(x), mmY(y));
+            curIv = ivNow;
           } else {
             mmCtx.lineTo(mmX(x), mmY(y));
           }
@@ -4206,8 +4321,9 @@ function drawMinimap() {
       // of how many position samples they have.
       // Same "Hide specs" filter as the 3D view.
       if (hideSpecsActive && isSpectatorEntity(e)) continue;
-      const _hasLife = (ENTITY_LIFE_STATES[e.eid] || []).length > 0;
-      if (_hasLife && !mpIsAliveAt(e.eid, playTick)) continue;
+      const _hasState = (ENTITY_LIFE_STATES[e.eid] || []).length > 0
+                     || (ENTITY_OBSERVER[e.eid] || []).length > 0;
+      if (_hasState && !mpIsShownAt(e.eid, playTick)) continue;
       // Hide the recorder's dot during spec windows - see updateMultiPlayer.
       if (e.samples.length < 3 && isRecorderSpeccing(playTick)) continue;
       // For sparse entities (the spectator), pull position from the camera

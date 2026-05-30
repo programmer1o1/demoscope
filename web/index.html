@@ -132,8 +132,23 @@ function hideViewer() {
   viewer.classList.remove('active');
   drop.style.display = '';
   again.classList.remove('active');
+  // Revoke the blob URL and navigate the iframe to about:blank so its
+  // document is unloaded - that cancels the viewer's requestAnimationFrame
+  // loop and releases its WebGL context instead of leaving them running in
+  // the background. (Setting src='' doesn't reliably unload in every browser.)
   if (viewer.src.startsWith('blob:')) URL.revokeObjectURL(viewer.src);
-  viewer.src = '';
+  viewer.src = 'about:blank';
+}
+
+// Full reset back to the file picker. Clears the carried-over BSP too -
+// otherwise a stale map from the previous demo would silently be reused for
+// the next one (different map → wrong / missing 3D world).
+function resetToPicker() {
+  hideViewer();
+  pendingBsp = null;
+  pendingBspName = '';
+  clearStatus();
+  log('Ready.', 'ok');
 }
 
 async function parse(demoBytes, demoName) {
@@ -197,11 +212,16 @@ window.addEventListener('drop', (e) => {
   if (e.dataTransfer && e.dataTransfer.files) handleFiles([...e.dataTransfer.files]);
 });
 
-again.addEventListener('click', () => { hideViewer(); clearStatus(); log('Ready.', 'ok'); });
+again.addEventListener('click', () => resetToPicker());
+// Esc works when focus is on the host page…
 window.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && viewer.classList.contains('active')) {
-    hideViewer(); clearStatus(); log('Ready.', 'ok');
-  }
+  if (e.key === 'Escape' && viewer.classList.contains('active')) resetToPicker();
+});
+// …and when it's inside the viewer iframe, which forwards Esc to us via
+// postMessage (keyboard focus is captured by the iframe after interaction).
+window.addEventListener('message', (e) => {
+  if (e.source !== viewer.contentWindow) return;
+  if (e.data === 'demoscope:back' && viewer.classList.contains('active')) resetToPicker();
 });
 
 boot().catch(e => log('Boot failed: ' + e.message, 'err'));

@@ -40,6 +40,10 @@ pub struct PlayerTrackData {
     pub game_dir: String,
     pub tracks: HashMap<u32, Vec<(i32, f32, f32, f32)>>,
     pub life_states: HashMap<u32, Vec<(i32, u8)>>,
+    /// Observer-mode stream per entity (tick, mode). mode 0 = playing, anything
+    /// else = spectating; used to break the path line + hide the avatar while a
+    /// player's m_vecOrigin is tracking whoever they're watching.
+    pub observer_modes: HashMap<u32, Vec<(i32, u8)>>,
     /// Eye-angle yaw per entity per tick (degrees, Source convention). Drives
     /// the local-frame WSAD reconstruction for non-recorder primaries.
     pub yaws: HashMap<u32, Vec<(i32, f32, f32)>>,
@@ -98,7 +102,9 @@ pub fn extract_from_bytes(data: &[u8]) -> Result<PlayerTrackData, Box<dyn Error>
     let mut data_tables: Option<DataTables> = None;
     let mut world: Option<EntityWorld> = None;
     let mut last_pos: HashMap<u32, (f32, f32, f32)> = HashMap::new();
+    let mut origin_state: HashMap<u32, OriginTracker> = HashMap::new();
     let mut last_life: HashMap<u32, u8> = HashMap::new();
+    let mut last_obs: HashMap<u32, u8> = HashMap::new();
     let mut last_yaw: HashMap<u32, (f32, f32)> = HashMap::new();
     let mut last_weapon: HashMap<u32, i32> = HashMap::new();
     let mut userinfo_table_id: Option<usize> = None;
@@ -189,8 +195,8 @@ pub fn extract_from_bytes(data: &[u8]) -> Result<PlayerTrackData, Box<dyn Error>
                     portal2_engine,
                     data_tables.as_ref(),
                     world.as_mut(),
-                    &mut last_pos, &mut last_life, &mut last_yaw, &mut last_weapon,
-                    &mut out.tracks, &mut out.life_states, &mut out.yaws, &mut out.weapons,
+                    &mut last_pos, &mut origin_state, &mut last_life, &mut last_obs, &mut last_yaw, &mut last_weapon,
+                    &mut out.tracks, &mut out.life_states, &mut out.observer_modes, &mut out.yaws, &mut out.weapons,
                     &mut out.weapon_classes,
                     userinfo_table_id,
                     &mut out.names,
@@ -294,11 +300,14 @@ fn scan_game_payload(
     data: Option<&DataTables>,
     mut world: Option<&mut EntityWorld>,
     last_pos: &mut HashMap<u32, (f32, f32, f32)>,
+    origin_state: &mut HashMap<u32, OriginTracker>,
     last_life: &mut HashMap<u32, u8>,
+    last_obs: &mut HashMap<u32, u8>,
     last_yaw: &mut HashMap<u32, (f32, f32)>,
     last_weapon: &mut HashMap<u32, i32>,
     tracks: &mut HashMap<u32, Vec<(i32, f32, f32, f32)>>,
     life_states: &mut HashMap<u32, Vec<(i32, u8)>>,
+    observer_modes: &mut HashMap<u32, Vec<(i32, u8)>>,
     yaws: &mut HashMap<u32, Vec<(i32, f32, f32)>>,
     weapons: &mut HashMap<u32, Vec<(i32, i32)>>,
     weapon_classes: &mut HashMap<i32, String>,
@@ -485,8 +494,8 @@ fn scan_game_payload(
                             names.join(" "));
                     }
                     if !br.skip(length_bits as u32) { return; }
-                    scrape_player_state(tick, w, dt, last_pos, last_life, last_yaw, last_weapon,
-                        tracks, life_states, yaws, weapons, weapon_classes);
+                    scrape_player_state(tick, w, dt, last_pos, origin_state, last_life, last_obs, last_yaw, last_weapon,
+                        tracks, life_states, observer_modes, yaws, weapons, weapon_classes);
                 } else {
                     if !br.skip(length_bits as u32) { return; }
                 }
@@ -601,16 +610,28 @@ fn apply_userinfo_update(
     }
 }
 
+/// Per-entity bookkeeping for picking the live m_vecOrigin source. `changes[s]`
+/// counts how many times candidate slot `s` (local-exclusive vs non-local copy)
+/// has actually moved; `last[s]` is its previous value for change detection.
+#[derive(Default, Clone)]
+pub struct OriginTracker {
+    last: Vec<Option<(f32, f32, f32)>>,
+    changes: Vec<u32>,
+}
+
 fn scrape_player_state(
     tick: i32,
     world: &EntityWorld,
     data: &DataTables,
     last_pos: &mut HashMap<u32, (f32, f32, f32)>,
+    origin_state: &mut HashMap<u32, OriginTracker>,
     last_life: &mut HashMap<u32, u8>,
+    last_obs: &mut HashMap<u32, u8>,
     last_yaw: &mut HashMap<u32, (f32, f32)>,
     last_weapon: &mut HashMap<u32, i32>,
     tracks: &mut HashMap<u32, Vec<(i32, f32, f32, f32)>>,
     life_states: &mut HashMap<u32, Vec<(i32, u8)>>,
+    observer_modes: &mut HashMap<u32, Vec<(i32, u8)>>,
     yaws: &mut HashMap<u32, Vec<(i32, f32, f32)>>,
     weapons: &mut HashMap<u32, Vec<(i32, i32)>>,
     weapon_classes: &mut HashMap<i32, String>,
@@ -632,33 +653,44 @@ fn scrape_player_state(
         // what drives WASD input direction in Source. m_hActiveWeapon points
         // at the entity id of the wielded weapon - we resolve that to a class
         // name on the HTML side.
-        let mut x = None; let mut y = None; let mut z = None;
         let mut life = None;
         let mut yaw = None;
         let mut pitch = None;
         let mut wep_handle = None;
+        // m_iObserverMode: 0 = not spectating; anything else = dead/spectating
+        // (deathcam, chase, roaming, …). While observing, the engine streams
+        // m_vecOrigin as the *spectated* target's position, so the value is
+        // meaningless for this player - the HTML uses this stream to break the
+        // path line and hide the avatar during those windows.
+        let mut obs = None;
+        // A player class carries more than one m_vecOrigin: the local-player-
+        // exclusive copy (DT_LocalPlayerExclusive, earlier in the flat list)
+        // and a non-local copy. The server only streams ONE of them per
+        // entity - the local-exclusive one for the recorder, the non-local
+        // one for everyone else - while the other stays frozen at its baseline
+        // value. We can't tell which is live from a single tick (both are
+        // present), so collect every origin candidate in flat order here and
+        // let the per-entity tracker below pick whichever one is actually
+        // moving. (Blindly taking the first froze all non-local players.)
+        let mut origin_cands: Vec<(Option<f32>, Option<f32>, Option<f32>)> = Vec::new();
         for (i, p) in flat.iter().enumerate() {
             match p.name.as_str() {
-                // A player class can carry more than one m_vecOrigin (e.g. a
-                // live predicted copy plus a stale non-local copy). They sort by
-                // priority, so the authoritative, actively-updated one comes
-                // first in the flat list - take the first match and never let a
-                // later (stale) duplicate overwrite it.
                 "m_vecOrigin" => {
-                    if x.is_none() {
-                        if let Some(v) = state.props.get(&i) {
-                            if let Some((vx, vy)) = v.as_vector_xy() {
-                                x = Some(vx); y = Some(vy);
-                            } else if let Some((vx, vy, vz)) = v.as_vector() {
-                                x = Some(vx); y = Some(vy); z = Some(vz);
-                            }
+                    let mut c = (None, None, None);
+                    if let Some(v) = state.props.get(&i) {
+                        if let Some((vx, vy)) = v.as_vector_xy() {
+                            c.0 = Some(vx); c.1 = Some(vy);
+                        } else if let Some((vx, vy, vz)) = v.as_vector() {
+                            c = (Some(vx), Some(vy), Some(vz));
                         }
                     }
+                    origin_cands.push(c);
                 }
                 "m_vecOrigin[2]" => {
-                    if z.is_none() {
-                        if let Some(v) = state.props.get(&i) {
-                            if let Some(f) = v.as_f32() { z = Some(f); }
+                    // Pairs with the most recent m_vecOrigin (10↔11, 14↔15, …).
+                    if let Some(v) = state.props.get(&i) {
+                        if let Some(f) = v.as_f32() {
+                            if let Some(last) = origin_cands.last_mut() { last.2 = Some(f); }
                         }
                     }
                 }
@@ -680,6 +712,11 @@ fn scrape_player_state(
                         if let Some(f) = v.as_f32() { pitch = Some(f); }
                     }
                 }
+                "m_iObserverMode" => {
+                    if let Some(v) = state.props.get(&i) {
+                        if let Some(n) = v.as_i64() { obs = Some(n as u8); }
+                    }
+                }
                 "m_hActiveWeapon" => {
                     if let Some(v) = state.props.get(&i) {
                         if let Some(n) = v.as_i64() {
@@ -694,6 +731,39 @@ fn scrape_player_state(
         }
 
         let eid_u = eid as u32;
+
+        // Pick the live origin source for this entity. We score each candidate
+        // slot by how many times its value has changed so far; the server only
+        // keeps one slot moving, so it pulls ahead within a few ticks and the
+        // argmax locks onto it. (The first time a slot is seen doesn't count as
+        // a change, so a baseline-only copy stays at zero and never wins.) On a
+        // tie - including the very first tick, where both copies share the
+        // baseline value - we prefer the earliest slot, matching the old
+        // local-player behaviour.
+        let tracker = origin_state.entry(eid_u).or_default();
+        if tracker.last.len() < origin_cands.len() {
+            tracker.last.resize(origin_cands.len(), None);
+            tracker.changes.resize(origin_cands.len(), 0);
+        }
+        for (s, c) in origin_cands.iter().enumerate() {
+            if let (Some(cx), Some(cy)) = (c.0, c.1) {
+                let cz = c.2.unwrap_or(0.0);
+                let moved = tracker.last[s].map_or(false, |(lx, ly, lz): (f32, f32, f32)| {
+                    (lx - cx).abs() > 0.01 || (ly - cy).abs() > 0.01 || (lz - cz).abs() > 0.01
+                });
+                if moved { tracker.changes[s] += 1; }
+                tracker.last[s] = Some((cx, cy, cz));
+            }
+        }
+        let mut best = 0usize;
+        for s in 1..tracker.changes.len() {
+            if tracker.changes[s] > tracker.changes[best] { best = s; }
+        }
+        let (x, y, z) = match origin_cands.get(best) {
+            Some(&(cx, cy, cz)) => (cx, cy, cz),
+            None => (None, None, None),
+        };
+
         let pos = last_pos.entry(eid_u).or_insert((0.0, 0.0, 0.0));
         let mut changed = false;
         if let Some(vx) = x { if pos.0 != vx { pos.0 = vx; changed = true; } }
@@ -717,6 +787,15 @@ fn scrape_player_state(
             if last_life.get(&eid_u).copied() != Some(ls) {
                 last_life.insert(eid_u, ls);
                 life_states.entry(eid_u).or_default().push((tick, ls));
+            }
+        }
+
+        // Observer-mode transitions (analogous to life-state). Emitted only on
+        // change so the stream stays tiny.
+        if let Some(om) = obs {
+            if last_obs.get(&eid_u).copied() != Some(om) {
+                last_obs.insert(eid_u, om);
+                observer_modes.entry(eid_u).or_default().push((tick, om));
             }
         }
 
