@@ -6,6 +6,7 @@
 <title>demoscope: __DEMO_NAME__</title>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.js"></script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html, body {
@@ -134,6 +135,7 @@ header h1 {
 }
 .cam-btn:hover { background: #2d333b; }
 .cam-btn.active { background: #1f3a5f; border-color: var(--accent); color: var(--accent); }
+#btn-gif.active { background: #5f1f1f; border-color: #f08080; color: #f08080; }
 /* Stats */
 .stat-row {
   display: flex;
@@ -248,6 +250,23 @@ tr.highlight-row td { background: #1f3a5f; color: var(--text); }
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
 }
+/* Event filter chips */
+.ev-chip {
+  background: var(--grid);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1px 7px;
+  font-size: 10px;
+  cursor: pointer;
+  color: var(--muted);
+  transition: background 0.1s, border-color 0.1s;
+  user-select: none;
+}
+.ev-chip.active {
+  background: #1f3a5f;
+  border-color: var(--accent);
+  color: var(--accent);
+}
 /* Tooltip */
 #tooltip {
   position: fixed;
@@ -274,6 +293,52 @@ tr.highlight-row td { background: #1f3a5f; color: var(--text); }
   border-radius: 3px;
   pointer-events: none;
 }
+/* Minimap */
+#minimap-canvas {
+  position: absolute;
+  bottom: 32px;
+  right: 10px;
+  width: 160px;
+  height: 160px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: rgba(13,17,23,0.82);
+  pointer-events: none;
+  z-index: 10;
+}
+/* Speedometer */
+#speedometer {
+  position: absolute;
+  top: 8px;
+  left: 10px;
+  background: rgba(13,17,23,0.78);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 10px 5px 10px;
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+  z-index: 5;
+  min-width: 96px;
+}
+#speedometer .sp-now {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1;
+}
+#speedometer .sp-unit {
+  font-size: 10px;
+  color: var(--muted);
+  margin-left: 3px;
+  font-weight: 500;
+}
+#speedometer .sp-peak {
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 2px;
+  letter-spacing: 0.02em;
+}
+#speedometer .sp-peak b { color: var(--accent); font-weight: 600; }
 /* Follow/FPS mode indicator */
 #cam-mode-badge {
   position: absolute;
@@ -290,16 +355,75 @@ tr.highlight-row td { background: #1f3a5f; color: var(--text); }
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
+#input-display { position:absolute;bottom:16px;left:16px;pointer-events:none;user-select:none; }
+/* Fire labels - projected from world space each frame, populated by updateFireMarkers */
+#fire-labels { position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;overflow:hidden;z-index:6; }
+.fire-label {
+  position: absolute;
+  background: rgba(0, 30, 10, 0.78);
+  border: 1px solid #00ff88;
+  color: #88ffaa;
+  font-family: 'SF Mono', Menlo, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 3px;
+  white-space: nowrap;
+  transform: translate(-50%, -120%);
+  text-shadow: 0 0 4px rgba(0, 255, 136, 0.55);
+  letter-spacing: 0.04em;
+  pointer-events: none;
+  display: none;
+}
+.ikey { width:30px;height:30px;background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.25);
+  border-radius:4px;color:rgba(255,255,255,.35);font-size:11px;display:flex;align-items:center;
+  justify-content:center;font-family:monospace;font-weight:bold;transition:background .06s,color .06s; }
+.ikey.on { background:rgba(255,255,255,.28);color:#fff;border-color:rgba(255,255,255,.75); }
+#chat-log { max-height:180px;overflow-y:auto;font-size:11px;font-family:'SF Mono',Menlo,Consolas,monospace; }
+#chat-log div { padding:3px 0;border-bottom:1px solid #1e2830;cursor:pointer;line-height:1.4; }
+#chat-log div:hover { background:rgba(255,255,255,.04); }
+#chat-log div.is-current { background:rgba(88,166,255,.15);border-left:2px solid var(--accent);padding-left:4px; }
+.con-chip { padding:1px 5px;border:1px solid var(--border);border-radius:9px;cursor:pointer;user-select:none;color:var(--muted); }
+.con-chip.on { background:var(--accent);color:#0d1117;border-color:var(--accent); }
+#console-overlay {
+  position:fixed;inset:0;background:rgba(13,17,23,0.93);z-index:50;display:none;
+  flex-direction:column;padding:24px 32px;box-sizing:border-box;
+}
+#console-overlay.open { display:flex; }
+#console-overlay .con-head { display:flex;align-items:center;gap:12px;margin-bottom:10px;color:var(--fg);font-size:13px; }
+#console-overlay .con-title { font-weight:700;letter-spacing:.04em; }
+#console-overlay .con-body {
+  flex:1;overflow-y:auto;background:#0d1117;border:1px solid var(--border);border-radius:6px;
+  padding:10px 14px;font-family:'SF Mono',Menlo,Consolas,monospace;font-size:12px;line-height:1.5;
+}
+#console-overlay .con-body div { padding:2px 0;cursor:pointer; }
+#console-overlay .con-body div:hover { background:rgba(255,255,255,.05); }
+#console-overlay .con-body div.is-current { background:rgba(88,166,255,.18);border-left:2px solid var(--accent);padding-left:6px; }
 </style>
 </head>
 <body>
 <div id="tooltip"></div>
+<div id="console-overlay">
+  <div class="con-head">
+    <span class="con-title">Console</span>
+    <span id="console-overlay-count" style="color:var(--muted);font-size:11px"></span>
+    <span id="console-overlay-filters" style="display:flex;flex-wrap:wrap;gap:4px;font-size:10px"></span>
+    <span style="flex:1"></span>
+    <span style="color:var(--muted);font-size:10px">Click a line to seek · Esc to close</span>
+    <button class="cam-btn" onclick="toggleConsoleOverlay()" style="padding:2px 10px">Close</button>
+  </div>
+  <div class="con-body" id="console-overlay-body"></div>
+</div>
 
 <header>
   <h1>demoscope &mdash; <span>__DEMO_NAME__</span></h1>
   <div class="meta-tag">Map: <span id="m-map">-</span></div>
+  <div class="meta-tag">Game: <span id="m-game">-</span></div>
   <div class="meta-tag">Client: <span id="m-client">-</span></div>
+  <div class="meta-tag" title="Server hostname recorded in the demo header">Server: <span id="m-server">-</span></div>
   <div class="meta-tag">Duration: <span id="m-dur">-</span></div>
+  <div class="meta-tag">Tickrate: <span id="m-tick">-</span></div>
+  <div class="meta-tag">Proto: <span id="m-proto">-</span></div>
   <div class="meta-tag">Usercmds: <span id="m-cmds">-</span></div>
   <div class="meta-tag">Lives: <span id="m-lives" style="color:var(--accent)">-</span></div>
   <div class="meta-tag">Deaths: <span id="m-deaths" style="color:var(--death)">-</span></div>
@@ -311,9 +435,21 @@ tr.highlight-row td { background: #1f3a5f; color: var(--text); }
   <div class="sidebar">
     <div class="sidebar-section">
       <div class="section-title" id="lives-toggle" onclick="toggleLivesPanel()" style="cursor:pointer;user-select:none;display:flex;justify-content:space-between;align-items:center">
-        <span>Lives</span><span id="lives-chevron" style="font-size:10px;opacity:0.6">&#9660;</span>
+        <span id="lives-title">Lives</span><span id="lives-chevron" style="font-size:10px;opacity:0.6">&#9660;</span>
       </div>
       <div class="life-list" id="life-list"></div>
+      <div id="mp-lives-meta" style="font-size:10px;color:var(--muted);margin-top:5px;display:none"></div>
+    </div>
+    <div class="sidebar-section" id="chat-panel" style="display:none">
+      <div class="section-title" style="display:flex;justify-content:space-between;align-items:center">
+        <span>Console</span>
+        <span style="display:flex;gap:6px">
+          <span id="console-count" style="font-size:10px;color:var(--muted)">0</span>
+          <button class="cam-btn" id="btn-console-expand" onclick="toggleConsoleOverlay()" style="padding:1px 6px;font-size:10px" title="Open full console">⛶</button>
+        </span>
+      </div>
+      <div id="console-filters" style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:4px;font-size:10px"></div>
+      <div id="chat-log"></div>
     </div>
     <div class="sidebar-section">
       <div class="section-title">Playback</div>
@@ -341,7 +477,38 @@ tr.highlight-row td { background: #1f3a5f; color: var(--text); }
       </div>
       <div class="btn-group">
         <button class="cam-btn" onclick="resetCamera()">Reset View</button>
+        <button class="cam-btn" id="btn-gif" onclick="toggleGifRecord()" title="Record an animated GIF of the live scene">Record GIF</button>
+        <button class="cam-btn" id="btn-vid" onclick="toggleVideoRecord()" title="Record an MP4/WebM video (higher quality than GIF)">Record Video</button>
       </div>
+      <div class="btn-group">
+        <button class="cam-btn" id="btn-routes" onclick="toggleRoutes()">Routes ✓</button>
+        <button class="cam-btn" id="btn-heatmap" onclick="toggleHeatmap()" title="Show a density heatmap of player positions on the minimap">Heatmap</button>
+        <button class="cam-btn" id="btn-deaths" onclick="toggleDeaths()">Deaths</button>
+        <button class="cam-btn" id="btn-fire" onclick="toggleFire()">Fire ✓</button>
+      </div>
+    </div>
+    <div class="sidebar-section" id="players-panel" style="display:none">
+      <div class="section-title" style="display:flex;justify-content:space-between;align-items:center">
+        <span>Players (multi)</span>
+        <span id="players-count" style="font-size:10px;color:var(--muted)">0</span>
+      </div>
+      <div class="btn-group">
+        <button class="cam-btn" id="btn-mp-all" onclick="toggleAllPlayers(true)">Show all</button>
+        <button class="cam-btn" id="btn-mp-none" onclick="toggleAllPlayers(false)">Hide all</button>
+        <button class="cam-btn active" id="btn-mp-specs" onclick="toggleSpecs()" title="Hide non-primary entities that have fewer than 3 position samples - typically observers, idle bots, or the HLTV camera">Hide specs ✓</button>
+      </div>
+      <div id="players-list" style="display:flex;flex-direction:column;gap:2px;max-height:200px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--border) transparent;margin-top:5px"></div>
+      <div style="font-size:10px;color:var(--muted);margin-top:4px;font-style:italic">Right-click a player to mark them as YOU</div>
+    </div>
+    <div class="sidebar-section" id="rounds-panel" style="display:none">
+      <div class="section-title">Rounds</div>
+      <div class="btn-group">
+        <button class="cam-btn" id="btn-round-prev" onclick="seekRound(-1)" title="Jump to previous round start">&#9664; Prev</button>
+        <button class="cam-btn" id="btn-round-next" onclick="seekRound(1)" title="Jump to next round start">Next &#9654;</button>
+        <button class="cam-btn" id="btn-round-clear" onclick="clearRoundFilter()" title="Show every round">All</button>
+      </div>
+      <div id="round-list" style="display:flex;flex-direction:column;gap:3px;max-height:140px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--border) transparent"></div>
+      <div id="round-status" style="font-size:10px;color:var(--muted);margin-top:5px"></div>
     </div>
     <div class="sidebar-section">
       <div class="section-title">Statistics</div>
@@ -349,6 +516,7 @@ tr.highlight-row td { background: #1f3a5f; color: var(--text); }
     </div>
     <div class="sidebar-section">
       <div class="section-title">Events</div>
+      <div id="ev-filter-chips" style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:5px"></div>
       <div id="event-log">
         <table id="event-table">
           <thead>
@@ -368,7 +536,26 @@ tr.highlight-row td { background: #1f3a5f; color: var(--text); }
   <div class="canvas-area">
     <div id="threejs-container">
       <div id="cam-mode-badge"></div>
+      <div id="fire-labels"></div>
+      <div id="speedometer">
+        <div><span class="sp-now" id="sp-now">0</span><span class="sp-unit">u/s</span></div>
+        <div class="sp-peak">peak <b id="sp-peak">0</b></div>
+      </div>
       <div id="playhead-info"></div>
+      <div id="input-display">
+        <div id="keys-grid">
+          <div style="display:grid;grid-template-columns:repeat(3,30px);gap:3px">
+            <div></div><div class="ikey" id="ik-w">W</div><div></div>
+            <div class="ikey" id="ik-a">A</div><div class="ikey" id="ik-s">S</div><div class="ikey" id="ik-d">D</div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(3,30px);gap:3px;margin-top:3px">
+            <div class="ikey" id="ik-lmb">M1</div><div class="ikey" id="ik-jmp">&#9251;</div><div class="ikey" id="ik-duck">&#8679;</div>
+          </div>
+          <div id="ik-label" style="text-align:center;font-size:9px;color:var(--muted);margin-top:4px;font-family:monospace;letter-spacing:0.04em"></div>
+          <div id="ik-weapon" style="text-align:center;font-size:10px;color:var(--accent);margin-top:2px;font-family:monospace;font-weight:600"></div>
+        </div>
+      </div>
+      <canvas id="minimap-canvas" width="160" height="160"></canvas>
     </div>
 
     <!-- Timeline -->
@@ -393,6 +580,176 @@ const WORLD_POSITIONS = __WORLD_POSITIONS__;
 const BSP_VERTS = __BSP_VERTS__;
 const BSP_IDX   = __BSP_IDX__;
 const BSP_SPAWN = __BSP_SPAWN__;
+// Tick ranges [start, end) where the spectator's view entity switched away from
+// the primary player - positions during these windows belong to a different player
+// and should not be shown as part of the main path.
+const VIEW_SWITCHES = __VIEW_SWITCHES__;
+// Returns true when the recorder is currently spectating someone else (their
+// svc_SetView is pointed at a non-primary entity). Used to hide the
+// recorder's own avatar in that window, since otherwise it sits exactly on
+// top of whoever they're watching. In CS:S the m_lifeState SendProp briefly
+// pulses on every death event but doesn't reliably mark the entire dead +
+// freeze period - VIEW_SWITCHES gives us a much more accurate signal.
+function isRecorderSpeccing(tick) {
+  if (!Array.isArray(VIEW_SWITCHES) || VIEW_SWITCHES.length === 0) return false;
+  for (const [s, e] of VIEW_SWITCHES) {
+    if (tick >= s && tick < e) return true;
+  }
+  return false;
+}
+// Multi-player tracks from tf-demo-parser (only populated when --multi-player
+// was enabled at HTML generation). Shape: { "<entity_id>": [[tick,x,y,z], ...] }
+// On non-TF2 demos this may be empty even with the flag set.
+const ENTITY_TRACKS = __ENTITY_TRACKS__;
+// entity_id → { name, steam_id, is_fake, is_hltv } from the userinfo string table.
+const ENTITY_NAMES = __ENTITY_NAMES__;
+// Entity id of the recorder / POV player, matched by client_name → userinfo.
+// null when --multi-player wasn't used or no match was found.
+const PRIMARY_ENTITY = __PRIMARY_ENTITY__;
+// entity_id → [[tick, lifeState], ...] transitions extracted directly from
+// the engine's DT_BasePlayer::m_lifeState SendProp. 0 = alive, !=0 = dead.
+// This is the authoritative state - player_death/spawn game events sometimes
+// have userid mismatches when slots are reused, so we no longer rely on them.
+const ENTITY_LIFE_STATES = __ENTITY_LIFE_STATES__;
+// entity_id → [[tick, yawDeg], ...] eye-angle yaw stream (Source convention:
+// degrees, +Y world axis = 90°). Drives the local-frame WSAD reconstruction
+// in the input panel for non-recorder primaries.
+const ENTITY_YAWS = __ENTITY_YAWS__;
+// entity_id → [[tick, weaponEntityId], ...] - what weapon each player was
+// holding at every switch. Resolves to a class name via WEAPON_CLASSES.
+const ENTITY_WEAPONS = __ENTITY_WEAPONS__;
+// weaponEntityId → short class name (e.g. "rocketlauncher"). Built once.
+const WEAPON_CLASSES = __WEAPON_CLASSES__;
+
+// Helper: what weapon was player `eid` holding at `tick`?
+function weaponAt(eid, tick) {
+  const list = ENTITY_WEAPONS[eid];
+  if (!list || list.length === 0) return null;
+  if (tick <= list[0][0]) return WEAPON_CLASSES[list[0][1]] || null;
+  if (tick >= list[list.length - 1][0]) return WEAPON_CLASSES[list[list.length - 1][1]] || null;
+  let lo = 0, hi = list.length - 1;
+  while (lo < hi - 1) {
+    const mid = (lo + hi) >> 1;
+    if (list[mid][0] <= tick) lo = mid; else hi = mid;
+  }
+  return WEAPON_CLASSES[list[lo][1]] || null;
+}
+
+// user_id → entity-row lookup, built once from ENTITY_NAMES. Game events
+// reference players by their engine user_id (an i32 issued at connect time),
+// not their current name - so spawn/death/hurt records need this map to
+// recover a display name and to map death events back to entity slots.
+const userIdToEntity = (() => {
+  const m = new Map();
+  if (typeof ENTITY_NAMES === 'object' && ENTITY_NAMES) {
+    for (const [eid, meta] of Object.entries(ENTITY_NAMES)) {
+      if (meta && typeof meta.user_id === 'number') {
+        m.set(meta.user_id, { eid: String(eid), ...meta });
+      }
+    }
+  }
+  return m;
+})();
+
+// Must be declared before any code that uses it
+const TICK_RATE = META.tick_rate || 66.0;
+
+// ─── proto-4 / entity-only fallback timeline ──────────────────────────────────
+// Some demos (Portal 2 and other proto-4 games) carry no parsed usercmds, so
+// CMDS arrives empty - yet we DID decode a primary entity's position track
+// straight from PacketEntities. Synthesize a CMDS spine + world-position stream
+// from that track so the whole playback/scrub/follow-cam pipeline runs on real
+// data instead of throwing on CMDS[currentCmdIdx]. No-op when usercmds exist
+// (CMDS already populated) or when no usable track was decoded.
+if (CMDS.length === 0) {
+  // Prefer the recorder/POV entity; otherwise fall back to the densest track.
+  let key = (PRIMARY_ENTITY != null) ? String(PRIMARY_ENTITY) : null;
+  if (!key || !(ENTITY_TRACKS[key] && ENTITY_TRACKS[key].length > 1)) {
+    let best = null, bestLen = 1;
+    for (const k in ENTITY_TRACKS) {
+      const t = ENTITY_TRACKS[k];
+      if (t && t.length > bestLen) { best = k; bestLen = t.length; }
+    }
+    key = best;
+  }
+  const track = (key != null) ? ENTITY_TRACKS[key] : null;
+  if (track && track.length > 1) {
+    // ENTITY_YAWS / ENTITY_TRACKS share the raw-world frame WORLD_POSITIONS
+    // expects (interpolateWorldPositions negates y to the internal frame).
+    const yawArr = (key != null && Array.isArray(ENTITY_YAWS[key])) ? ENTITY_YAWS[key] : [];
+    let yi = 0;
+    for (let i = 0; i < track.length; i++) {
+      const tick = track[i][0], x = track[i][1], y = track[i][2], z = track[i][3];
+      while (yi < yawArr.length - 1 && yawArr[yi + 1][0] <= tick) yi++;
+      const yaw = yawArr.length ? yawArr[yi][1] : 0;
+      // ENTITY_YAWS samples are [tick, yaw, pitch]; pitch (look up/down) feeds
+      // the first-person camera. Older demos without pitch leave it undefined.
+      const pitch = yawArr.length ? (yawArr[yi][2] || 0) : 0;
+      CMDS.push([tick, pitch, yaw, 0, 0, 0]);      // [tick, pitch, yaw, fwd, side, btns]
+      WORLD_POSITIONS.push([tick, x, y, z]);
+    }
+  }
+}
+// Threshold (in world units) above which a position jump is treated as a
+// teleport rather than continuous movement. The CLI can override via
+// --jump-threshold N; otherwise we derive it from the demo's own position
+// stream so it scales across tickrates and games.
+//
+// Algorithm: compute 99th-percentile horizontal delta from WORLD_POSITIONS
+// (per-tick recorder eye position), multiply by 2.5. This puts the cutoff
+// comfortably above legitimate fast movement (rocket jumps, sticky jumps,
+// sprinting) while staying well below any real teleport / map switch.
+function deriveJumpThreshold() {
+  if (META.jump_threshold && META.jump_threshold > 0) return META.jump_threshold;
+  if (typeof WORLD_POSITIONS === 'undefined' || WORLD_POSITIONS.length < 100) return 750;
+  const deltas = [];
+  for (let i = 1; i < WORLD_POSITIONS.length; i++) {
+    const dx = WORLD_POSITIONS[i][0] - WORLD_POSITIONS[i-1][0];
+    const dy = WORLD_POSITIONS[i][1] - WORLD_POSITIONS[i-1][1];
+    const dz = WORLD_POSITIONS[i][2] - WORLD_POSITIONS[i-1][2];
+    const d = Math.sqrt(dx*dx + dy*dy + dz*dz);
+    if (d > 0) deltas.push(d);
+  }
+  if (deltas.length < 50) return 750;
+  deltas.sort((a, b) => a - b);
+  const p99 = deltas[Math.floor(deltas.length * 0.99)];
+  // Clamp to a sane range; bare-minimum 250u so we never treat normal sprints
+  // as teleports, capped at 2000u so a pathological demo doesn't disable
+  // line-break detection entirely.
+  return Math.max(250, Math.min(2000, p99 * 2.5));
+}
+const JUMP_THRESHOLD = deriveJumpThreshold();
+const JUMP_THRESHOLD_SQ = JUMP_THRESHOLD * JUMP_THRESHOLD;
+
+// Velocity ceiling (units/sec) above which a sample-to-sample gap is treated
+// as a teleport rather than continuous motion. ~900 u/s comfortably covers
+// rocket-jumps, sticky-jumps and bunny-hops while staying well below
+// instantaneous spawn-jumps (death → respawn typically appears as several
+// thousand u/s when squeezed into a single tick).
+//
+// Using a velocity check instead of a flat distance check is necessary for
+// games like CS:S where per-player position samples are spaced 1-4 seconds
+// apart - a legitimate 500u run across a 2-second gap is *normal* movement
+// but trips a pure-distance threshold designed for the recorder's 66 Hz
+// viewOrigin stream.
+const TELEPORT_VEL = 900;
+const TELEPORT_VEL_SQ = TELEPORT_VEL * TELEPORT_VEL;
+
+// Returns true if a sample-pair (t0,x0,y0,z0)→(t1,x1,y1,z1) represents a
+// teleport rather than continuous movement. Falls back to the legacy
+// distance check when the time delta is zero.
+function isSampleTeleport(t0, x0, y0, z0, t1, x1, y1, z1) {
+  const dx = x1 - x0, dy = y1 - y0, dz = (z1 !== undefined ? z1 - z0 : 0);
+  const distSq = dx*dx + dy*dy + dz*dz;
+  const dtTicks = Math.max(1, t1 - t0);
+  const dtSec = dtTicks / TICK_RATE;
+  const velSq = distSq / (dtSec * dtSec);
+  return velSq > TELEPORT_VEL_SQ;
+}
+// Forward-declared so drawTimeline (called during startup) can safely read
+// them before the rounds setup block initialises them.
+var rounds = [];
+var currentRoundFilter = -1;
 
 // ── BVH for BSP collision ─────────────────────────────────────────────────────
 class BVH {
@@ -493,24 +850,41 @@ class BVH {
 const POSITIONS = new Array(CMDS.length);
 const POSITIONS3D = new Array(CMDS.length);
 {
-  let px = 0, py = 0, pz = 0, vz = 0, onGround = true, prevJump = false;
-  POSITIONS[0] = [0, 0];
-  POSITIONS3D[0] = [0, 0, 0];
+  const WALK_SPEED = 300.0;  // TF2 sv_maxspeed
+  const JUMP_VZ    = 264.0;  // TF2 jump impulse (u/s)
+  const GRAVITY    = 800.0;  // TF2 sv_gravity (u/s²)
+  const CROUCH_SC  = 0.33;   // TF2 crouching speed fraction
+  const spawnX = (BSP_SPAWN && BSP_SPAWN.length >= 3) ? BSP_SPAWN[0] : 0;
+  const spawnY = (BSP_SPAWN && BSP_SPAWN.length >= 3) ? -BSP_SPAWN[1] : 0;
+  const spawnZ = (BSP_SPAWN && BSP_SPAWN.length >= 3) ? BSP_SPAWN[2] : 0;
+  const lifeBreakSet = new Set(LIFE_BREAKS);
+  let px = spawnX, py = spawnY, pz = spawnZ;
+  let vz = 0, onGround = true, prevJump = false;
+  POSITIONS[0]   = [px, -py];
+  POSITIONS3D[0] = [px, -py, pz];
   for (let i = 1; i < CMDS.length; i++) {
+    if (lifeBreakSet.has(i)) {
+      px = spawnX; py = spawnY; pz = spawnZ;
+      vz = 0; onGround = true; prevJump = false;
+    }
     const [tick, , yaw, fwd, side, btns] = CMDS[i];
     const prevTick = CMDS[i-1][0];
-    const dt = Math.min(0.1, Math.max(0, (tick - prevTick) / 66));
+    const dt = Math.min(0.1, Math.max(0, (tick - prevTick) / TICK_RATE));
     const yr = yaw * Math.PI / 180;
-    const sc = (btns & 4) ? 0.66 : 1.0;
+    const duck = !!(btns & 4);
+    const maxSp = duck ? WALK_SPEED * CROUCH_SC : WALK_SPEED;
+    const rawSpd = Math.hypot(fwd, side);
+    const sc = rawSpd > 0 ? Math.min(rawSpd, maxSp) / rawSpd : 0;
     px += (fwd * Math.cos(yr) + side * Math.sin(yr)) * sc * dt;
     py += (fwd * Math.sin(yr) - side * Math.cos(yr)) * sc * dt;
     const jump = !!(btns & 2);
-    if (jump && !prevJump && onGround) { vz = 290; onGround = false; }
-    pz += vz * dt; vz -= 800 * dt;
-    if (pz <= 0) { pz = 0; vz = 0; onGround = true; }
+    if (jump && !prevJump && onGround) { vz = JUMP_VZ; onGround = false; }
+    pz += vz * dt;
+    vz -= GRAVITY * dt;
+    if (pz <= spawnZ) { pz = spawnZ; vz = 0; onGround = true; }
     prevJump = jump;
-    POSITIONS[i] = [px, py];
-    POSITIONS3D[i] = [px, py, pz];
+    POSITIONS[i]   = [px, -py];
+    POSITIONS3D[i] = [px, -py, pz];
   }
 }
 
@@ -518,19 +892,41 @@ const POSITIONS3D = new Array(CMDS.length);
 function interpolateWorldPositions(worldPos, cmds) {
   if (worldPos.length === 0) return null;
   const result = new Array(cmds.length);
+
+  // TF2 max movement speed is ~520 u/s at 66 ticks/sec = ~8 u/tick. A real teleport
+  // covers hundreds/thousands of units in a single tick. Detect by speed, not raw
+  // distance - world-pos samples can be spaced many ticks apart, and a normally
+  // moving player can legitimately cover >750 units between sparse samples.
+  const TELE_SPEED_SQ = 150 * 150; // units/tick, squared - well above sticky/rocket-jump peak velocities
+  const isSnap = new Uint8Array(worldPos.length); // isSnap[i] → jump from i-1→i is a teleport
+  for (let i = 1; i < worldPos.length; i++) {
+    const [t0, x0, y0, z0] = worldPos[i - 1];
+    const [t1, x1, y1, z1] = worldPos[i];
+    const dx = x1 - x0, dy = y1 - y0, dz = z1 - z0;
+    const span = Math.max(1, t1 - t0);
+    if ((dx * dx + dy * dy + dz * dz) / (span * span) > TELE_SPEED_SQ) isSnap[i] = 1;
+  }
+
   let wi = 0;
   for (let ci = 0; ci < cmds.length; ci++) {
     const tick = cmds[ci][0];
     while (wi < worldPos.length - 1 && worldPos[wi + 1][0] <= tick) wi++;
+
+    let pos;
     if (wi >= worldPos.length - 1) {
-      result[ci] = [worldPos[worldPos.length - 1][1], worldPos[worldPos.length - 1][2], worldPos[worldPos.length - 1][3]];
+      const [, wx, wy, wz] = worldPos[worldPos.length - 1];
+      pos = [wx, -wy, wz];
+    } else if (isSnap[wi + 1]) {
+      const [, wx, wy, wz] = worldPos[wi];
+      pos = [wx, -wy, wz];
     } else {
       const [t0, x0, y0, z0] = worldPos[wi];
       const [t1, x1, y1, z1] = worldPos[wi + 1];
       const span = t1 - t0;
       const f = span > 0 ? (tick - t0) / span : 0;
-      result[ci] = [x0 + f * (x1 - x0), y0 + f * (y1 - y0), z0 + f * (z1 - z0)];
+      pos = [x0 + f * (x1 - x0), -(y0 + f * (y1 - y0)), z0 + f * (z1 - z0)];
     }
+    result[ci] = pos;
   }
   return result;
 }
@@ -540,6 +936,25 @@ let finalPositions;
 {
   const worldInterp = interpolateWorldPositions(WORLD_POSITIONS, CMDS);
   finalPositions = (worldInterp && WORLD_POSITIONS.length > 10) ? worldInterp : POSITIONS3D;
+}
+
+// Real per-cmd horizontal speed (u/s) derived from world-position deltas.
+// Teleport gaps (>JUMP_THRESHOLD) are zeroed so they don't poison peaks.
+const REAL_SPEED = new Float32Array(CMDS.length);
+{
+  let peak = 0;
+  for (let i = 1; i < CMDS.length; i++) {
+    const [x0, y0, z0] = finalPositions[i - 1];
+    const [x1, y1, z1] = finalPositions[i];
+    const dx = x1 - x0, dy = y1 - y0, dz = z1 - z0;
+    const distSq = dx * dx + dy * dy + dz * dz;
+    if (distSq > JUMP_THRESHOLD_SQ) { REAL_SPEED[i] = 0; continue; }
+    const dt = Math.max(1, CMDS[i][0] - CMDS[i - 1][0]) / TICK_RATE;
+    const sp = Math.sqrt(dx * dx + dy * dy) / dt; // horizontal u/s
+    REAL_SPEED[i] = sp;
+    if (sp > peak) peak = sp;
+  }
+  REAL_SPEED.peak = peak;
 }
 
 // ─── Life segments ────────────────────────────────────────────────────────────
@@ -556,7 +971,6 @@ const lifeSegments = [];
 }
 
 // ─── Utility ──────────────────────────────────────────────────────────────────
-const TICK_RATE = 66.0;
 function tickToSec(tick) { return tick / TICK_RATE; }
 
 const EV_COLORS = {
@@ -596,16 +1010,26 @@ function findCmdIdx(tick) {
 
 // ─── Header meta ─────────────────────────────────────────────────────────────
 document.getElementById('m-map').textContent    = META.map;
+document.getElementById('m-game').textContent   = META.game || '-';
 document.getElementById('m-client').textContent = META.client;
+document.getElementById('m-server').textContent = META.server || '-';
 document.getElementById('m-dur').textContent    = META.duration.toFixed(1) + 's';
+document.getElementById('m-tick').textContent   = TICK_RATE.toFixed(1) + ' Hz';
+document.getElementById('m-proto').textContent  = 'demo ' + (META.demo_protocol ?? '?');
 document.getElementById('m-cmds').textContent   = META.ncmds.toLocaleString();
 document.getElementById('m-lives').textContent  = lifeSegments.length;
 document.getElementById('m-deaths').textContent = EVENTS.filter(e => e.event === 'player_death').length;
 document.getElementById('m-teles').textContent  = EVENTS.filter(e => e.event === 'player_teleported').length;
 
+// ─── Spectating indicator (toggled per-frame based on key input) ──────────────
+// When no movement keys are pressed the recording player is spectating someone.
+// The indicator is shown/hidden live during playback and timeline scrubbing.
+
 // ─── Three.js scene ───────────────────────────────────────────────────────────
 const container = document.getElementById('threejs-container');
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+// preserveDrawingBuffer keeps the canvas readable for GIF capture; small perf
+// cost on most browsers but required for gif.js to grab pixels reliably.
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
 renderer.setPixelRatio(window.devicePixelRatio);
 renderer.setClearColor(0x0d1117);
 container.appendChild(renderer.domElement);
@@ -625,17 +1049,20 @@ const cy = (minY + maxY) / 2;
 const cz = (minZ + maxZ) / 2;
 const sceneSpan = Math.max(maxX - minX, maxY - minY, maxZ - minZ, 1000);
 
-// Camera initial position — Three.js uses Y-up; TF2 z→Three.js Y, TF2 y→Three.js Z
+// Camera initial position - Three.js uses Y-up; TF2 z→Three.js Y, TF2 y→Three.js Z
 const tcx = cx, tcy = cz, tcz = cy;   // Three.js scene centroid
 camera.position.set(tcx, tcy + sceneSpan * 1.2, tcz + sceneSpan * 1.5);
 camera.lookAt(tcx, tcy, tcz);
 
 // Lighting
-const ambientLight = new THREE.AmbientLight(0x404060, 0.5);
-scene.add(ambientLight);
-const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+const hemiLight = new THREE.HemisphereLight(0x6688bb, 0x443322, 0.55);
+scene.add(hemiLight);
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.7);
 dirLight.position.set(tcx + sceneSpan, tcy + sceneSpan * 2, tcz + sceneSpan);
 scene.add(dirLight);
+const dirLight2 = new THREE.DirectionalLight(0x4466aa, 0.2);
+dirLight2.position.set(tcx - sceneSpan * 0.5, tcy + sceneSpan, tcz - sceneSpan * 0.5);
+scene.add(dirLight2);
 
 // Grid
 const gridSize = Math.max(sceneSpan * 2, 10000);
@@ -651,12 +1078,870 @@ controls.dampingFactor = 0.08;
 controls.screenSpacePanning = true;
 controls.update();
 
-// BSP mesh overlay removed.
+// ─── BSP mesh ────────────────────────────────────────────────────────────────
+if (BSP_VERTS && BSP_IDX && BSP_VERTS.length > 4 && BSP_IDX.length > 4) {
+  try {
+    function b64ToFloat32(b64) {
+      const bin = atob(b64);
+      const buf = new ArrayBuffer(bin.length);
+      const u8  = new Uint8Array(buf);
+      for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+      return new Float32Array(buf);
+    }
+    function b64ToUint32(b64) {
+      const bin = atob(b64);
+      const buf = new ArrayBuffer(bin.length);
+      const u8  = new Uint8Array(buf);
+      for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+      return new Uint32Array(buf);
+    }
+    const bspVerts = b64ToFloat32(BSP_VERTS);
+    const bspIdx   = b64ToUint32(BSP_IDX);
+    if (bspVerts.length >= 3 && bspIdx.length >= 3) {
+      // Source Engine: x,y,z → Three.js: x, z, y  (TF2 z is height)
+      const remapped = new Float32Array(bspVerts.length);
+      for (let i = 0; i < bspVerts.length; i += 3) {
+        remapped[i]     = bspVerts[i];     // x stays x
+        remapped[i + 1] = bspVerts[i + 2]; // TF2 z → Three.js Y (height)
+        remapped[i + 2] = -bspVerts[i + 1]; // TF2 y → Three.js Z (negated to match Source convention)
+      }
+      const bspGeo = new THREE.BufferGeometry();
+      bspGeo.setAttribute('position', new THREE.BufferAttribute(remapped, 3));
+      bspGeo.setIndex(new THREE.BufferAttribute(bspIdx, 1));
+      bspGeo.computeVertexNormals();
+      // Solid BSP faces - Phong gives per-face shading contrast so rooms/walls read clearly
+      const bspMat = new THREE.MeshPhongMaterial({
+        color: 0x8899aa,
+        specular: 0x223344,
+        shininess: 12,
+        side: THREE.DoubleSide,
+        polygonOffset: true,
+        polygonOffsetFactor: 1,
+        polygonOffsetUnits: 1,
+      });
+      scene.add(new THREE.Mesh(bspGeo, bspMat));
+      // Structural edge lines - only draw edges where face angle > 20°, shows room corners clearly
+      const edgesGeo = new THREE.EdgesGeometry(bspGeo, 20);
+      const edgesMat = new THREE.LineBasicMaterial({
+        color: 0xaabbd0,
+        transparent: true,
+        opacity: 0.40,
+      });
+      scene.add(new THREE.LineSegments(edgesGeo, edgesMat));
+      // Faint triangle wireframe for interior surface detail
+      const wireMat = new THREE.MeshBasicMaterial({
+        color: 0x6688aa,
+        wireframe: true,
+        transparent: true,
+        opacity: 0.05,
+      });
+      scene.add(new THREE.Mesh(bspGeo, wireMat));
+    }
+  } catch(e) { console.warn('BSP decode failed', e); }
+}
+
+// ─── Multi-player entity tracks ──────────────────────────────────────────────
+// When --multi-player was enabled, ENTITY_TRACKS contains per-entity sampled
+// position arrays. Each entity gets its own colored Line + live avatar in 3D,
+// plus a dot on the minimap and a sidebar toggle.
+
+// Build alive intervals per entity from the m_lifeState SendProp transitions.
+// Engine-authoritative - no userid/event mismatches to worry about. Each
+// entity's life_state stream is [[tick, state], ...] in chronological order;
+// state == 0 means alive, anything else means dead/dying.
+const mpAliveIntervals = new Map(); // entity_id (string) → [[startTick, endTick], ...]
+{
+  const lastTick = CMDS.length > 0 ? CMDS[CMDS.length - 1][0] : 0;
+  for (const eid of Object.keys(ENTITY_TRACKS)) {
+    const transitions = ENTITY_LIFE_STATES[eid] || [];
+    const intervals = [];
+
+    if (transitions.length === 0) {
+      // No life-state info - fall back to "always alive". Happens on
+      // non-TF2 demos where the prop isn't sent on the player class.
+      intervals.push([0, lastTick + 1]);
+      mpAliveIntervals.set(eid, intervals);
+      continue;
+    }
+
+    // If the first transition is to alive, the entity was dead before that
+    // (just-joined / round-not-yet-started). If first is dead, entity was
+    // also dead before, so either way pre-first-transition is excluded.
+    let aliveSince = null;
+    for (const [t, state] of transitions) {
+      if (state === 0) {
+        // Becoming alive
+        if (aliveSince === null) aliveSince = t;
+      } else {
+        // Becoming dead
+        if (aliveSince !== null) {
+          intervals.push([aliveSince, t]);
+          aliveSince = null;
+        }
+      }
+    }
+    if (aliveSince !== null) intervals.push([aliveSince, lastTick + 1]);
+
+    // Coalesce sub-second dead gaps. CS:S and friends occasionally pulse
+    // m_lifeState to "dying" briefly (e.g. on hit-flinch, knife arena, or
+    // weapon-drop events) without the player actually dying - left raw they
+    // look like the avatar flickers off and back on. Anything shorter than
+    // FLICKER_TICKS between two alive intervals is treated as not-a-death
+    // and merged with the surrounding alive interval. Real death/respawn
+    // cycles take ≥ 1 second in every Source 1 game so the threshold is
+    // conservative.
+    const FLICKER_TICKS = Math.round(TICK_RATE * 0.6);
+    if (intervals.length > 1) {
+      const merged = [intervals[0]];
+      for (let i = 1; i < intervals.length; i++) {
+        const [s, e] = intervals[i];
+        const prev = merged[merged.length - 1];
+        const gap = s - prev[1];
+        if (gap > 0 && gap < FLICKER_TICKS) {
+          prev[1] = e; // swallow the brief dead window
+        } else {
+          merged.push([s, e]);
+        }
+      }
+      intervals.length = 0;
+      for (const iv of merged) intervals.push(iv);
+    }
+
+    mpAliveIntervals.set(eid, intervals);
+  }
+
+  // Augment with EVENTS player_death - the m_lifeState SendProp sometimes
+  // doesn't fire on every death (e.g. when the engine batches the corpse
+  // update into the next big delta), but player_death game events always
+  // do. For each death event with a known victim userid we map back to the
+  // entity and split the containing alive interval at that tick.
+  if (typeof userIdToEntity !== 'undefined' && typeof EVENTS !== 'undefined') {
+    for (const ev of EVENTS) {
+      if (ev.event !== 'player_death') continue;
+      const victimUid = ev.userid ?? ev.victim;
+      if (typeof victimUid !== 'number') continue;
+      const meta = userIdToEntity.get(victimUid);
+      if (!meta) continue;
+      const eid = String(meta.eid);
+      const intervals = mpAliveIntervals.get(eid);
+      if (!intervals) continue;
+      const t = ev.tick;
+      // Find the interval containing this tick and split it. The post-death
+      // half is dropped - we'll let the next lifeState=alive transition (or
+      // next player_spawn) re-open it. Falling through to find means no
+      // matching interval (the entity was already dead via lifeState) → no-op.
+      for (let i = 0; i < intervals.length; i++) {
+        const [s, e] = intervals[i];
+        if (t >= s && t < e) {
+          intervals[i] = [s, t];
+          break;
+        }
+      }
+    }
+  }
+
+  // Same idea for player_spawn - re-open an alive interval at the spawn tick
+  // when the lifeState prop didn't catch it.
+  if (typeof userIdToEntity !== 'undefined' && typeof EVENTS !== 'undefined') {
+    for (const ev of EVENTS) {
+      if (ev.event !== 'player_spawn') continue;
+      const uid = ev.userid;
+      if (typeof uid !== 'number') continue;
+      const meta = userIdToEntity.get(uid);
+      if (!meta) continue;
+      const eid = String(meta.eid);
+      const intervals = mpAliveIntervals.get(eid);
+      if (!intervals) continue;
+      const t = ev.tick;
+      // If the tick already falls inside an alive interval, no work to do.
+      let already = false;
+      for (const [s, e] of intervals) { if (t >= s && t < e) { already = true; break; } }
+      if (already) continue;
+      // Otherwise insert a small interval starting at the spawn tick. End it
+      // at the next existing alive-interval start, or lastTick+1.
+      let endAt = lastTick + 1;
+      for (const [s] of intervals) { if (s > t) { endAt = s; break; } }
+      intervals.push([t, endAt]);
+      intervals.sort((a, b) => a[0] - b[0]);
+    }
+  }
+}
+
+function mpIsAliveAt(eid, tick) {
+  const ivs = mpAliveIntervals.get(eid);
+  if (!ivs || ivs.length === 0) return true; // no info → assume alive
+  for (const [s, e] of ivs) {
+    if (tick >= s && tick < e) return true;
+  }
+  return false;
+}
+
+// Render the Lives panel as the primary entity's life intervals. Each life
+// gets one row with duration + click-to-seek. Updates when primary changes.
+function refreshMpLives() {
+  const list = document.getElementById('life-list');
+  const title = document.getElementById('lives-title');
+  const meta = document.getElementById('mp-lives-meta');
+  if (!list || !title) return;
+  list.innerHTML = '';
+
+  if (!currentPrimaryEid) {
+    title.textContent = 'Lives';
+    if (meta) { meta.style.display = 'none'; }
+    return;
+  }
+  const ivs = mpAliveIntervals.get(currentPrimaryEid) || [];
+  const ent = mpEntities.find(e => e.eid === currentPrimaryEid);
+  const playerName = ent ? ent.name : `Entity ${currentPrimaryEid}`;
+  title.textContent = `Lives - ${playerName}`;
+
+  if (ivs.length === 0) {
+    list.innerHTML = '<div style="font-size:11px;color:var(--muted);font-style:italic">No lives recorded</div>';
+    if (meta) { meta.style.display = 'none'; }
+    return;
+  }
+
+  ivs.forEach((iv, idx) => {
+    const [s, e] = iv;
+    const durSec = ((e - s) / TICK_RATE).toFixed(1);
+    const startSec = tickToSec(s).toFixed(1);
+    const hue = ent ? ent.hue : (idx * 47) % 360;
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:6px;padding:3px 5px;border-radius:4px;cursor:pointer;font-size:11px';
+    row.innerHTML = `
+      <span style="width:8px;height:8px;border-radius:50%;background:hsl(${hue}, 65%, 55%);flex-shrink:0"></span>
+      <span style="flex:1">Life ${idx + 1} <span style="color:var(--muted)">@${startSec}s</span></span>
+      <span style="color:var(--muted)">${durSec}s</span>
+    `;
+    row.addEventListener('mouseenter', () => row.style.background = 'var(--grid)');
+    row.addEventListener('mouseleave', () => row.style.background = '');
+    row.addEventListener('click', () => updatePlayhead(findCmdIdx(s)));
+    list.appendChild(row);
+  });
+
+  // Totals: count of lives + cumulative time alive
+  const total = ivs.reduce((sum, [s, e]) => sum + (e - s), 0);
+  if (meta) {
+    meta.style.display = '';
+    meta.textContent = `${ivs.length} life${ivs.length === 1 ? '' : 's'} · ${(total / TICK_RATE).toFixed(1)}s total alive`;
+  }
+}
+
+// Hard-prune: drop samples that fall outside an entity's alive intervals.
+// The engine ships m_vecOrigin updates for dead players (teleporting them
+// onto whoever the spectator is watching), and filtering at the sample
+// level keeps no rendering path from picking those up.
+//
+// Skipped for sparse-sample entities (≤ 2 samples) - their position data
+// is too thin to filter without erasing it entirely. Spectators with a
+// single tick-0 sample fall into this case.
+for (const [eid, samples] of Object.entries(ENTITY_TRACKS)) {
+  const ivs = mpAliveIntervals.get(eid);
+  if (!ivs || ivs.length === 0) continue;
+  if (samples.length <= 2) continue;
+  ENTITY_TRACKS[eid] = samples.filter(s => {
+    const t = s[0];
+    for (const [is, ie] of ivs) {
+      if (t >= is && t < ie) return true;
+    }
+    return false;
+  });
+}
+
+const mpEntities = []; // [{ eid, name, color, samples, pathGroup, avatar, label }]
+{
+  const entityIds = Object.keys(ENTITY_TRACKS);
+  if (entityIds.length > 0) {
+    const panel = document.getElementById('players-panel');
+    const list  = document.getElementById('players-list');
+    panel.style.display = '';
+    document.getElementById('players-count').textContent = entityIds.length;
+
+    // Sort entities numerically.
+    entityIds.sort((a, b) => +a - +b);
+
+    // When multi-player tracks are present, hide the redundant life-line path
+    // (built from democmdinfo.viewOrigin = spectator's view target). The
+    // life-line objects are created further down in this script, so we defer
+    // the actual hide via this flag - applied just before the render loop.
+    window._mpHideLifePaths = true;
+
+    // Shared geometries / materials for avatars
+    const avatarGeom = new THREE.BoxGeometry(20, 72, 20);
+    const labelContainer = document.getElementById('fire-labels'); // reuse overlay container
+
+    for (const eid of entityIds) {
+      const samples = ENTITY_TRACKS[eid] || [];
+      // Skip only truly empty + unnamed entities. Named players with sparse
+      // tracks (e.g. spectators with 0–1 samples) still get a sidebar row.
+      const meta = ENTITY_NAMES[eid] || {};
+      const displayName = meta.name || `Entity ${eid}`;
+      if (samples.length < 1 && !meta.name) continue;
+
+      // Stable color: hash entity id into a hue
+      const hue = (parseInt(eid, 10) * 73 + 19) % 360;
+      const color = new THREE.Color().setHSL(hue / 360, 0.65, 0.55);
+
+      // ── Path line (with teleport-break runs + alive filter) ──
+      const pathGroup = new THREE.Group();
+      const lineMat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.55 });
+      const runs = [];
+      let runStart = 0;
+      // Sparse-sample entities (e.g. spectator/recorder with 0–1 m_vecOrigin
+      // updates) don't have per-tick samples to draw, so fall back to
+      // finalPositions - the camera trajectory - which IS where they actually
+      // were. Path is drawn as a single jump-broken run.
+      if (samples.length < 2 && typeof finalPositions !== 'undefined' && finalPositions.length >= 2) {
+        const fp = finalPositions;
+        const segs = [];
+        let segStart = 0;
+        for (let j = 1; j < fp.length; j++) {
+          const [ax, ay, az] = fp[j - 1];
+          const [bx, by, bz] = fp[j];
+          const dx = bx - ax, dy = by - ay, dz = bz - az;
+          if (dx*dx + dy*dy + dz*dz > JUMP_THRESHOLD_SQ * 4) {
+            if (j - segStart >= 2) segs.push([segStart, j - 1]);
+            segStart = j;
+          }
+        }
+        if (fp.length - segStart >= 2) segs.push([segStart, fp.length - 1]);
+        for (const [s, e2] of segs) {
+          const len = e2 - s + 1;
+          const pos = new Float32Array(len * 3);
+          for (let j = 0; j < len; j++) {
+            const [x, ny, z] = fp[s + j]; // finalPositions stores [x, -y, z]
+            pos[j * 3]     = x;
+            pos[j * 3 + 1] = z;
+            pos[j * 3 + 2] = ny; // already -y in tf2 space
+          }
+          const geom = new THREE.BufferGeometry();
+          geom.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+          pathGroup.add(new THREE.Line(geom, lineMat));
+        }
+      } else if (samples.length >= 2) {
+      let runAlive = mpIsAliveAt(eid, samples[0][0]);
+      for (let j = 1; j < samples.length; j++) {
+        const [t0, ax, ay, az] = samples[j - 1];
+        const [t1, bx, by, bz] = samples[j];
+        // Velocity-based teleport check (per-player samples may be 1-4s
+        // apart in slow-tick games like CS:S, so a flat distance threshold
+        // would treat normal running as a teleport).
+        const jumped = isSampleTeleport(t0, ax, ay, az, t1, bx, by, bz);
+        const aliveNow = mpIsAliveAt(eid, t1);
+        if (jumped || aliveNow !== runAlive) {
+          if (runAlive) runs.push([runStart, j - 1]);
+          runStart = j;
+          runAlive = aliveNow;
+        }
+      }
+      if (runAlive) runs.push([runStart, samples.length - 1]);
+      for (const [s, e] of runs) {
+        const len = e - s + 1;
+        if (len < 2) continue;
+        const pos = new Float32Array(len * 3);
+        for (let j = 0; j < len; j++) {
+          const [, x, y, z] = samples[s + j];
+          pos[j * 3]     = x;
+          pos[j * 3 + 1] = z;       // TF2 z → Three.js Y (height)
+          pos[j * 3 + 2] = -y;      // TF2 y → Three.js Z (flip)
+        }
+        const geom = new THREE.BufferGeometry();
+        geom.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+        pathGroup.add(new THREE.Line(geom, lineMat));
+      }
+      } // end if samples.length >= 2
+      pathGroup.visible = false;
+      scene.add(pathGroup);
+
+      // ── Live avatar (just the box - primary tinted blue) ──
+      const isPrimaryInit = (PRIMARY_ENTITY != null && +eid === +PRIMARY_ENTITY);
+      const avatarGroup = new THREE.Group();
+      // Use MeshBasicMaterial so the avatar is visible without scene lighting.
+      const avatarMat = new THREE.MeshBasicMaterial({
+        color: isPrimaryInit ? 0x58a6ff : color,
+        transparent: true, opacity: 0.95,
+      });
+      const avatarBox = new THREE.Mesh(avatarGeom, avatarMat);
+      avatarGroup.add(avatarBox);
+      const avatar = avatarGroup;
+      avatar.visible = false;
+      scene.add(avatar);
+
+      // ── HTML name label projected from world space each frame ──
+      const label = document.createElement('div');
+      label.className = 'mp-name-label';
+      label.style.cssText =
+        'position:absolute;pointer-events:none;display:none;transform:translate(-50%,-100%);'
+        + `font-family:'SF Mono',Menlo,monospace;font-size:10px;font-weight:600;`
+        + `padding:1px 5px;border-radius:3px;white-space:nowrap;letter-spacing:0.03em;`
+        + `background:rgba(0,0,0,0.6);border:1px solid hsl(${hue},65%,55%);`
+        + `color:hsl(${hue},80%,80%);text-shadow:0 0 4px rgba(0,0,0,0.9);z-index:7;`;
+      label.textContent = displayName;
+      labelContainer.appendChild(label);
+
+      // Track per-entity flags. `enabled` controls avatar+minimap+label and
+      // sidebar checkbox state. pathGroup.visible is governed jointly by
+      // `enabled` AND the global routesVisible (Routes button only toggles
+      // path-line geometry, not the player itself).
+      mpEntities.push({
+        eid, samples, color, hue,
+        name: displayName, meta,
+        pathGroup, avatar, label,
+        enabled: false, // set below
+      });
+
+      const isPrimary = (PRIMARY_ENTITY != null && +eid === +PRIMARY_ENTITY);
+      const hasName = !!(meta.name && !/^\d+$/.test(meta.name));
+      const startEnabled = hasName;
+      const nameSuffix = meta.is_fake ? ' (bot)' : (meta.is_hltv ? ' (STV)' : '');
+      // If this slot was renamed mid-demo (or someone reconnected into it),
+      // surface the prior aliases in the tooltip so it's clear who's who.
+      const priorAliases = Array.isArray(meta.aliases)
+        ? meta.aliases.filter(a => a !== meta.name)
+        : [];
+      const aliasTitle = priorAliases.length ? ` · was: ${priorAliases.join(', ')}` : '';
+
+      // Lives count from m_lifeState transitions (the actual gameplay metric,
+      // unlike raw position-sample count which is just network chatter).
+      const livesCount = (mpAliveIntervals.get(eid) || []).length;
+      const trailingLabel = livesCount > 0
+        ? `${livesCount} ${livesCount === 1 ? 'life' : 'lives'}`
+        : `${samples.length} sample${samples.length === 1 ? '' : 's'}`;
+
+      const row = document.createElement('div');
+      row.className = 'life-item';
+      row.dataset.eid = eid;
+      row.style.userSelect = 'none';
+      if (isPrimary) {
+        row.style.background = 'rgba(88, 166, 255, 0.12)';
+        row.style.borderLeft = '3px solid var(--accent)';
+        row.style.paddingLeft = '4px';
+      }
+      row.innerHTML = `
+        <input type="checkbox" data-eid="${eid}" ${startEnabled ? 'checked' : ''} style="pointer-events:auto">
+        <span class="life-color" style="background:hsl(${hue}, 65%, 55%)"></span>
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis" title="${displayName}${nameSuffix}${aliasTitle} · ${trailingLabel} · right-click to set as YOU">${displayName}${nameSuffix}<span class="mp-you-tag" data-eid="${eid}" style="color:var(--accent);font-size:10px;font-weight:700;margin-left:5px;display:${isPrimary?'inline':'none'}">YOU</span>${priorAliases.length ? `<span style="color:var(--muted);font-size:10px;font-style:italic;margin-left:6px;font-weight:400">was ${priorAliases.map(a => a.replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))).join(', ')}</span>` : ''}</span>
+        <span style="color:var(--muted);font-size:10px">${trailingLabel}</span>
+      `;
+      const cb = row.querySelector('input[type=checkbox]');
+      cb.addEventListener('change', () => toggleMpPlayer(eid, cb.checked));
+      // The hue swatch is a click-target for a colour override. Native
+      // <input type="color"> spawns the OS picker - we wire change → update
+      // the entity's hue everywhere (path, avatar, label, minimap, console).
+      const swatch = row.querySelector('.life-color');
+      if (swatch) {
+        swatch.style.cursor = 'pointer';
+        swatch.title = 'Click to change colour';
+        swatch.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          openColourPicker(eid);
+        });
+      }
+      // Right-click anywhere on the row sets primary. preventDefault stops the
+      // context menu; we explicitly don't touch the checkbox state.
+      row.addEventListener('contextmenu', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        setPrimaryEntity(eid);
+      });
+      // Block the auxclick that some browsers fire for right-button on focusable elements
+      row.addEventListener('auxclick', (ev) => { if (ev.button === 2) { ev.preventDefault(); ev.stopPropagation(); } });
+      list.appendChild(row);
+
+      // Apply initial enabled state. pathGroup defaults to !visible, so
+      // enable it only when startEnabled = true.
+      const lastEnt = mpEntities[mpEntities.length - 1];
+      lastEnt.enabled = startEnabled;
+      lastEnt.pathGroup.visible = startEnabled;
+    }
+  }
+  // Apply the default `hideSpecsActive = true` to path-lines and sidebar
+  // dimming after all entities are registered. Deferred via a microtask so
+  // every `let`-declared piece of state the refresh touches (deathsVisible,
+  // mpDeathMarkersGroup, routesVisible, etc.) has been initialized - those
+  // declarations live further down in source order, and reaching into them
+  // synchronously during init was a whack-a-mole of TDZ errors.
+  if (typeof queueMicrotask === 'function') {
+    queueMicrotask(() => {
+      if (typeof refreshSpecVisibility === 'function') refreshSpecVisibility();
+    });
+  } else {
+    setTimeout(() => {
+      if (typeof refreshSpecVisibility === 'function') refreshSpecVisibility();
+    }, 0);
+  }
+}
+
+// Mutable primary id - starts as the auto-detected one, can be reassigned
+// from the sidebar via right-click. The minimap and avatar code reads this
+// instead of the const PRIMARY_ENTITY.
+let currentPrimaryEid = PRIMARY_ENTITY != null ? String(PRIMARY_ENTITY) : null;
+
+// Single source of truth for "is multi-player mode active?". Used to short
+// circuit the legacy POV path/avatar/death/teleport rendering - none of
+// that geometry is built when multi-player has real data.
+const MP_ACTIVE = (typeof mpEntities !== 'undefined') && mpEntities.length > 0;
+
+// Resolve the primary entity's interpolated world position at a given tick.
+// Returns null if the entity isn't alive at that tick or has no track.
+function mpPrimaryPositionAt(tick) {
+  if (!MP_ACTIVE || currentPrimaryEid == null) return null;
+  const e = mpEntities.find(x => x.eid === currentPrimaryEid);
+  if (!e) return null;
+  // Sparse-sample primaries (spectator/recorder) → use the camera trajectory
+  // so Follow camera tracks the user instead of their stuck spawn coord.
+  // Look up the cmdIdx for `tick` directly instead of using the global
+  // currentCmdIdx - historical callers (fire markers, death markers) need
+  // the position at a specific past tick, not the current playhead.
+  if (e.samples.length < 3 && typeof finalPositions !== 'undefined' && finalPositions.length > 0) {
+    const idx = (typeof findCmdIdx === 'function')
+      ? Math.max(0, Math.min(findCmdIdx(tick), finalPositions.length - 1))
+      : Math.max(0, Math.min(currentCmdIdx | 0, finalPositions.length - 1));
+    const fp = finalPositions[idx];
+    return { x: fp[0], y: -fp[1], z: fp[2] };
+  }
+  if (!mpIsAliveAt(e.eid, tick)) return null;
+  const s = mpSampleAt(e.samples, tick);
+  if (!s) return null;
+  return { x: s[1], y: s[2], z: s[3] };
+}
+function setPrimaryEntity(eid) {
+  currentPrimaryEid = String(eid);
+  // Update YOU tags
+  document.querySelectorAll('.mp-you-tag').forEach(el => {
+    el.style.display = (el.dataset.eid === currentPrimaryEid) ? 'inline' : 'none';
+  });
+  // Update primary highlight on sidebar rows
+  document.querySelectorAll('#players-list [data-eid]').forEach(r => {
+    if (r.dataset.eid === currentPrimaryEid) {
+      r.style.background = 'rgba(88, 166, 255, 0.12)';
+      r.style.borderLeft = '3px solid var(--accent)';
+      r.style.paddingLeft = '4px';
+    } else {
+      r.style.background = '';
+      r.style.borderLeft = '';
+      r.style.paddingLeft = '';
+    }
+  });
+  // Auto-enable the new primary
+  const entity = mpEntities.find(e => e.eid === currentPrimaryEid);
+  if (entity && !entity.enabled) {
+    toggleMpPlayer(currentPrimaryEid, true);
+    const cb = document.querySelector(`#players-list div[data-eid="${currentPrimaryEid}"] input[type=checkbox]`);
+    if (cb) cb.checked = true;
+  }
+  refreshMpLives();
+  // Spec status depends on whether eid === currentPrimaryEid, so a primary
+  // change can reveal or re-hide sparse-sample rows.
+  if (typeof refreshSpecVisibility === 'function') refreshSpecVisibility();
+  if (typeof rebuildMpDeathMarkers === 'function') rebuildMpDeathMarkers();
+  // Header metadata
+  const lives = (mpAliveIntervals.get(currentPrimaryEid) || []).length;
+  const lives_el = document.getElementById('m-lives'); if (lives_el) lives_el.textContent = lives;
+  const dcount = (ENTITY_LIFE_STATES[currentPrimaryEid] || []).filter(([_, s]) => s !== 0).length;
+  const dE = document.getElementById('m-deaths'); if (dE) dE.textContent = dcount;
+}
+
+// O(log n) binary search of (tick, x, y, z) for the most-recent sample at currentTick.
+// Avoids interpolation across long sample gaps (sparse same-position samples are
+// stripped server-side; gaps now reliably mean "no position update happened").
+const MP_INTERP_MAX_TICKS = 33; // ~0.5s at 66 Hz - interpolate only across short gaps
+function mpSampleAt(samples, currentTick) {
+  if (samples.length === 0) return null;
+  if (currentTick <= samples[0][0]) return samples[0];
+  if (currentTick >= samples[samples.length - 1][0]) return samples[samples.length - 1];
+  let lo = 0, hi = samples.length - 1;
+  while (lo < hi - 1) {
+    const mid = (lo + hi) >> 1;
+    if (samples[mid][0] <= currentTick) lo = mid; else hi = mid;
+  }
+  const [t0, x0, y0, z0] = samples[lo];
+  const [t1, x1, y1, z1] = samples[hi];
+  const span = t1 - t0;
+  if (span <= 0) return samples[lo];
+  // Don't interpolate across teleports (velocity-based - see TELEPORT_VEL).
+  const dx = x1 - x0, dy = y1 - y0, dz = z1 - z0;
+  if (isSampleTeleport(t0, x0, y0, z0, t1, x1, y1, z1)) return samples[lo];
+  // Don't interpolate across long gaps - those are "stationary, no update"
+  // segments. Pin to the previous sample instead so the avatar holds still.
+  if (span > MP_INTERP_MAX_TICKS) return samples[lo];
+  const f = (currentTick - t0) / span;
+  return [currentTick, x0 + f * dx, y0 + f * dy, z0 + f * dz];
+}
+
+// Linear binary search of an entity's yaw stream. Returns the closest-before
+// yaw (degrees) or null if the stream is empty. Yaw is a continuous angle so
+// we don't interpolate across the 0/360 wraparound - closest-before is fine.
+function yawSampleAt(yawSamples, tick) {
+  if (!yawSamples || yawSamples.length === 0) return null;
+  if (tick <= yawSamples[0][0]) return yawSamples[0][1];
+  if (tick >= yawSamples[yawSamples.length - 1][0]) return yawSamples[yawSamples.length - 1][1];
+  let lo = 0, hi = yawSamples.length - 1;
+  while (lo < hi - 1) {
+    const mid = (lo + hi) >> 1;
+    if (yawSamples[mid][0] <= tick) lo = mid; else hi = mid;
+  }
+  return yawSamples[lo][1];
+}
+
+// ── Multi-player speedometer helpers ─────────────────────────────────────────
+// Speed at `tick` is derived from the two nearest m_vecOrigin samples (the
+// primary's actual world position over time). Skips jump-sized deltas so
+// teleports don't register as instantaneous infinite velocity.
+function mpPrimarySpeedAt(tick) {
+  if (!MP_ACTIVE || currentPrimaryEid == null) return null;
+  const ent = mpEntities.find(e => e.eid === currentPrimaryEid);
+  if (!ent || ent.samples.length < 3) return null; // sparse / spectator → caller falls back
+  const s = ent.samples;
+  // Binary-search the segment containing `tick`.
+  let lo = 0, hi = s.length - 1;
+  if (tick <= s[0][0]) { lo = 0; hi = Math.min(1, s.length - 1); }
+  else if (tick >= s[s.length - 1][0]) { lo = s.length - 2; hi = s.length - 1; }
+  else {
+    while (lo < hi - 1) {
+      const mid = (lo + hi) >> 1;
+      if (s[mid][0] <= tick) lo = mid; else hi = mid;
+    }
+  }
+  const [t0, x0, y0] = s[lo];
+  const [t1, x1, y1] = s[hi];
+  const dtTicks = t1 - t0;
+  if (dtTicks <= 0) return 0;
+  const dx = x1 - x0, dy = y1 - y0;
+  // Velocity-based teleport guard - handles slow-tick games where two
+  // adjacent samples may legitimately span several hundred units.
+  const dtSec = dtTicks / TICK_RATE;
+  const v = Math.sqrt(dx*dx + dy*dy) / dtSec;
+  if (v > TELEPORT_VEL) return 0;
+  return v;
+}
+
+// Peak speed across the demo for the current primary, cached per primary so
+// switching the YOU row triggers a recompute. JUMP_THRESHOLD_SQ × 4 mirrors
+// the path-line filter; ignores teleports / map transitions.
+const _mpPeakCache = new Map(); // eid -> peak u/s
+function mpPrimaryPeakSpeed() {
+  if (!MP_ACTIVE || currentPrimaryEid == null) return 0;
+  if (_mpPeakCache.has(currentPrimaryEid)) return _mpPeakCache.get(currentPrimaryEid);
+  const ent = mpEntities.find(e => e.eid === currentPrimaryEid);
+  if (!ent || ent.samples.length < 3) { _mpPeakCache.set(currentPrimaryEid, 0); return 0; }
+  let peak = 0;
+  const s = ent.samples;
+  for (let i = 1; i < s.length; i++) {
+    const dx = s[i][1] - s[i-1][1];
+    const dy = s[i][2] - s[i-1][2];
+    const dtSec = Math.max(1, s[i][0] - s[i-1][0]) / TICK_RATE;
+    const v = Math.sqrt(dx*dx + dy*dy) / dtSec;
+    if (v > TELEPORT_VEL) continue; // skip respawn teleports
+    if (v > peak) peak = v;
+  }
+  _mpPeakCache.set(currentPrimaryEid, peak);
+  return peak;
+}
+
+const _mpProj = (typeof THREE !== 'undefined') ? new THREE.Vector3() : null;
+function updateMultiPlayer(currentTick) {
+  if (mpEntities.length === 0) return;
+  const W = renderer.domElement.clientWidth;
+  const H = renderer.domElement.clientHeight;
+  for (const e of mpEntities) {
+    if (!e.enabled) continue; // player switched off via sidebar checkbox
+    // Apply the life-state filter whenever we have ANY life-state data for
+    // the entity - including sparse-sample primaries (the recorder/spec)
+    // whose m_vecOrigin never updates but whose m_lifeState does. Without
+    // this their avatar stays glued to the camera position even after death,
+    // overlapping the player they're spectating.
+    // "Hide specs" toggle: drop any non-primary entity with <3 samples.
+    if (hideSpecsActive && isSpectatorEntity(e)) {
+      e.avatar.visible = false;
+      e.label.style.display = 'none';
+      continue;
+    }
+    const hasLifeData = (ENTITY_LIFE_STATES[e.eid] || []).length > 0;
+    if (hasLifeData && !mpIsAliveAt(e.eid, currentTick)) {
+      e.avatar.visible = false;
+      e.label.style.display = 'none';
+      continue;
+    }
+    // Sparse-sample entities (typically the recorder / spectator) need the
+    // VIEW_SWITCHES signal as a second-line check - their m_lifeState
+    // doesn't reliably mark the full dead window in CS:S, so we'd otherwise
+    // draw their avatar overlapping whoever they're currently spectating.
+    if (e.samples.length < 3 && isRecorderSpeccing(currentTick)) {
+      e.avatar.visible = false;
+      e.label.style.display = 'none';
+      continue;
+    }
+
+    // Resolve x,y,z for this player at the current tick.
+    // Sparse-sample entities (typically the spectator/recorder, whose
+    // m_vecOrigin only updates at their spawn) get their position from
+    // finalPositions - the camera trajectory derived from democmdinfo's
+    // viewOrigin. That makes Sierra follow the camera as the user expects,
+    // instead of being parked at her ethereal spawn for the whole demo.
+    let x, y, z;
+    if (e.samples.length < 3 && typeof finalPositions !== 'undefined' && finalPositions.length > 0) {
+      // finalPositions stores [x, -y, z] (y already flipped) per CMDS index
+      const idx = Math.max(0, Math.min(currentCmdIdx | 0, finalPositions.length - 1));
+      const fp = finalPositions[idx];
+      x = fp[0]; y = -fp[1]; z = fp[2]; // convert back to raw tf2 coords
+    } else {
+      const s = mpSampleAt(e.samples, currentTick);
+      if (!s) { e.avatar.visible = false; e.label.style.display = 'none'; continue; }
+      x = s[1]; y = s[2]; z = s[3];
+    }
+    e.avatar.position.set(x, z + 36, -y);   // 36 = half box height; Three.js Z = -tf2.y
+    e.avatar.visible = true;
+    // Project to screen for the name label
+    _mpProj.set(x, z + 90, -y).project(camera);
+    if (_mpProj.z < -1 || _mpProj.z > 1) {
+      e.label.style.display = 'none';
+    } else {
+      const sx = (_mpProj.x * 0.5 + 0.5) * W;
+      const sy = (-_mpProj.y * 0.5 + 0.5) * H;
+      e.label.style.display = 'block';
+      e.label.style.left = sx + 'px';
+      e.label.style.top  = sy + 'px';
+    }
+  }
+}
+
+// enabled controls everything for THIS player; routesVisible controls path-line
+// geometry across the board. Both must be true for the path line to render.
+function toggleMpPlayer(eid, enabled) {
+  const e = mpEntities.find(x => x.eid === eid);
+  if (!e) return;
+  e.enabled = enabled;
+  e.pathGroup.visible = enabled && routesVisible;
+  if (!enabled) {
+    e.avatar.visible = false;
+    e.label.style.display = 'none';
+  }
+}
+
+// Open a hidden <input type="color"> next to the swatch and route change →
+// setEntityColour. Using `position:fixed` off-screen keeps Safari happy
+// (some browsers require the element to actually be in the DOM and reachable
+// when .click() is called for the picker to open).
+function openColourPicker(eid) {
+  const e = mpEntities.find(x => x.eid === eid);
+  if (!e) return;
+  const input = document.createElement('input');
+  input.type = 'color';
+  const c = new THREE.Color().setHSL(e.hue / 360, 0.65, 0.55);
+  input.value = '#' + c.getHexString();
+  input.style.cssText = 'position:fixed;left:-9999px;top:-9999px;opacity:0';
+  document.body.appendChild(input);
+  input.addEventListener('input',  () => setEntityColour(eid, input.value));
+  input.addEventListener('change', () => setEntityColour(eid, input.value));
+  setTimeout(() => input.remove(), 30_000); // safety cleanup
+  input.click();
+}
+
+// Apply a colour override to one entity. Updates the THREE materials, the
+// HTML label, the sidebar swatch, the cached death-marker geometry, and
+// re-renders the Console so name colours pick up the override. e.hue is the
+// single source of truth - keep it in sync.
+function setEntityColour(eid, hexColor) {
+  const e = mpEntities.find(x => x.eid === eid);
+  if (!e) return;
+  const c = new THREE.Color(hexColor);
+  const hsl = {};
+  c.getHSL(hsl);
+  e.hue = Math.round(hsl.h * 360);
+  // Path-line material(s).
+  if (e.pathGroup) {
+    e.pathGroup.children.forEach(line => {
+      if (line.material && line.material.color) line.material.color.setHSL(hsl.h, 0.65, 0.55);
+    });
+  }
+  // Avatar mesh material(s) - but only override non-primary avatars; the
+  // primary stays blue to keep the YOU player visually anchored.
+  const isPrimary = currentPrimaryEid != null && e.eid === currentPrimaryEid;
+  if (e.avatar && !isPrimary) {
+    e.avatar.traverse(obj => {
+      if (obj.material && obj.material.color) obj.material.color.setHSL(hsl.h, 0.65, 0.55);
+    });
+  }
+  if (e.label) {
+    e.label.style.borderColor = `hsl(${e.hue}, 65%, 55%)`;
+    e.label.style.color       = `hsl(${e.hue}, 80%, 80%)`;
+  }
+  // Sidebar swatch.
+  const row = document.querySelector(`#players-list div[data-eid="${e.eid}"]`);
+  const swatch = row && row.querySelector('.life-color');
+  if (swatch) swatch.style.background = `hsl(${e.hue}, 65%, 55%)`;
+  // Death markers cache their material at build time - rebuild so the new
+  // hue applies. Minimap dots are drawn each frame from e.hue, no rebuild
+  // needed.
+  if (typeof rebuildMpDeathMarkers === 'function') rebuildMpDeathMarkers();
+  // Console name-colouring reads entity.hue at render time, so a re-render
+  // is the simplest way to refresh.
+  if (typeof renderConsoleAll === 'function') renderConsoleAll();
+}
+
+function toggleAllPlayers(enabled) {
+  for (const e of mpEntities) {
+    e.enabled = enabled;
+    e.pathGroup.visible = enabled && routesVisible;
+    if (!enabled) {
+      e.avatar.visible = false;
+      e.label.style.display = 'none';
+    }
+  }
+  document.querySelectorAll('#players-list input[type=checkbox]').forEach(cb => cb.checked = enabled);
+}
+
+// `Hide specs` toggle - when on (default), suppresses avatar/path/minimap
+// rendering for any non-primary entity with fewer than 3 position samples.
+// Catches: idle bots that never spawned, the HLTV/SourceTV camera entity,
+// and observers/coaches who joined the server but never had a body. Without
+// this, those entities get drawn at the recorder camera coordinates and
+// pile up on top of whoever's being spectated.
+//
+// `var` (not `let`) so refreshSpecVisibility - called at the end of the
+// mp-entity setup loop, which runs *before* this declaration in source
+// order - can read the variable without a temporal-dead-zone error.
+var hideSpecsActive = true;
+function toggleSpecs() {
+  hideSpecsActive = !hideSpecsActive;
+  const btn = document.getElementById('btn-mp-specs');
+  if (btn) {
+    btn.textContent = hideSpecsActive ? 'Hide specs ✓' : 'Hide specs';
+    btn.classList.toggle('active', hideSpecsActive);
+  }
+  refreshSpecVisibility();
+}
+
+// Re-apply the spec filter to path-lines and sidebar rows. The avatar +
+// minimap loops re-evaluate it every frame so they don't need touching.
+function refreshSpecVisibility() {
+  for (const e of mpEntities) {
+    const filtered = hideSpecsActive && isSpectatorEntity(e);
+    e.pathGroup.visible = e.enabled && routesVisible && !filtered;
+    // Dim the sidebar row when filtered so it's obvious why nothing is on
+    // screen for that name.
+    const row = document.querySelector(`#players-list div[data-eid="${e.eid}"]`);
+    if (row) row.style.opacity = filtered ? '0.45' : '';
+  }
+  if (typeof rebuildMpDeathMarkers === 'function') rebuildMpDeathMarkers();
+}
+
+function isSpectatorEntity(e) {
+  // Zero samples = never had a body (idle bot / observer / HLTV).
+  // 1-2 samples = likely the recorder or a spec who only got a spawn ping.
+  // Either way, treat as a spectator if it's not the active primary.
+  if (e.samples.length >= 3) return false;
+  if (currentPrimaryEid != null && e.eid === currentPrimaryEid) return false;
+  return true;
+}
 
 // ─── Eureka / teleporter arcs ────────────────────────────────────────────────
 // For every teleport break: draw a bezier arc from the departure position
 // (last frame of the previous segment) to the spawn (first frame of the next).
-if (TELEPORT_BREAKS.length > 0 && finalPositions.length > 1) {
+// Skipped when multi-player is active - the per-entity paths already capture
+// real positions and arcs from democmdinfo viewOrigin would be misleading.
+if (!MP_ACTIVE && TELEPORT_BREAKS.length > 0 && finalPositions.length > 1) {
   const arcMat = new THREE.LineBasicMaterial({ color: 0x00e5ff, linewidth: 2,
                                                transparent: true, opacity: 0.9 });
   const depMat = new THREE.MeshBasicMaterial({ color: 0x00e5ff, side: THREE.DoubleSide,
@@ -698,74 +1983,303 @@ if (TELEPORT_BREAKS.length > 0 && finalPositions.length > 1) {
 // Coordinate mapping: TF2 (x,y,z) → Three.js (x, z, y) so TF2-z is height
 function tf2ToThree(x, y, z) { return new THREE.Vector3(x, z, y); }
 
-const lifeObjects = []; // THREE.Group per life
+const lifeObjects = []; // THREE.Group per life - empty when MP is active
 
-for (let li = 0; li < lifeSegments.length; li++) {
+// When multi-player is active we skip the entire legacy path-line construction.
+// Multi-player entity tracks are the only source of position visualisation.
+for (let li = 0; li < lifeSegments.length && !MP_ACTIVE; li++) {
   const seg = lifeSegments[li];
   const group = new THREE.Group();
   const segLen = seg.end - seg.start + 1;
 
   if (segLen >= 2) {
-    const positions = new Float32Array(segLen * 3);
-    const colors = new Float32Array(segLen * 3);
     const baseColor = lifeThreeColor(li);
     const endColor = new THREE.Color(1.0, 0.2, 0.1);
-
-    for (let j = 0; j < segLen; j++) {
-      const idx = seg.start + j;
-      const [px, py, pz] = finalPositions[idx];
-      const t = j / (segLen - 1);
-      positions[j * 3]     = px;
-      positions[j * 3 + 1] = pz;  // TF2 z → Three.js Y (height)
-      positions[j * 3 + 2] = py;  // TF2 y → Three.js Z (depth)
-
-      const r = baseColor.r + t * (endColor.r - baseColor.r);
-      const g = baseColor.g + t * (endColor.g - baseColor.g);
-      const b = baseColor.b + t * (endColor.b - baseColor.b);
-      colors[j * 3]     = r;
-      colors[j * 3 + 1] = g;
-      colors[j * 3 + 2] = b;
+    // Split into continuous runs, cutting at large position discontinuities
+    const runs = [];
+    let runStart = 0;
+    for (let j = 1; j < segLen; j++) {
+      const [ax, ay, az] = finalPositions[seg.start + j - 1];
+      const [bx, by, bz] = finalPositions[seg.start + j];
+      const dx = bx - ax, dy = by - ay, dz = bz - az;
+      if (Math.sqrt(dx*dx + dy*dy + dz*dz) > JUMP_THRESHOLD) {
+        runs.push({ start: runStart, end: j - 1 });
+        runStart = j;
+      }
     }
+    runs.push({ start: runStart, end: segLen - 1 });
 
-    const geom = new THREE.BufferGeometry();
-    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     const mat = new THREE.LineBasicMaterial({ vertexColors: true, linewidth: 2 });
-    const line = new THREE.Line(geom, mat);
-    group.add(line);
+    for (const run of runs) {
+      const runLen = run.end - run.start + 1;
+      if (runLen < 2) continue;
+      const positions = new Float32Array(runLen * 3);
+      const colors    = new Float32Array(runLen * 3);
+      for (let j = 0; j < runLen; j++) {
+        const idx = seg.start + run.start + j;
+        const [px, py, pz] = finalPositions[idx];
+        const t = (seg.start + run.start + j - seg.start) / (segLen - 1);
+        positions[j * 3]     = px;
+        positions[j * 3 + 1] = pz;  // TF2 z → Three.js Y (height)
+        positions[j * 3 + 2] = py;  // TF2 y → Three.js Z (depth)
+        const r = baseColor.r + t * (endColor.r - baseColor.r);
+        const g = baseColor.g + t * (endColor.g - baseColor.g);
+        const b = baseColor.b + t * (endColor.b - baseColor.b);
+        colors[j * 3] = r; colors[j * 3 + 1] = g; colors[j * 3 + 2] = b;
+      }
+      const geom = new THREE.BufferGeometry();
+      geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geom.setAttribute('color',    new THREE.BufferAttribute(colors, 3));
+      group.add(new THREE.Line(geom, mat));
+    }
   }
 
   scene.add(group);
   lifeObjects.push(group);
 }
 
-// ─── Death markers ────────────────────────────────────────────────────────────
-const deathEvents = EVENTS.filter(e => e.event === 'player_death');
-for (const ev of deathEvents) {
-  const idx = findCmdIdx(ev.tick);
-  const [px, py, pz] = finalPositions[Math.min(idx, finalPositions.length - 1)];
-  const group = new THREE.Group();
-  group.position.set(px, pz + 10, py);
-
-  const redMat = new THREE.MeshBasicMaterial({ color: 0xff3333 });
-  const sphere = new THREE.Mesh(new THREE.SphereGeometry(12, 8, 8), redMat);
-  group.add(sphere);
-
-  // Crossed lines forming X
+// ─── Death markers (hidden by default, toggle via Deaths button) ──────────────
+const deathMarkersGroup = new THREE.Group();
+deathMarkersGroup.visible = false;
+scene.add(deathMarkersGroup);
+// Skipped when multi-player is active - those death positions come from the
+// recorder's view (= spec target) and don't correspond to real engine deaths.
+if (!MP_ACTIVE) {
+  const redMat  = new THREE.MeshBasicMaterial({ color: 0xff3333 });
   const crossMat = new THREE.LineBasicMaterial({ color: 0xff0000 });
-  const xGeom1 = new THREE.BufferGeometry().setFromPoints([
-    new THREE.Vector3(-20, 0, -20), new THREE.Vector3(20, 0, 20)
-  ]);
-  const xGeom2 = new THREE.BufferGeometry().setFromPoints([
-    new THREE.Vector3(20, 0, -20), new THREE.Vector3(-20, 0, 20)
-  ]);
-  group.add(new THREE.Line(xGeom1, crossMat));
-  group.add(new THREE.Line(xGeom2, crossMat));
-  scene.add(group);
+  const sphereGeo = new THREE.SphereGeometry(12, 8, 8);
+  for (const ev of EVENTS.filter(e => e.event === 'player_death')) {
+    const idx = findCmdIdx(ev.tick);
+    const [px, py, pz] = finalPositions[Math.min(idx, finalPositions.length - 1)];
+    const group = new THREE.Group();
+    group.position.set(px, pz + 10, py);
+    group.add(new THREE.Mesh(sphereGeo, redMat));
+    group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(-20,0,-20), new THREE.Vector3(20,0,20)]), crossMat));
+    group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(20,0,-20), new THREE.Vector3(-20,0,20)]), crossMat));
+    deathMarkersGroup.add(group);
+  }
 }
 
+// ─── Weapon-fire bursts ──────────────────────────────────────────────────────
+// Pre-computed rising-edge attack events, drawn as fading muzzle flashes plus
+// a directional tracer line during playback. Each shot lasts FIRE_FADE_SEC
+// from the moment it was fired before disappearing.
+const fireMarkersGroup = new THREE.Group();
+fireMarkersGroup.visible = false;
+scene.add(fireMarkersGroup);
+
+const FIRE_FADE_SEC = 0.6;
+const TRACER_LEN = 2000;
+// Two attack channels: M1 = IN_ATTACK (green), M2 = IN_ATTACK2 (cyan-teal).
+// Per-instance color (vs. a single material color) is set via instanceColor.
+const FIRE_COLOR_M1 = new THREE.Color(0.18, 1.0, 0.45);
+const FIRE_COLOR_M2 = new THREE.Color(0.15, 0.85, 1.0);
+const FIRE_EVENTS = [];   // [{tick, x, y, z, dx, dy, dz, weapon}], sorted by tick
+let fireMarkersBuilt = false;
+let fireBurstMesh = null; // InstancedMesh of muzzle flashes
+let fireTracerMesh = null; // LineSegments tracer geometry
+let fireBurstColors = null; // Float32Array of per-instance colors
+let fireLabelPool = [];   // pool of <div> overlay labels reused across frames
+const FIRE_LABEL_POOL_SIZE = 24;
+
+function buildFireMarkers() {
+  if (fireMarkersBuilt) return;
+  fireMarkersBuilt = true;
+
+  // Rising-edge detection on both IN_ATTACK (bit 0) and IN_ATTACK2 (bit 11).
+  // Each channel is tracked independently so holding M1 doesn't suppress an M2 click.
+  // Look up the muzzle position for a given tick. When MP is active we use
+  // the primary entity's actual world position; otherwise we fall back to the
+  // legacy finalPositions[i] (usercmd-integrated path).
+  function muzzlePosAt(tick, cmdIdx) {
+    if (MP_ACTIVE) {
+      const p = mpPrimaryPositionAt(tick);
+      if (p) {
+        // Three.js coords: X = tf2.x, Y = tf2.z + offset, Z = -tf2.y
+        return { tx: p.x, ty: p.z + 40, tz: -p.y };
+      }
+    }
+    const [px, py, pz] = finalPositions[cmdIdx];
+    return { tx: px, ty: pz + 40, tz: py };
+  }
+
+  let prevAttack1 = 0;
+  let prevAttack2 = 0;
+  const IN_ATTACK_MASK  = 1;
+  const IN_ATTACK2_MASK = 1 << 11;
+  for (let i = 0; i < CMDS.length; i++) {
+    const btns = CMDS[i][5];
+    const a1 = btns & IN_ATTACK_MASK;
+    const a2 = btns & IN_ATTACK2_MASK;
+    if ((a1 && !prevAttack1) || (a2 && !prevAttack2)) {
+      const tick = CMDS[i][0];
+      const mp = muzzlePosAt(tick, i);
+      const yaw   = CMDS[i][2] * Math.PI / 180;
+      const pitch = CMDS[i][1] * Math.PI / 180;
+      const fx =  Math.cos(pitch) * Math.cos(yaw);
+      const fy =  Math.cos(pitch) * Math.sin(yaw);
+      const fz = -Math.sin(pitch);
+      const channels = [];
+      if (a1 && !prevAttack1) channels.push(1);
+      if (a2 && !prevAttack2) channels.push(2);
+      for (const ch of channels) {
+        FIRE_EVENTS.push({
+          tick,
+          x: mp.tx, y: mp.ty, z: mp.tz,
+          dx: fx, dy: fz, dz: -fy,
+          weapon: CMDS[i][6] || 0,
+          channel: ch,
+        });
+      }
+    }
+    prevAttack1 = a1;
+    prevAttack2 = a2;
+  }
+
+  if (FIRE_EVENTS.length === 0) {
+    const btn = document.getElementById('btn-fire');
+    btn.disabled = true;
+    btn.title = 'No IN_ATTACK input recorded in this demo';
+    return;
+  }
+
+  const n = FIRE_EVENTS.length;
+
+  // Bursts removed - tracer + label alone carry the fire signal.
+  fireBurstMesh = null;
+
+  // Pre-allocate DOM label pool
+  const labelContainer = document.getElementById('fire-labels');
+  if (labelContainer && fireLabelPool.length === 0) {
+    for (let i = 0; i < FIRE_LABEL_POOL_SIZE; i++) {
+      const el = document.createElement('div');
+      el.className = 'fire-label';
+      labelContainer.appendChild(el);
+      fireLabelPool.push(el);
+    }
+  }
+
+  // Tracer lines - 2 vertices per shot (origin + far point along view dir).
+  // Use LineSegments with per-vertex color (alpha baked into RGB via additive blend).
+  const tracerPositions = new Float32Array(n * 6);
+  const tracerColors    = new Float32Array(n * 6);
+  for (let i = 0; i < n; i++) {
+    const ev = FIRE_EVENTS[i];
+    tracerPositions[i * 6 + 0] = ev.x;
+    tracerPositions[i * 6 + 1] = ev.y;
+    tracerPositions[i * 6 + 2] = ev.z;
+    tracerPositions[i * 6 + 3] = ev.x + ev.dx * TRACER_LEN;
+    tracerPositions[i * 6 + 4] = ev.y + ev.dy * TRACER_LEN;
+    tracerPositions[i * 6 + 5] = ev.z + ev.dz * TRACER_LEN;
+  }
+  const tracerGeom = new THREE.BufferGeometry();
+  tracerGeom.setAttribute('position', new THREE.BufferAttribute(tracerPositions, 3));
+  tracerGeom.setAttribute('color',    new THREE.BufferAttribute(tracerColors, 3));
+  const tracerMat = new THREE.LineBasicMaterial({
+    vertexColors: true,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  fireTracerMesh = new THREE.LineSegments(tracerGeom, tracerMat);
+  fireMarkersGroup.add(fireTracerMesh);
+}
+
+// Per-frame update: scale each instance based on age relative to the current
+// playback tick. Off-window shots are collapsed to zero. Visible shots also
+// claim a div from the label pool and get projected to screen coords.
+const _fireDummy = (typeof THREE !== 'undefined') ? new THREE.Object3D() : null;
+const _firePV    = (typeof THREE !== 'undefined') ? new THREE.Vector3() : null;
+function updateFireMarkers(currentTick) {
+  if (!fireMarkersBuilt || !fireTracerMesh) return;
+  const n = FIRE_EVENTS.length;
+  const fadeTicks = FIRE_FADE_SEC * TICK_RATE;
+  const tracerCol = fireTracerMesh.geometry.getAttribute('color').array;
+
+  // Collect visible shots sorted by recency for the label pool
+  const visibleNow = [];
+
+  for (let i = 0; i < n; i++) {
+    const ev = FIRE_EVENTS[i];
+    const age = currentTick - ev.tick;
+    let alpha = 0;
+    if (age >= 0 && age <= fadeTicks) {
+      const t = age / fadeTicks;        // 0..1
+      alpha = 1 - t;                    // 1..0 linear fade
+      visibleNow.push({ ev, t, alpha });
+    }
+
+    // Bake alpha into tracer color (additive blend handles the visual fade)
+    const fc = ev.channel === 2 ? FIRE_COLOR_M2 : FIRE_COLOR_M1;
+    const a = alpha;
+    tracerCol[i * 6 + 0] = fc.r * a;
+    tracerCol[i * 6 + 1] = fc.g * a;
+    tracerCol[i * 6 + 2] = fc.b * a;
+    tracerCol[i * 6 + 3] = fc.r * a * 0.15; // fade along the tracer
+    tracerCol[i * 6 + 4] = fc.g * a * 0.15;
+    tracerCol[i * 6 + 5] = fc.b * a * 0.15;
+  }
+  fireTracerMesh.geometry.getAttribute('color').needsUpdate = true;
+
+  // Project labels - keep at most FIRE_LABEL_POOL_SIZE most-recent active shots
+  visibleNow.sort((a, b) => a.t - b.t); // most recent first (t closest to 0)
+  const W = renderer.domElement.clientWidth;
+  const H = renderer.domElement.clientHeight;
+  const limit = Math.min(visibleNow.length, fireLabelPool.length);
+  for (let i = 0; i < limit; i++) {
+    const { ev, alpha } = visibleNow[i];
+    // Anchor the label at the midpoint of the tracer so it visually rides next to the line
+    const mx = ev.x + ev.dx * TRACER_LEN * 0.18;
+    const my = ev.y + ev.dy * TRACER_LEN * 0.18;
+    const mz = ev.z + ev.dz * TRACER_LEN * 0.18;
+    _firePV.set(mx, my, mz).project(camera);
+    const el = fireLabelPool[i];
+    if (_firePV.z < -1 || _firePV.z > 1) { el.style.display = 'none'; continue; }
+    const sx = (_firePV.x * 0.5 + 0.5) * W;
+    const sy = (-_firePV.y * 0.5 + 0.5) * H;
+    el.style.display = 'block';
+    el.style.left = sx + 'px';
+    el.style.top  = sy + 'px';
+    el.style.opacity = Math.max(0, Math.min(1, alpha * 1.2));
+    const chLabel = ev.channel === 2 ? 'M2' : 'M1';
+    el.textContent = `${chLabel} · W${ev.weapon} · T${ev.tick}`;
+    // Tint the chip border/text to match the channel
+    if (ev.channel === 2) {
+      el.style.borderColor = '#26d8ff';
+      el.style.color       = '#a8eaff';
+      el.style.background  = 'rgba(0,20,30,0.78)';
+    } else {
+      el.style.borderColor = '#00ff88';
+      el.style.color       = '#88ffaa';
+      el.style.background  = 'rgba(0,30,10,0.78)';
+    }
+  }
+  for (let i = limit; i < fireLabelPool.length; i++) {
+    fireLabelPool[i].style.display = 'none';
+  }
+}
+
+let fireVisible = true;
+function toggleFire() {
+  fireVisible = !fireVisible;
+  if (fireVisible) buildFireMarkers();
+  fireMarkersGroup.visible = fireVisible;
+  document.getElementById('btn-fire').textContent = fireVisible ? 'Fire ✓' : 'Fire';
+  // Hide labels when turning off
+  if (!fireVisible) {
+    for (const el of fireLabelPool) el.style.display = 'none';
+  }
+}
+// Build immediately so fire is visible from the first frame
+buildFireMarkers();
+fireMarkersGroup.visible = true;
+
 // ─── Teleport portals ────────────────────────────────────────────────────────
-const teleEvents = EVENTS.filter(e => e.event === 'player_teleported');
+// Skipped when multi-player is active - the legacy `finalPositions` used for
+// ring placement is the spec-target composite, not a real per-player path.
+const teleEvents = MP_ACTIVE ? [] : EVENTS.filter(e => e.event === 'player_teleported');
 const teleRings = [];
 for (const ev of teleEvents) {
   const idx = findCmdIdx(ev.tick);
@@ -843,7 +2357,10 @@ playerGroup.add(coneMesh);
 scene.add(playerGroup);
 
 // ─── Playhead state ───────────────────────────────────────────────────────────
-let currentCmdIdx = 0;
+// `var` (not `let`) so multi-player helpers defined earlier in the script can
+// reference currentCmdIdx without hitting a temporal-dead-zone error when
+// they're invoked from init code that runs before this line.
+var currentCmdIdx = 0;
 let cameraMode = 'orbit'; // 'orbit', 'follow', 'fps'
 
 // ── Playback state ───────────────────────────────────────────────────────────
@@ -851,7 +2368,400 @@ let isPlaying = false;
 let playbackSpeed = 1.0;
 let playbackGameTick = CMDS.length > 0 ? CMDS[0][0] : 0;  // current position in game ticks
 let lastPlayTimestamp = 0;
-const totalDuration = CMDS.length > 1 ? (CMDS[CMDS.length-1][0] - CMDS[0][0]) / 66.0 : 0;
+const totalDuration = CMDS.length > 1 ? (CMDS[CMDS.length-1][0] - CMDS[0][0]) / TICK_RATE : 0;
+
+// ── GIF recording state ──────────────────────────────────────────────────────
+// Captures the live canvas to an animated GIF via gif.js. Defaults to first-
+// person camera at 10× playback so a short capture window still spans a lot
+// of game time. Encoding runs in web workers; we hand the worker the gif.js
+// CDN-hosted script directly.
+let gifRecording = null;
+let gifWorkerBlobUrl = null;
+
+// Browsers refuse to spawn a Web Worker from a cross-origin URL, so we fetch
+// gif.worker.js from the CDN, wrap it in a Blob, and hand gif.js a same-origin
+// Blob URL. Cached after the first record.
+async function getGifWorkerUrl() {
+  if (gifWorkerBlobUrl) return gifWorkerBlobUrl;
+  const resp = await fetch('https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.worker.js');
+  if (!resp.ok) throw new Error('failed to fetch gif.worker.js: ' + resp.status);
+  let text = await resp.text();
+  // The minified worker ends with a `//# sourceMappingURL=...` directive that
+  // resolves to `blob://nullnull/gif.worker.js.map` once we wrap it as a Blob,
+  // which the browser then tries (and fails) to load - noisy console errors,
+  // no real impact. Strip the directive to silence them.
+  text = text.replace(/\/\/[#@]\s*sourceMappingURL=.*$/m, '');
+  gifWorkerBlobUrl = URL.createObjectURL(new Blob([text], { type: 'application/javascript' }));
+  return gifWorkerBlobUrl;
+}
+
+// Offscreen canvas reused for HUD composition. Allocated lazily so memory
+// only goes up if you actually record.
+let _hudComposeCanvas = null;
+function composeHudFrame(compose) {
+  const src = renderer.domElement;
+  if (!compose || !compose.hud) return src;
+  if (!_hudComposeCanvas) _hudComposeCanvas = document.createElement('canvas');
+  const canvas = _hudComposeCanvas;
+  canvas.width = src.width;
+  canvas.height = src.height;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(src, 0, 0);
+  // Stamp the minimap onto the bottom-right corner (matches its on-screen
+  // position) so the recording reads the same as the live view.
+  if (typeof mmCanvas !== 'undefined' && mmCanvas) {
+    const mw = mmCanvas.width;
+    const mh = mmCanvas.height;
+    const margin = 14;
+    const dw = Math.min(220, mw);
+    const dh = mh * (dw / mw);
+    // semi-transparent background panel
+    ctx.fillStyle = 'rgba(13,17,23,0.78)';
+    ctx.fillRect(canvas.width - dw - margin - 6, canvas.height - dh - margin - 6, dw + 12, dh + 12);
+    ctx.drawImage(mmCanvas, canvas.width - dw - margin, canvas.height - dh - margin, dw, dh);
+  }
+  // Top-left text strip with current player + speed + tick.
+  const ent = MP_ACTIVE && currentPrimaryEid != null
+    ? mpEntities.find(e => e.eid === currentPrimaryEid) : null;
+  const name = ent ? ent.name : (META.client || '');
+  const tick = CMDS[currentCmdIdx]?.[0] ?? 0;
+  const sec  = (tick / TICK_RATE).toFixed(1);
+  const spd  = (typeof mpPrimarySpeedAt === 'function' ? mpPrimarySpeedAt(tick) : null)
+            ?? REAL_SPEED[currentCmdIdx] ?? 0;
+  ctx.fillStyle = 'rgba(13,17,23,0.78)';
+  ctx.fillRect(12, 12, 320, 56);
+  ctx.font = 'bold 18px monospace';
+  ctx.fillStyle = '#58a6ff';
+  ctx.fillText(name, 22, 36);
+  ctx.font = '14px monospace';
+  ctx.fillStyle = '#c9d1d9';
+  ctx.fillText(`${sec}s   ${Math.round(spd)} u/s`, 22, 58);
+  return canvas;
+}
+
+// Defaults; the settings dialog can override these per-recording. Persisted
+// to localStorage between sessions so you don't have to re-pick favourites.
+const GIF_DEFAULTS = (() => {
+  const fallback = { camera: 'fps', speed: 20, fps: 10, seconds: 10, scale: 100, hud: true };
+  try {
+    const saved = JSON.parse(localStorage.getItem('demoscope.gif') || 'null');
+    return saved && typeof saved === 'object' ? Object.assign({}, fallback, saved) : fallback;
+  } catch (_) { return fallback; }
+})();
+
+function toggleGifRecord() {
+  if (gifRecording && gifRecording.active) {
+    // Cancel mid-record.
+    cancelGifRecord();
+    return;
+  }
+  // If the dialog is already open, treat the second click as a dismiss.
+  const existing = document.getElementById('gif-dialog');
+  if (existing) { existing.remove(); return; }
+  if (typeof GIF !== 'function') {
+    alert('GIF library failed to load (check network).');
+    return;
+  }
+  showGifDialog();
+}
+
+function showGifDialog() {
+  const btn = document.getElementById('btn-gif');
+  const rect = btn ? btn.getBoundingClientRect() : { left: 24, bottom: 24 };
+  const dlg = document.createElement('div');
+  dlg.id = 'gif-dialog';
+  dlg.style.cssText =
+    'position:fixed;left:' + Math.round(rect.left) + 'px;top:' + Math.round(rect.bottom + 6) + 'px;'
+    + 'background:var(--panel);border:1px solid var(--border);border-radius:6px;'
+    + 'padding:10px 12px;z-index:55;box-shadow:0 4px 18px rgba(0,0,0,0.4);'
+    + 'font-size:11px;color:var(--text);min-width:240px;font-family:inherit';
+  const s = GIF_DEFAULTS;
+  dlg.innerHTML = `
+    <div style="font-weight:700;letter-spacing:0.04em;margin-bottom:8px;color:var(--accent)">GIF settings</div>
+    <label style="display:flex;justify-content:space-between;align-items:center;margin:4px 0">
+      Camera
+      <select id="gif-cam" style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:3px;padding:2px 4px;font-family:inherit">
+        <option value="fps">First Person</option>
+        <option value="follow">Follow Player</option>
+        <option value="orbit">Orbit (current view)</option>
+      </select>
+    </label>
+    <label style="display:flex;justify-content:space-between;align-items:center;margin:4px 0">
+      Playback speed
+      <select id="gif-speed" style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:3px;padding:2px 4px;font-family:inherit">
+        <option value="1">1×</option><option value="2">2×</option><option value="5">5×</option>
+        <option value="10">10×</option><option value="20">20×</option><option value="50">50×</option>
+      </select>
+    </label>
+    <label style="display:flex;justify-content:space-between;align-items:center;margin:4px 0">
+      Capture FPS
+      <select id="gif-fps" style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:3px;padding:2px 4px;font-family:inherit">
+        <option value="5">5</option><option value="10">10</option><option value="15">15</option><option value="20">20</option>
+      </select>
+    </label>
+    <label style="display:flex;justify-content:space-between;align-items:center;margin:4px 0">
+      Duration (sec)
+      <input id="gif-seconds" type="number" min="1" max="60" style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:3px;padding:2px 4px;width:60px;font-family:inherit">
+    </label>
+    <label style="display:flex;justify-content:space-between;align-items:center;margin:4px 0" title="Output resolution as % of canvas">
+      Scale (%)
+      <select id="gif-scale" style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:3px;padding:2px 4px;font-family:inherit">
+        <option value="50">50</option><option value="75">75</option><option value="100">100</option>
+      </select>
+    </label>
+    <label style="display:flex;justify-content:space-between;align-items:center;margin:4px 0" title="Overlay the minimap and player name onto each frame">
+      HUD overlay
+      <input id="gif-hud" type="checkbox">
+    </label>
+    <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:8px">
+      <button class="cam-btn" id="gif-cancel" style="padding:3px 10px">Cancel</button>
+      <button class="cam-btn active" id="gif-start" style="padding:3px 10px">Record</button>
+    </div>
+  `;
+  document.body.appendChild(dlg);
+  dlg.querySelector('#gif-cam').value     = s.camera;
+  dlg.querySelector('#gif-speed').value   = String(s.speed);
+  dlg.querySelector('#gif-fps').value     = String(s.fps);
+  dlg.querySelector('#gif-seconds').value = String(s.seconds);
+  dlg.querySelector('#gif-scale').value   = String(s.scale);
+  dlg.querySelector('#gif-hud').checked   = !!s.hud;
+  dlg.querySelector('#gif-cancel').onclick = () => dlg.remove();
+  dlg.querySelector('#gif-start').onclick  = () => {
+    const opts = {
+      camera:  dlg.querySelector('#gif-cam').value,
+      speed:   +dlg.querySelector('#gif-speed').value,
+      fps:     +dlg.querySelector('#gif-fps').value,
+      seconds: Math.max(1, Math.min(60, +dlg.querySelector('#gif-seconds').value)),
+      scale:   +dlg.querySelector('#gif-scale').value,
+      hud:     dlg.querySelector('#gif-hud').checked,
+    };
+    Object.assign(GIF_DEFAULTS, opts);
+    try { localStorage.setItem('demoscope.gif', JSON.stringify(GIF_DEFAULTS)); } catch (_) {}
+    dlg.remove();
+    startGifRecord(opts);
+  };
+  // Close on outside click
+  setTimeout(() => {
+    document.addEventListener('mousedown', function onAway(ev) {
+      if (!dlg.contains(ev.target) && ev.target !== btn) {
+        dlg.remove();
+        document.removeEventListener('mousedown', onAway);
+      }
+    });
+  }, 0);
+}
+
+async function startGifRecord(opts) {
+  let workerScript;
+  try {
+    workerScript = await getGifWorkerUrl();
+  } catch (e) {
+    alert('GIF worker fetch failed: ' + e.message);
+    return;
+  }
+  const oldMode  = cameraMode;
+  const oldSpeed = playbackSpeed;
+  const wasPlaying = isPlaying;
+  setCameraMode(opts.camera);
+  setSpeed(opts.speed);
+  if (!isPlaying) togglePlay();
+
+  const targetCaptureFps = opts.fps;
+  const recordSeconds   = opts.seconds;
+  const framesTarget    = Math.max(1, Math.round(targetCaptureFps * recordSeconds));
+  const everyN = Math.max(1, Math.round(60 / targetCaptureFps));
+  const frameDelayMs = Math.round(1000 / targetCaptureFps);
+
+  const canvas = renderer.domElement;
+  const scale = Math.max(0.25, Math.min(1.0, opts.scale / 100));
+  const w = Math.max(160, Math.round(canvas.width  * scale));
+  const h = Math.max(90,  Math.round(canvas.height * scale));
+
+  const gif = new GIF({
+    workers: 2,
+    quality: 10,
+    width: w, height: h,
+    workerScript,
+  });
+  gif.on('finished', (blob) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `demoscope-${Date.now()}.gif`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    const overlay = document.getElementById('gif-overlay');
+    if (overlay) overlay.remove();
+    const btn = document.getElementById('btn-gif');
+    if (btn) { btn.textContent = 'Record GIF'; btn.classList.remove('active'); }
+  });
+  gif.on('progress', (p) => {
+    const statusEl = document.getElementById('gif-status');
+    if (statusEl) statusEl.textContent = `Encoding ${(p * 100).toFixed(0)}%`;
+  });
+  gif.on('abort', () => {
+    const overlay = document.getElementById('gif-overlay');
+    if (overlay) overlay.remove();
+  });
+
+  // Small floating progress badge.
+  const overlay = document.createElement('div');
+  overlay.id = 'gif-overlay';
+  overlay.style.cssText = 'position:fixed;top:14px;left:50%;transform:translateX(-50%);background:rgba(13,17,23,0.92);'
+    + 'border:1px solid var(--accent);border-radius:6px;padding:8px 14px;font-family:monospace;font-size:12px;'
+    + 'color:var(--accent);z-index:60;display:flex;gap:10px;align-items:center';
+  overlay.innerHTML = '<span id="gif-status">Recording 0 / ' + framesTarget + '</span>'
+    + '<button onclick="cancelGifRecord()" style="background:transparent;color:#f08080;border:1px solid #f08080;border-radius:3px;cursor:pointer;font-family:inherit;font-size:11px;padding:1px 8px">Cancel</button>';
+  document.body.appendChild(overlay);
+
+  gifRecording = {
+    active: true,
+    gif,
+    framesTarget, framesCaptured: 0,
+    everyN, frameCounter: 0, frameDelayMs,
+    compose: { hud: !!opts.hud },
+    prevMode: oldMode, prevSpeed: oldSpeed, wasPlaying,
+  };
+  const btn = document.getElementById('btn-gif');
+  btn.textContent = 'Cancel GIF';
+  btn.classList.add('active');
+}
+
+function finishGifRecord() {
+  if (!gifRecording) return;
+  gifRecording.active = false;
+  const statusEl = document.getElementById('gif-status');
+  if (statusEl) statusEl.textContent = 'Encoding 0%';
+  // Restore playback state.
+  setCameraMode(gifRecording.prevMode);
+  setSpeed(gifRecording.prevSpeed);
+  if (!gifRecording.wasPlaying && isPlaying) togglePlay();
+  gifRecording.gif.render();
+  gifRecording = null;
+}
+
+function cancelGifRecord() {
+  if (!gifRecording) {
+    // Defensive: still try to remove any stale overlay / reset button state.
+    const overlay = document.getElementById('gif-overlay');
+    if (overlay) overlay.remove();
+    const btn = document.getElementById('btn-gif');
+    if (btn) { btn.textContent = 'Record GIF'; btn.classList.remove('active'); }
+    return;
+  }
+  const rec = gifRecording;
+  gifRecording = null; // do this first so the animate() hook stops adding frames
+  // Try to abort the encoder if it already kicked off; otherwise the GIF
+  // object just gets garbage-collected without ever running.
+  try { if (rec.gif && rec.gif.running) rec.gif.abort(); } catch (_) {}
+  try { if (rec.gif) rec.gif.freeWorkers && rec.gif.freeWorkers.forEach(w => { try { w.terminate(); } catch (_) {} }); } catch (_) {}
+  const overlay = document.getElementById('gif-overlay');
+  if (overlay) overlay.remove();
+  setCameraMode(rec.prevMode);
+  setSpeed(rec.prevSpeed);
+  if (!rec.wasPlaying && isPlaying) togglePlay();
+  const btn = document.getElementById('btn-gif');
+  if (btn) { btn.textContent = 'Record GIF'; btn.classList.remove('active'); }
+}
+
+// ── Video (MP4/WebM) export ──────────────────────────────────────────────────
+// MediaRecorder records the canvas's captureStream() directly to a codec the
+// browser supports. Higher quality than GIF, smaller files, no palette
+// quantization, and no library dependency. Default container is WebM
+// (universal), but we try MP4 / H.264 first when the browser exposes it.
+let videoRecording = null;
+
+function pickVideoMime() {
+  const candidates = [
+    'video/mp4;codecs=h264',
+    'video/mp4',
+    'video/webm;codecs=vp9',
+    'video/webm;codecs=vp8',
+    'video/webm',
+  ];
+  for (const m of candidates) {
+    if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(m)) return m;
+  }
+  return '';
+}
+
+function toggleVideoRecord() {
+  if (videoRecording) { stopVideoRecord(); return; }
+  if (typeof MediaRecorder === 'undefined' || typeof renderer.domElement.captureStream !== 'function') {
+    alert('Video recording not supported in this browser.');
+    return;
+  }
+  const mime = pickVideoMime();
+  if (!mime) { alert('No supported video codec in this browser.'); return; }
+  // Use the same dialog defaults as the GIF flow, so users have a familiar
+  // mental model. We honour camera / speed / duration but ignore scale (video
+  // captures the canvas at native resolution always).
+  const s = GIF_DEFAULTS;
+  const oldMode = cameraMode, oldSpeed = playbackSpeed, wasPlaying = isPlaying;
+  setCameraMode(s.camera);
+  setSpeed(s.speed);
+  if (!isPlaying) togglePlay();
+  // captureStream at 30 fps is plenty for playback; the canvas itself runs at
+  // ~60 fps so frames are duplicated where needed.
+  const stream = renderer.domElement.captureStream(30);
+  const chunks = [];
+  const recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 8_000_000 });
+  recorder.ondataavailable = (ev) => { if (ev.data && ev.data.size > 0) chunks.push(ev.data); };
+  recorder.onstop = () => {
+    const blob = new Blob(chunks, { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const ext = mime.startsWith('video/mp4') ? 'mp4' : 'webm';
+    a.href = url; a.download = `demoscope-${Date.now()}.${ext}`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+    const ov = document.getElementById('vid-overlay'); if (ov) ov.remove();
+    const btn = document.getElementById('btn-vid');
+    if (btn) { btn.textContent = 'Record Video'; btn.classList.remove('active'); }
+    setCameraMode(oldMode);
+    setSpeed(oldSpeed);
+    if (!wasPlaying && isPlaying) togglePlay();
+  };
+  recorder.start();
+
+  // Floating progress badge identical layout to the GIF one.
+  const overlay = document.createElement('div');
+  overlay.id = 'vid-overlay';
+  overlay.style.cssText = 'position:fixed;top:14px;left:50%;transform:translateX(-50%);background:rgba(13,17,23,0.92);'
+    + 'border:1px solid #f08080;border-radius:6px;padding:8px 14px;font-family:monospace;font-size:12px;'
+    + 'color:#f08080;z-index:60;display:flex;gap:10px;align-items:center';
+  overlay.innerHTML = '<span id="vid-status">Recording video…</span>'
+    + '<button onclick="stopVideoRecord()" style="background:transparent;color:#f08080;border:1px solid #f08080;border-radius:3px;cursor:pointer;font-family:inherit;font-size:11px;padding:1px 8px">Stop</button>';
+  document.body.appendChild(overlay);
+
+  const btn = document.getElementById('btn-vid');
+  if (btn) { btn.textContent = 'Stop Video'; btn.classList.add('active'); }
+
+  // Auto-stop after the configured duration. Wall-clock seconds.
+  const stopTimer = setTimeout(() => stopVideoRecord(), s.seconds * 1000);
+  videoRecording = { recorder, stopTimer, mime };
+
+  // Live progress text updates every 250ms while we wait.
+  const t0 = performance.now();
+  const tick = setInterval(() => {
+    if (!videoRecording) { clearInterval(tick); return; }
+    const elapsed = (performance.now() - t0) / 1000;
+    const el = document.getElementById('vid-status');
+    if (el) el.textContent = `Recording ${elapsed.toFixed(1)} / ${s.seconds}s (${mime.split(';')[0]})`;
+  }, 250);
+}
+
+function stopVideoRecord() {
+  if (!videoRecording) {
+    const ov = document.getElementById('vid-overlay'); if (ov) ov.remove();
+    const btn = document.getElementById('btn-vid');
+    if (btn) { btn.textContent = 'Record Video'; btn.classList.remove('active'); }
+    return;
+  }
+  clearTimeout(videoRecording.stopTimer);
+  try { videoRecording.recorder.stop(); } catch (_) {}
+  videoRecording = null;
+}
 
 let livesOpen = true;
 function toggleLivesPanel() {
@@ -861,6 +2771,9 @@ function toggleLivesPanel() {
 }
 
 function togglePlay() {
+  // Nothing decoded to play back - leave the button alone rather than spinning
+  // an empty timeline.
+  if (CMDS.length === 0) return;
   isPlaying = !isPlaying;
   document.getElementById('btn-play').innerHTML = isPlaying ? '&#9646;&#9646; Pause' : '&#9654; Play';
   if (isPlaying) {
@@ -885,12 +2798,20 @@ function setSpeed(s) {
   });
 }
 
-// Space bar shortcut
+// Space bar + round-navigation shortcuts. Arrow keys are bound further down.
+// `[` / `]` move to the previous / next round; ignored when typing in a form
+// field so they don't clobber bracket characters in inputs.
 document.addEventListener('keydown', e => {
-  if (e.code === 'Space' && e.target === document.body) { e.preventDefault(); togglePlay(); }
+  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+  if (e.code === 'Space' && e.target === document.body) { e.preventDefault(); togglePlay(); return; }
+  if (e.key === '[') { e.preventDefault(); if (typeof seekRound === 'function') seekRound(-1); return; }
+  if (e.key === ']') { e.preventDefault(); if (typeof seekRound === 'function') seekRound(1); return; }
 });
 
 function updatePlayhead(idx) {
+  // No timeline (a demo with neither usercmds nor a decoded entity track) -
+  // nothing to scrub. Bail before indexing empty arrays.
+  if (CMDS.length === 0 || finalPositions.length === 0) return;
   if (!isPlaying) { playbackGameTick = CMDS[idx]?.[0] ?? playbackGameTick; }
   currentCmdIdx = Math.max(0, Math.min(CMDS.length - 1, idx));
   const [px, py, pz] = finalPositions[currentCmdIdx];
@@ -903,7 +2824,7 @@ function updatePlayhead(idx) {
   const yawR = yaw * Math.PI / 180;
   const pitchR = pitch * Math.PI / 180;
   const dx =  Math.cos(pitchR) * Math.cos(yawR);
-  const dz =  Math.cos(pitchR) * Math.sin(yawR);
+  const dz = -Math.cos(pitchR) * Math.sin(yawR);
   const dy = -Math.sin(pitchR);
   const dir = new THREE.Vector3(dx, dy, dz).normalize();
 
@@ -929,7 +2850,18 @@ function updatePlayhead(idx) {
   // Update playhead info
   const sec = tickToSec(CMDS[currentCmdIdx][0]);
   document.getElementById('playhead-info').textContent =
-    `T=${CMDS[currentCmdIdx][0]}  ${sec.toFixed(2)}s  pos=(${px.toFixed(0)}, ${py.toFixed(0)}, ${pz.toFixed(0)})  speed=${Math.hypot(CMDS[currentCmdIdx][3], CMDS[currentCmdIdx][4]).toFixed(0)} u/s`;
+    `T=${CMDS[currentCmdIdx][0]}  ${sec.toFixed(2)}s  pos=(${px.toFixed(0)}, ${py.toFixed(0)}, ${pz.toFixed(0)})`;
+  // Speedometer: when MP is active and the primary has enough samples to
+  // measure velocity, show the primary player's speed; otherwise fall back to
+  // the recorder's viewOrigin-derived speed.
+  const playTick = CMDS[currentCmdIdx][0];
+  const mpSpd = mpPrimarySpeedAt(playTick);
+  const realSpd = mpSpd != null ? mpSpd : (REAL_SPEED[currentCmdIdx] || 0);
+  const peak = mpSpd != null ? mpPrimaryPeakSpeed() : REAL_SPEED.peak;
+  const spNow = document.getElementById('sp-now');
+  if (spNow) spNow.textContent = realSpd.toFixed(0);
+  const spPeak = document.getElementById('sp-peak');
+  if (spPeak) spPeak.textContent = (peak || 0).toFixed(0) + ' u/s';
 
   drawTimeline();
 }
@@ -940,7 +2872,13 @@ const defaultCamTarget = new THREE.Vector3(tcx, tcy, tcz);
 
 function setCameraMode(mode) {
   cameraMode = mode;
-  document.querySelectorAll('.cam-btn').forEach(b => b.classList.remove('active'));
+  // Only clear the active state on the camera-mode buttons. Doing a blanket
+  // .cam-btn loop would also drop the active state from the playback-speed
+  // buttons (1×/2×/…) and the Routes/Deaths/Fire toggles, since they share
+  // the same class.
+  for (const id of ['btn-orbit', 'btn-follow', 'btn-fps']) {
+    document.getElementById(id)?.classList.remove('active');
+  }
   document.getElementById('btn-' + mode)?.classList.add('active');
 
   const badge = document.getElementById('cam-mode-badge');
@@ -970,7 +2908,10 @@ function resetCamera() {
 const lifeList = document.getElementById('life-list');
 for (let li = 0; li < lifeSegments.length; li++) {
   const seg = lifeSegments[li];
-  const dur = ((CMDS[seg.end][0] - CMDS[seg.start][0]) / 66).toFixed(0);
+  // Guard against empty CMDS - proto-4 demos currently extract no usercmds
+  // so seg.start / seg.end may point outside the array.
+  if (!CMDS[seg.start] || !CMDS[seg.end]) continue;
+  const dur = ((CMDS[seg.end][0] - CMDS[seg.start][0]) / TICK_RATE).toFixed(0);
   const label = document.createElement('label');
   label.className = 'life-item';
   label.innerHTML = `
@@ -985,30 +2926,409 @@ function toggleLife(i, visible) {
   if (lifeObjects[i]) lifeObjects[i].visible = visible;
 }
 
-// ─── Stats ────────────────────────────────────────────────────────────────────
-{
-  let totalDist = 0;
-  let maxSpeed = 0;
-  for (let i = 1; i < finalPositions.length; i++) {
-    const [x0, y0, z0] = finalPositions[i-1];
-    const [x1, y1, z1] = finalPositions[i];
-    totalDist += Math.sqrt((x1-x0)**2 + (y1-y0)**2 + (z1-z0)**2);
-    const spd = Math.hypot(CMDS[i][3], CMDS[i][4]);
-    if (spd > maxSpeed) maxSpeed = spd;
+
+// `var` (not `let`) - refreshSpecVisibility is called during init (at the
+// end of the mp-entity setup loop) and reads this before its declaration
+// line is reached in source order. Same hoisting trick as hideSpecsActive.
+var routesVisible = true;
+function toggleRoutes() {
+  routesVisible = !routesVisible;
+  if (MP_ACTIVE) {
+    // Routes only toggles path-line geometry. Each player's own enabled flag
+    // (sidebar checkbox) still controls their avatar + minimap dot + label.
+    for (const e of mpEntities) {
+      e.pathGroup.visible = routesVisible && e.enabled;
+    }
+  } else {
+    for (const g of lifeObjects) g.visible = routesVisible;
+    document.querySelectorAll('#life-list input[type=checkbox]').forEach(cb => { cb.checked = routesVisible; });
   }
-  const statsEl = document.getElementById('stats-content');
-  const stats = [
-    ['Distance', (totalDist / 1000).toFixed(1) + ' ku'],
-    ['Max Speed', maxSpeed.toFixed(0) + ' u/s'],
-    ['Duration', META.duration.toFixed(1) + 's'],
-    ['Lives', lifeSegments.length],
-    ['Deaths', EVENTS.filter(e => e.event === 'player_death').length],
-    ['Teleports', EVENTS.filter(e => e.event === 'player_teleported').length],
-  ];
-  statsEl.innerHTML = stats.map(([label, val]) =>
-    `<div class="stat-row"><span class="stat-label">${label}</span><span class="stat-val">${val}</span></div>`
-  ).join('');
+  document.getElementById('btn-routes').textContent = routesVisible ? 'Routes ✓' : 'Routes';
 }
+
+let deathsVisible = false;
+function toggleDeaths() {
+  if (MP_ACTIVE) {
+    // 3-state cycle: off → primary only → all players → off
+    if (!deathsVisible) {
+      deathsVisible = true;
+      mpDeathsAllPlayers = false;
+    } else if (!mpDeathsAllPlayers) {
+      mpDeathsAllPlayers = true;
+    } else {
+      deathsVisible = false;
+    }
+    rebuildMpDeathMarkers();
+    mpDeathMarkersGroup.visible = deathsVisible;
+    const btn = document.getElementById('btn-deaths');
+    btn.textContent = !deathsVisible ? 'Deaths' : mpDeathsAllPlayers ? 'Deaths: ALL ✓' : 'Deaths: YOU ✓';
+  } else {
+    deathsVisible = !deathsVisible;
+    deathMarkersGroup.visible = deathsVisible;
+    document.getElementById('btn-deaths').textContent = deathsVisible ? 'Deaths ✓' : 'Deaths';
+  }
+  if (typeof mmCtx !== 'undefined') drawMinimap();
+}
+
+// ─── Multi-player death markers (from m_lifeState transitions) ────────────────
+// Two rendering modes:
+//   * PRIMARY_ONLY (default): show only the primary entity's deaths with a
+//     bright red ✕ marker. Tightly focused.
+//   * ALL: every player's deaths, color-coded by entity.
+// `var` so the queueMicrotask-deferred refreshSpecVisibility (which calls
+// rebuildMpDeathMarkers) can reach this when the microtask fires - even if
+// it fires before this declaration line runs in source order. Same hoisting
+// trick as routesVisible / hideSpecsActive.
+var mpDeathMarkersGroup = new THREE.Group();
+mpDeathMarkersGroup.visible = false;
+scene.add(mpDeathMarkersGroup);
+let mpDeathPoints = []; // [{ x, y, z (TF2 coords), eid, isPrimary }] for minimap reuse
+let mpDeathsAllPlayers = false; // toggle: false = primary only, true = everyone
+
+function rebuildMpDeathMarkers() {
+  // Clear existing
+  while (mpDeathMarkersGroup.children.length > 0) {
+    mpDeathMarkersGroup.remove(mpDeathMarkersGroup.children[0]);
+  }
+  mpDeathPoints = [];
+  if (!ENTITY_LIFE_STATES || Object.keys(ENTITY_LIFE_STATES).length === 0) return;
+
+  const sphereGeo = new THREE.SphereGeometry(12, 8, 8);
+
+  for (const [eid, transitions] of Object.entries(ENTITY_LIFE_STATES)) {
+    const isPrimary = (currentPrimaryEid != null && eid === currentPrimaryEid);
+    if (!mpDeathsAllPlayers && !isPrimary) continue;
+    // Respect the Hide-specs toggle - bots/observers with sparse samples
+    // would otherwise scatter ✕ markers across the spec-camera trajectory.
+    const ent = mpEntities.find(e => e.eid === eid);
+    if (hideSpecsActive && ent && isSpectatorEntity(ent)) continue;
+
+    const samples = ENTITY_TRACKS[eid] || [];
+    // Spectator / sparse-sample entities have no per-tick samples, but they
+    // still get death markers - sourced from finalPositions at the death tick.
+    const useFinalPos = samples.length < 2 && typeof finalPositions !== 'undefined' && finalPositions.length > 0;
+    if (samples.length === 0 && !useFinalPos) continue;
+
+    const hue = ent ? ent.hue : 0;
+    const color = isPrimary ? 0xff3333 : new THREE.Color().setHSL(hue / 360, 0.7, 0.5).getHex();
+    const sphereMat = new THREE.MeshBasicMaterial({ color });
+    const crossMat = new THREE.LineBasicMaterial({ color: isPrimary ? 0xff0000 : color });
+    const size = isPrimary ? 22 : 16;
+
+    let prevState = null;
+    for (const [t, state] of transitions) {
+      const becameDead = (prevState === 0 && state !== 0) || (prevState === null && state === 1);
+      if (becameDead) {
+        let tx, ty, tz, found = false;
+        if (useFinalPos) {
+          const fpIdx = Math.max(0, Math.min(findCmdIdx(t), finalPositions.length - 1));
+          const fp = finalPositions[fpIdx];
+          if (fp) { tx = fp[0]; ty = -fp[1]; tz = fp[2]; found = true; }
+        } else {
+          const s = mpSampleAt(samples, t);
+          if (s) { tx = s[1]; ty = s[2]; tz = s[3]; found = true; }
+        }
+        if (found) {
+          const px = tx, py = tz, pz = -ty;
+          const group = new THREE.Group();
+          group.position.set(px, py + 10, pz);
+          group.add(new THREE.Mesh(sphereGeo, sphereMat));
+          group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([
+            new THREE.Vector3(-size, 0, -size), new THREE.Vector3(size, 0, size)]), crossMat));
+          group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([
+            new THREE.Vector3(size, 0, -size), new THREE.Vector3(-size, 0, size)]), crossMat));
+          mpDeathMarkersGroup.add(group);
+          mpDeathPoints.push({ x: tx, y: ty, z: tz, eid, isPrimary });
+        }
+      }
+      prevState = state;
+    }
+  }
+}
+function buildMpDeathMarkers() { rebuildMpDeathMarkers(); }
+
+// ─── Sidebar: console ────────────────────────────────────────────────────────
+// Source-style console log. Mixes chat, kills, spawns, round transitions, and
+// connect/disconnect lines into a single scrollable history. Each entry has
+// a category so the chip row at the top can filter by type. The same data
+// drives both the in-sidebar widget and the fullscreen overlay (Expand ⛶).
+const consoleEntries = []; // [{ tick, sec, category, html }]
+const extraDeathTicks = []; // ticks of m_lifeState deaths with no player_death event
+let consoleHighlightTick = 0;
+const CONSOLE_CATEGORIES = [
+  { key: 'chat',   label: 'Chat',   color: '#c9d1d9' },
+  { key: 'kill',   label: 'Kills',  color: '#f08080' },
+  { key: 'round',  label: 'Round',  color: '#e3b341' },
+  { key: 'spawn',  label: 'Spawn',  color: '#7ee787' },
+  { key: 'other',  label: 'Other',  color: '#8b949e' },
+];
+const activeConsoleCategories = new Set(CONSOLE_CATEGORIES.map(c => c.key));
+
+function esc(s) {
+  return String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+}
+
+function formatHMS(sec) {
+  const total = Math.max(0, Math.floor(sec));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  return h > 0
+    ? `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`
+    : `${m}:${String(s).padStart(2,'0')}`;
+}
+
+function resolvePlayerRef(ref) {
+  // Accepts a name string or a user_id number; returns the best display name.
+  if (ref == null || ref === '' || ref === -1) return '?';
+  if (typeof ref === 'number') {
+    const meta = userIdToEntity.get(ref);
+    return meta ? meta.name : `#${ref}`;
+  }
+  return String(ref);
+}
+
+// Resolve a player name to the matching mpEntities row (by current name or any
+// prior alias). Returns null if no match - common for bots, generic system
+// names, or before mpEntities is populated.
+function entityForName(name) {
+  if (!name) return null;
+  const trimmed = String(name).trim();
+  if (!trimmed || trimmed === '?') return null;
+  if (typeof mpEntities === 'undefined') return null;
+  for (const e of mpEntities) {
+    if (e.name === trimmed) return e;
+    const aliases = e.meta && e.meta.aliases;
+    if (Array.isArray(aliases) && aliases.includes(trimmed)) return e;
+  }
+  return null;
+}
+function nameSpan(name, fallbackColor) {
+  const e = entityForName(name);
+  const color = e ? `hsl(${e.hue}, 70%, 68%)` : (fallbackColor || '#c9d1d9');
+  return `<b style="color:${color}">${esc(name || '?')}</b>`;
+}
+
+// Small inline SVG kill-feed icons, picked by weapon-class regex. Each icon is
+// 14×10, currentColor-styled (the surrounding span sets the colour). Returns
+// an inline SVG string ready to drop into the entry HTML.
+function killIconSvg(weapon) {
+  const w = (weapon || '').toLowerCase();
+  const stroke = 'stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round"';
+  if (/rocket|grenade|pipebomb|sticky|demoman_grenadelauncher|loose_cannon/.test(w))
+    return `<svg width="14" height="10" viewBox="0 0 14 10"><polygon points="0,5 8,1 8,9" fill="currentColor"/><line x1="8" y1="5" x2="14" y2="5" ${stroke}/></svg>`;
+  if (/scatter|shotgun|frontier|reserve_shooter|widowmaker|panic_attack/.test(w))
+    return `<svg width="14" height="10" viewBox="0 0 14 10"><line x1="2" y1="5" x2="13" y2="2" ${stroke}/><line x1="2" y1="5" x2="13" y2="5" ${stroke}/><line x1="2" y1="5" x2="13" y2="8" ${stroke}/></svg>`;
+  if (/pistol|smg|minigun|sniperrifle|machinegun|revolver|ambassador|huntsman|crossbow/.test(w))
+    return `<svg width="14" height="10" viewBox="0 0 14 10"><line x1="2" y1="5" x2="9" y2="5" ${stroke}/><circle cx="11" cy="5" r="1.8" fill="currentColor"/></svg>`;
+  if (/bonesaw|bottle|wrench|bat|knife|fireaxe|fists|axtinguisher|fryingpan|melee|club|backbur/.test(w))
+    return `<svg width="14" height="10" viewBox="0 0 14 10"><line x1="2" y1="9" x2="12" y2="1" stroke="currentColor" stroke-width="2"/></svg>`;
+  if (/flamethrower|degreaser|phlog|backburn|drag|airblast/.test(w))
+    return `<svg width="14" height="10" viewBox="0 0 14 10"><path d="M2 5 Q5 1 8 5 T14 5" ${stroke}/></svg>`;
+  if (/fall|world|trigger_hurt|saw_hurt|sentry/.test(w))
+    return `<svg width="14" height="10" viewBox="0 0 14 10"><line x1="7" y1="1" x2="7" y2="7" ${stroke}/><polygon points="4,6 7,9 10,6" fill="currentColor"/></svg>`;
+  // Generic skull-ish fallback.
+  return `<svg width="14" height="10" viewBox="0 0 14 10"><circle cx="7" cy="5" r="3.5" ${stroke}/><line x1="4.5" y1="3.5" x2="9.5" y2="6.5" ${stroke}/><line x1="9.5" y1="3.5" x2="4.5" y2="6.5" ${stroke}/></svg>`;
+}
+
+// Trim Source weapon string for display: `tf_weapon_rocketlauncher_directhit`
+// → `rocketlauncher directhit`. Leaves unknown values intact.
+function shortWeapon(w) {
+  if (!w) return '';
+  return String(w).replace(/^tf_weapon_/i, '').replace(/^weapon_/i, '').replace(/_/g, ' ');
+}
+
+(function buildConsole() {
+  // Some deaths never reach the player_death game event (e.g. round resets,
+  // engine-forced kills, late-joiners). Walk m_lifeState transitions and add
+  // a synthetic "X died" entry for any death that has no player_death event
+  // within ±60 ticks. Tagged 'kill' so it filters with the same chip.
+  const deathEventTicksByEid = new Map(); // eid (string) → Set<tick>
+  for (const ev of EVENTS) {
+    if (ev.event !== 'player_death') continue;
+    const uid = ev.userid ?? ev.victim;
+    if (typeof uid !== 'number') continue;
+    const meta = userIdToEntity.get(uid);
+    if (!meta) continue;
+    if (!deathEventTicksByEid.has(meta.eid)) deathEventTicksByEid.set(meta.eid, new Set());
+    deathEventTicksByEid.get(meta.eid).add(ev.tick);
+  }
+  const PROX_TICKS = 60;
+  for (const [eidStr, transitions] of Object.entries(ENTITY_LIFE_STATES)) {
+    const meta = ENTITY_NAMES[eidStr] || {};
+    if (!meta.name) continue;
+    const deathTicks = deathEventTicksByEid.get(eidStr) || new Set();
+    let prevState = null;
+    for (const [t, state] of transitions) {
+      const becameDead = (prevState === 0 && state !== 0) || (prevState === null && state !== 0);
+      prevState = state;
+      if (!becameDead) continue;
+      // Skip if a player_death event for this entity exists within range.
+      let matched = false;
+      for (const dt of deathTicks) {
+        if (Math.abs(dt - t) <= PROX_TICKS) { matched = true; break; }
+      }
+      if (matched) continue;
+      const sec = tickToSec(t);
+      const stamp = `<span style="color:var(--muted)">${formatHMS(sec)}</span>`;
+      const html = `${stamp} ${nameSpan(meta.name)} <span style="color:#f08080">died</span> <span style="color:var(--muted);font-size:10px">[no event]</span>`;
+      consoleEntries.push({ tick: t, sec, category: 'kill', html });
+      extraDeathTicks.push(t);
+    }
+  }
+  extraDeathTicks.sort((a, b) => a - b);
+
+  for (const ev of EVENTS) {
+    const sec = tickToSec(ev.tick);
+    const stamp = `<span style="color:var(--muted)">${formatHMS(sec)}</span>`;
+    let category = 'other', html = null;
+    if (ev.event === 'say' || ev.event === 'say_team') {
+      category = 'chat';
+      const isTeam = ev.event === 'say_team';
+      const tag = isTeam ? '<span style="color:#4aaa55">[T] </span>' : '';
+      // Speaker name in the entity's hue if we can match them; team-chat green
+      // for the team prefix is intentionally separate so the speaker keeps
+      // their personal colour.
+      const speaker = nameSpan(ev.player, isTeam ? '#66cc77' : '#c9d1d9');
+      html = `${stamp} ${tag}${speaker}: ${esc(ev.text||'')}`;
+    } else if (ev.event === 'player_death') {
+      category = 'kill';
+      // attacker / userid are both user_ids on TF2 death events. attacker_name
+      // and victim are legacy fallbacks for other Source games.
+      const aName = resolvePlayerRef(ev.attacker_name ?? ev.attacker ?? ev.killer);
+      const vName = resolvePlayerRef(ev.userid_name ?? ev.userid ?? ev.victim ?? ev.player);
+      const isSuicide = aName === vName || aName === '?' || ev.attacker === 0 || ev.attacker === -1;
+      const icon  = `<span style="color:#f08080;display:inline-block;vertical-align:-1px;margin:0 4px">${killIconSvg(ev.weapon)}</span>`;
+      const wTag  = ev.weapon
+        ? ` <span style="color:var(--muted);font-size:10px">[${esc(shortWeapon(ev.weapon))}]</span>`
+        : '';
+      html = isSuicide
+        ? `${stamp} ${nameSpan(vName)} ${icon} <span style="color:#f08080">(self)</span>${wTag}`
+        : `${stamp} ${nameSpan(aName)} ${icon} ${nameSpan(vName)}${wTag}`;
+    } else if (ev.event === 'player_spawn') {
+      category = 'spawn';
+      const pName = resolvePlayerRef(ev.userid_name ?? ev.userid ?? ev.player);
+      html = `${stamp} ${nameSpan(pName)} <span style="color:#7ee787">spawned</span>`;
+    } else if (ev.event === 'teamplay_round_active' || ev.event === 'round_start') {
+      category = 'round';
+      html = `${stamp} <span style="color:#e3b341">- round active -</span>`;
+    } else if (ev.event === 'round_win' || ev.event === 'teamplay_win_panel') {
+      category = 'round';
+      const w = ev.winner ? ` (winner ${esc(ev.winner)})` : '';
+      html = `${stamp} <span style="color:#e3b341">- round end${w} -</span>`;
+    } else if (ev.event === 'player_connect' || ev.event === 'player_connect_client') {
+      category = 'other';
+      html = `${stamp} <span style="color:#8b949e">${esc(ev.name||ev.player||'?')} connected</span>`;
+    } else if (ev.event === 'player_disconnect') {
+      category = 'other';
+      const r = ev.reason ? ` (${esc(ev.reason)})` : '';
+      html = `${stamp} <span style="color:#8b949e">${esc(ev.name||ev.player||'?')} disconnected${r}</span>`;
+    } else if (ev.event === 'player_changename') {
+      category = 'other';
+      html = `${stamp} <span style="color:#8b949e">${esc(ev.oldname||'?')} → ${esc(ev.newname||'?')}</span>`;
+    }
+    if (html) consoleEntries.push({ tick: ev.tick, sec, category, html });
+  }
+  // Synthetic lifeState entries are pushed in a separate pass - sort the
+  // combined list so the console reads chronologically.
+  consoleEntries.sort((a, b) => a.tick - b.tick);
+})();
+
+const chatPanel       = document.getElementById('chat-panel');
+const chatLogEl       = document.getElementById('chat-log');
+const consoleCountEl  = document.getElementById('console-count');
+const consoleFiltersEl = document.getElementById('console-filters');
+const consoleOverlay  = document.getElementById('console-overlay');
+const consoleOverlayBody = document.getElementById('console-overlay-body');
+const consoleOverlayCount = document.getElementById('console-overlay-count');
+const consoleOverlayFilters = document.getElementById('console-overlay-filters');
+
+function renderConsoleFilterChips(container, onChange) {
+  container.innerHTML = '';
+  for (const cat of CONSOLE_CATEGORIES) {
+    const chip = document.createElement('span');
+    chip.className = 'con-chip' + (activeConsoleCategories.has(cat.key) ? ' on' : '');
+    chip.textContent = cat.label;
+    chip.onclick = () => {
+      if (activeConsoleCategories.has(cat.key)) activeConsoleCategories.delete(cat.key);
+      else activeConsoleCategories.add(cat.key);
+      renderConsoleAll();
+    };
+    container.appendChild(chip);
+  }
+}
+
+function renderConsoleInto(targetEl, countEl) {
+  targetEl.innerHTML = '';
+  let shown = 0;
+  for (let i = 0; i < consoleEntries.length; i++) {
+    const e = consoleEntries[i];
+    if (!activeConsoleCategories.has(e.category)) continue;
+    const div = document.createElement('div');
+    div.dataset.idx = i;
+    div.dataset.tick = e.tick;
+    div.innerHTML = e.html;
+    div.onclick = () => updatePlayhead(findCmdIdx(e.tick));
+    targetEl.appendChild(div);
+    shown++;
+  }
+  if (countEl) countEl.textContent = `${shown} / ${consoleEntries.length}`;
+}
+
+function renderConsoleAll() {
+  renderConsoleFilterChips(consoleFiltersEl);
+  renderConsoleFilterChips(consoleOverlayFilters);
+  renderConsoleInto(chatLogEl, consoleCountEl);
+  if (consoleOverlay.classList.contains('open')) {
+    renderConsoleInto(consoleOverlayBody, consoleOverlayCount);
+    highlightCurrentConsoleLine();
+  }
+}
+
+function highlightCurrentConsoleLine() {
+  const targets = [chatLogEl, consoleOverlayBody];
+  const tick = playTick !== undefined ? playTick : 0;
+  for (const t of targets) {
+    if (!t) continue;
+    let best = null;
+    for (const child of t.children) {
+      const ct = +child.dataset.tick;
+      if (ct <= tick) best = child;
+      else break;
+    }
+    for (const child of t.children) child.classList.remove('is-current');
+    if (best) {
+      best.classList.add('is-current');
+      // Only auto-scroll the overlay; sidebar would feel jumpy.
+      if (t === consoleOverlayBody && consoleOverlay.classList.contains('open')) {
+        best.scrollIntoView({ block: 'nearest' });
+      }
+    }
+  }
+}
+
+function toggleConsoleOverlay() {
+  if (consoleOverlay.classList.contains('open')) {
+    consoleOverlay.classList.remove('open');
+  } else {
+    consoleOverlay.classList.add('open');
+    renderConsoleInto(consoleOverlayBody, consoleOverlayCount);
+    highlightCurrentConsoleLine();
+  }
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && consoleOverlay.classList.contains('open')) {
+    consoleOverlay.classList.remove('open');
+  }
+});
+
+if (consoleEntries.length > 0) {
+  chatPanel.style.display = '';
+  renderConsoleAll();
+}
+
+// Stats are computed later after all helpers are defined.
 
 // ─── Event log ────────────────────────────────────────────────────────────────
 const tbody = document.getElementById('event-tbody');
@@ -1029,9 +3349,14 @@ EVENTS.forEach((ev, idx) => {
   const tr = document.createElement('tr');
   const sec = tickToSec(ev.tick).toFixed(1);
   const color = EV_COLORS[ev.event] || '#8b949e';
+  // Reuse the Console's weapon-class SVG for death rows so the event-log
+  // bottom panel reads the same as the Console top panel at a glance.
+  const icon = (ev.event === 'player_death' && typeof killIconSvg === 'function')
+    ? `<span style="color:${color};display:inline-block;vertical-align:-1px;margin-right:5px">${killIconSvg(ev.weapon)}</span>`
+    : '';
   tr.innerHTML = `
     <td>${sec}s</td>
-    <td class="ev-name" style="color:${color}">${ev.event}</td>
+    <td class="ev-name" style="color:${color}">${icon}${ev.event}</td>
     <td>${formatEventDetails(ev)}</td>
   `;
   tr.addEventListener('click', () => {
@@ -1071,6 +3396,15 @@ function drawTimeline() {
   if (N < 2) return;
   const minTick = CMDS[0][0], maxTick = CMDS[N - 1][0];
 
+  // Round-filter highlight (drawn under the progress fill so playhead stays visible)
+  if (currentRoundFilter >= 0 && rounds[currentRoundFilter]) {
+    const r = rounds[currentRoundFilter];
+    const x0 = pad + ((r.startTick - minTick) / (maxTick - minTick)) * pw;
+    const x1 = pad + ((r.endTick   - minTick) / (maxTick - minTick)) * pw;
+    ctx.fillStyle = 'rgba(255, 215, 0, 0.18)';
+    ctx.fillRect(x0, H * 0.28, Math.max(2, x1 - x0), H * 0.44);
+  }
+
   // Event ticks
   const evColorsMap = {
     player_death:           '#ff4d4d',
@@ -1088,6 +3422,19 @@ function drawTimeline() {
     ctx.fillStyle = color;
     ctx.globalAlpha = 0.85;
     ctx.fillRect(x - 1.5, H * 0.2, 3, H * 0.6);
+  }
+  // m_lifeState deaths with no matching player_death event - drawn in the
+  // same red as real deaths but thinner (2px) and lower opacity so they read
+  // as "additional / inferred deaths" without competing with the event marks.
+  if (extraDeathTicks.length > 0) {
+    ctx.fillStyle = '#ff4d4d';
+    ctx.globalAlpha = 0.5;
+    for (const tick of extraDeathTicks) {
+      const t = (tick - minTick) / (maxTick - minTick);
+      if (t < 0 || t > 1) continue;
+      const x = pad + t * pw;
+      ctx.fillRect(x - 1, H * 0.2, 2, H * 0.6);
+    }
   }
   ctx.globalAlpha = 1;
 
@@ -1195,24 +3542,33 @@ function animate() {
     ring.rotation.y = t * 1.2;
   }
 
-  // Camera follow modes (when NOT playing — playback handles its own camera)
-  if (!isPlaying) {
-    if (cameraMode === 'follow') {
-      // Slide the orbit target to the player — user keeps full orbit/zoom control
+  // Camera follow modes (when NOT playing - playback handles its own camera).
+  // When multi-player is active we follow the primary YOU entity (raw TF2
+  // coords); otherwise fall back to finalPositions (already y-flipped).
+  if (!isPlaying && CMDS.length > 0 && finalPositions.length > 0) {
+    // Resolve current world position in Three.js coordinates
+    let tx, ty, tz; // Three.js scene coords (Y is height)
+    if (MP_ACTIVE) {
+      const p = mpPrimaryPositionAt(CMDS[currentCmdIdx]?.[0] ?? 0);
+      if (p) { tx = p.x; ty = p.z; tz = -p.y; }
+    }
+    if (tx === undefined) {
       const [px, py, pz] = finalPositions[currentCmdIdx];
-      lerpTarget.set(px, pz + 50, py);
+      tx = px; ty = pz; tz = py;
+    }
+    if (cameraMode === 'follow') {
+      lerpTarget.set(tx, ty + 50, tz);
       controls.target.lerp(lerpTarget, 0.08);
       controls.update();
     } else if (cameraMode === 'fps') {
-      const [px, py, pz] = finalPositions[currentCmdIdx];
       const [, pitch, yaw] = CMDS[currentCmdIdx];
-      camera.position.set(px, pz + 64, py);
+      camera.position.set(tx, ty + 64, tz);
       const yawR = yaw * Math.PI / 180;
       const pitchR = pitch * Math.PI / 180;
       camera.lookAt(
-        px + Math.cos(pitchR) * Math.cos(yawR) * 200,
-        pz + 64 - Math.sin(pitchR) * 200,
-        py + Math.cos(pitchR) * Math.sin(yawR) * 200
+        tx + Math.cos(pitchR) * Math.cos(yawR) * 200,
+        ty + 64 - Math.sin(pitchR) * 200,
+        tz - Math.cos(pitchR) * Math.sin(yawR) * 200
       );
     }
   }
@@ -1222,7 +3578,7 @@ function animate() {
     const now = performance.now();
     const elapsedSec = (now - lastPlayTimestamp) / 1000;
     lastPlayTimestamp = now;
-    playbackGameTick += elapsedSec * 66 * playbackSpeed;
+    playbackGameTick += elapsedSec * TICK_RATE * playbackSpeed;
 
     // Binary-search: lo = last cmd whose tick ≤ playbackGameTick
     let lo = 0, hi = CMDS.length - 1;
@@ -1240,11 +3596,13 @@ function animate() {
     const t0 = CMDS[lo][0], t1 = CMDS[n1][0];
     const frac = (t1 > t0) ? Math.max(0, Math.min(1, (playbackGameTick - t0) / (t1 - t0))) : 0;
 
-    // Interpolate world position
+    // Interpolate world position - skip across teleport jumps (show p0 until cmd boundary)
     const p0 = finalPositions[lo], p1 = finalPositions[n1];
-    const ix = p0[0] + frac * (p1[0] - p0[0]);
-    const iy = p0[1] + frac * (p1[1] - p0[1]);
-    const iz = p0[2] + frac * (p1[2] - p0[2]);
+    const _dpx = p1[0]-p0[0], _dpy = p1[1]-p0[1], _dpz = p1[2]-p0[2];
+    const _isTele = _dpx*_dpx + _dpy*_dpy + _dpz*_dpz > JUMP_THRESHOLD_SQ;
+    const ix = _isTele ? p0[0] : p0[0] + frac * _dpx;
+    const iy = _isTele ? p0[1] : p0[1] + frac * _dpy;
+    const iz = _isTele ? p0[2] : p0[2] + frac * _dpz;
     playerGroup.position.set(ix, iz, iy);   // Three.js: Y=TF2-z, Z=TF2-y
 
     // Interpolate view angles (yaw needs wraparound handling)
@@ -1260,21 +3618,28 @@ function animate() {
     const idir = new THREE.Vector3(
        Math.cos(pR) * Math.cos(yR),
       -Math.sin(pR),
-       Math.cos(pR) * Math.sin(yR)
+      -Math.cos(pR) * Math.sin(yR)
     ).normalize();
     arrowHelper.setDirection(idir);
     const cqa = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), idir);
     coneMesh.quaternion.copy(cqa);
     coneMesh.position.set(idir.x * 200, 50 + idir.y * 200, idir.z * 200);
 
-    // Feed interpolated position to camera follow modes
+    // Feed interpolated position to camera follow modes.
+    // Override with the primary entity's actual world position when MP is
+    // active - keeps the camera centred on YOU instead of the spec target.
+    let camPx = ix, camPy = iy, camPz = iz;
+    if (MP_ACTIVE) {
+      const p = mpPrimaryPositionAt(playbackGameTick);
+      if (p) { camPx = p.x; camPy = -p.y; camPz = p.z; }
+    }
     if (cameraMode === 'follow') {
-      lerpTarget.set(ix, iz + 50, iy);
+      lerpTarget.set(camPx, camPz + 50, camPy);
       controls.target.lerp(lerpTarget, 0.08);
       controls.update();
     } else if (cameraMode === 'fps') {
-      camera.position.set(ix, iz + 64, iy);
-      camera.lookAt(ix + idir.x * 200, iz + 64 + idir.y * 200, iy + idir.z * 200);
+      camera.position.set(camPx, camPz + 64, camPy);
+      camera.lookAt(camPx + idir.x * 200, camPz + 64 + idir.y * 200, camPy + idir.z * 200);
     }
 
     if (lo >= CMDS.length - 1) {
@@ -1285,14 +3650,694 @@ function animate() {
     // Update time display
     const elInfo = document.getElementById('playback-info');
     if (elInfo) {
-      const curSec = (CMDS[lo][0] - CMDS[0][0]) / 66.0;
+      const curSec = (CMDS[lo][0] - CMDS[0][0]) / TICK_RATE;
       elInfo.textContent = curSec.toFixed(1) + 's / ' + totalDuration.toFixed(1) + 's';
     }
   }
 
   if (cameraMode === 'orbit') controls.update();
+  if (typeof mmCtx !== 'undefined') drawMinimap();
+  const _playTick = isPlaying ? playbackGameTick : (CMDS[currentCmdIdx]?.[0] ?? 0);
+  if (fireVisible) updateFireMarkers(_playTick);
+  if (mpEntities.length > 0) updateMultiPlayer(_playTick);
+
+  // Project player name labels from 3D world to screen
+  const _cw = renderer.domElement.clientWidth, _ch = renderer.domElement.clientHeight;
+
+  // Input display - for the recorder we have real usercmd button flags. For an
+  // MP primary who isn't the recorder we don't have their inputs in the demo,
+  // so we derive WSAD-style direction arrows from their velocity (no view
+  // angle → we just show world-axis arrows: W/S = ±Y, A/D = ±X). M1/JMP/DUCK
+  // are blanked since they're not derivable from position alone.
+  const _w = document.getElementById('ik-w');
+  const _a = document.getElementById('ik-a');
+  const _s = document.getElementById('ik-s');
+  const _d = document.getElementById('ik-d');
+  const _lmb = document.getElementById('ik-lmb');
+  const _jmp = document.getElementById('ik-jmp');
+  const _duck = document.getElementById('ik-duck');
+  const _label = document.getElementById('ik-label');
+  const _isRecorderPrimary = !MP_ACTIVE
+    || currentPrimaryEid == null
+    || (mpEntities.find(e => e.eid === currentPrimaryEid)?.samples.length || 0) < 3;
+  if (_isRecorderPrimary) {
+    const _cmd = CMDS[currentCmdIdx];
+    const _btns = _cmd ? _cmd[5] : 0;
+    _w.classList.toggle('on',    !!(_btns & 8));
+    _a.classList.toggle('on',    !!(_btns & 512));
+    _s.classList.toggle('on',    !!(_btns & 16));
+    _d.classList.toggle('on',    !!(_btns & 1024));
+    _lmb.classList.toggle('on',  !!(_btns & 1));
+    _jmp.classList.toggle('on',  !!(_btns & 2));
+    _duck.classList.toggle('on', !!(_btns & 4));
+    _lmb.style.opacity = '';
+    _jmp.style.opacity = '';
+    _duck.style.opacity = '';
+    if (_label) _label.textContent = MP_ACTIVE ? 'recorder' : '';
+  } else {
+    // Sample two nearby positions to compute world-space velocity for the
+    // primary. Project that into the player's local frame using their eye-yaw
+    // SendProp (m_angEyeAngles[1]) - then the lit WSAD arrows reflect the
+    // same WSAD they were physically pressing.
+    const ent = mpEntities.find(e => e.eid === currentPrimaryEid);
+    const s = ent.samples;
+    const tick = CMDS[currentCmdIdx][0];
+    let lo = 0, hi = s.length - 1;
+    while (lo < hi - 1) {
+      const mid = (lo + hi) >> 1;
+      if (s[mid][0] <= tick) lo = mid; else hi = mid;
+    }
+    const dx = s[hi][1] - s[lo][1];
+    const dy = s[hi][2] - s[lo][2];
+    const mag = Math.hypot(dx, dy);
+    const moving = mag > 30;
+    // Look up the closest yaw sample. Source yaw uses degrees, with the
+    // player's forward direction along +X when yaw = 0, rotating CCW.
+    const yawSamples = ENTITY_YAWS[currentPrimaryEid] || [];
+    const yawDeg = yawSampleAt(yawSamples, tick);
+    let fwd, side;
+    if (yawDeg != null) {
+      const r = yawDeg * Math.PI / 180;
+      const cy = Math.cos(r), sy = Math.sin(r);
+      // Forward = (cos, sin), Right = (-sin, cos)  ← Source/Quake convention.
+      fwd  =  dx * cy + dy * sy;
+      side = -dx * sy + dy * cy;
+    } else {
+      // No yaw data - fall back to world-axis arrows so we still show
+      // something useful instead of going dark.
+      fwd = dy; side = dx;
+    }
+    const thresh = moving ? mag * 0.35 : Infinity;
+    _w.classList.toggle('on', moving &&  fwd  >  thresh);
+    _s.classList.toggle('on', moving && -fwd  >  thresh);
+    _d.classList.toggle('on', moving &&  side >  thresh);
+    _a.classList.toggle('on', moving && -side >  thresh);
+    _lmb.classList.remove('on');
+    _jmp.classList.remove('on');
+    _duck.classList.remove('on');
+    _lmb.style.opacity = '0.35';
+    _jmp.style.opacity = '0.35';
+    _duck.style.opacity = '0.35';
+    if (_label) _label.textContent = yawDeg != null
+      ? 'derived (no usercmd)'
+      : 'derived (no yaw)';
+  }
+  // Active-weapon readout for the primary entity (works regardless of who
+  // recorder vs primary is). Uses the m_hActiveWeapon stream we decode.
+  const _wepEl = document.getElementById('ik-weapon');
+  if (_wepEl) {
+    const tickNow = CMDS[currentCmdIdx][0];
+    const wep = (MP_ACTIVE && currentPrimaryEid != null)
+      ? weaponAt(currentPrimaryEid, tickNow) : null;
+    _wepEl.textContent = wep ? wep : '';
+  }
+
   renderer.render(scene, camera);
+
+  // GIF capture hook - runs right after the render pass so the latest pixels
+  // are in the canvas. We sample every Nth frame to hit the target framerate
+  // and add the snapshot to the encoder.
+  if (gifRecording && gifRecording.active) {
+    gifRecording.frameCounter++;
+    if (gifRecording.frameCounter >= gifRecording.everyN) {
+      gifRecording.frameCounter = 0;
+      const src = composeHudFrame(gifRecording.compose);
+      gifRecording.gif.addFrame(src, { copy: true, delay: gifRecording.frameDelayMs });
+      gifRecording.framesCaptured++;
+      const statusEl = document.getElementById('gif-status');
+      if (statusEl) statusEl.textContent = `Recording ${gifRecording.framesCaptured} / ${gifRecording.framesTarget}`;
+      if (gifRecording.framesCaptured >= gifRecording.framesTarget) {
+        finishGifRecord();
+      }
+    }
+  }
+
+  // Throttled (~4 Hz) highlight of the active console line.
+  consoleHighlightTick = (consoleHighlightTick + 1) & 15;
+  if (consoleEntries.length > 0 && consoleHighlightTick === 0) {
+    window.playTick = isPlaying ? playbackGameTick : (CMDS[currentCmdIdx]?.[0] ?? 0);
+    highlightCurrentConsoleLine();
+  }
 }
+
+// ─── Rounds ───────────────────────────────────────────────────────────────────
+// Build round windows from round_start/round_win events. Source 1 game-event
+// names vary by game - accept the common variants.
+const ROUND_START_NAMES = new Set([
+  'teamplay_round_start', 'teamplay_round_active', 'round_start', 'round_freeze_end',
+]);
+const ROUND_END_NAMES = new Set([
+  'teamplay_round_win', 'teamplay_game_over', 'round_end',
+]);
+// Note: `rounds` and `currentRoundFilter` are forward-declared with var near
+// the top of the script so drawTimeline (called at startup) can read them
+// before this block runs.
+rounds = (() => {
+  if (N < 2) return [];
+  const startTicks = EVENTS
+    .filter(e => ROUND_START_NAMES.has(e.event))
+    .map(e => e.tick)
+    .sort((a, b) => a - b);
+  // De-duplicate starts that fall within the same second (round_start + round_active fire together)
+  const deduped = [];
+  for (const t of startTicks) {
+    if (!deduped.length || t - deduped[deduped.length - 1] > TICK_RATE) deduped.push(t);
+  }
+  if (deduped.length === 0) return [];
+  const endTicks = EVENTS
+    .filter(e => ROUND_END_NAMES.has(e.event))
+    .map(e => e.tick)
+    .sort((a, b) => a - b);
+  const out = [];
+  for (let i = 0; i < deduped.length; i++) {
+    const startT = deduped[i];
+    const nextStart = i + 1 < deduped.length ? deduped[i + 1] : CMDS[N - 1][0] + 1;
+    const end = endTicks.find(t => t > startT && t < nextStart);
+    out.push({ startTick: startT, endTick: end ?? (nextStart - 1) });
+  }
+  return out;
+})();
+
+currentRoundFilter = -1; // -1 = no filter, else index into rounds[]
+
+function seekRound(direction) {
+  if (!rounds.length) return;
+  const curTick = CMDS[currentCmdIdx]?.[0] ?? 0;
+  let next = -1;
+  if (direction > 0) {
+    next = rounds.findIndex(r => r.startTick > curTick);
+    if (next === -1) next = rounds.length - 1;
+  } else {
+    for (let i = rounds.length - 1; i >= 0; i--) {
+      if (rounds[i].startTick < curTick - TICK_RATE) { next = i; break; }
+    }
+    if (next === -1) next = 0;
+  }
+  applyRoundFilter(next);
+  updatePlayhead(findCmdIdx(rounds[next].startTick));
+}
+
+function clearRoundFilter() {
+  applyRoundFilter(-1);
+}
+
+function applyRoundFilter(idx) {
+  currentRoundFilter = idx;
+  const status = document.getElementById('round-status');
+  if (idx === -1) {
+    // Show all rows that aren't filtered by chip filters
+    allEventRows.forEach(r => { r.dataset.roundHidden = ''; r.style.display = ''; });
+    if (status) status.textContent = rounds.length ? `${rounds.length} round(s) - showing all` : '';
+  } else {
+    const r = rounds[idx];
+    allEventRows.forEach((row, i) => {
+      const t = EVENTS[i].tick;
+      const inRound = t >= r.startTick && t <= r.endTick;
+      row.dataset.roundHidden = inRound ? '' : '1';
+      row.style.display = inRound ? '' : 'none';
+    });
+    if (status) status.textContent = `Round ${idx + 1}: ${tickToSec(r.startTick).toFixed(0)}–${tickToSec(r.endTick).toFixed(0)}s`;
+  }
+  // Refresh round list highlight
+  document.querySelectorAll('#round-list .cam-btn').forEach((b, i) =>
+    b.classList.toggle('active', i === idx));
+}
+
+{
+  const panel = document.getElementById('rounds-panel');
+  const list  = document.getElementById('round-list');
+  if (rounds.length > 0) {
+    panel.style.display = '';
+    rounds.forEach((r, i) => {
+      const btn = document.createElement('button');
+      btn.className = 'cam-btn';
+      btn.style.justifyContent = 'space-between';
+      btn.style.textAlign = 'left';
+      const dur = ((r.endTick - r.startTick) / TICK_RATE).toFixed(0);
+      btn.innerHTML = `R${i + 1} <span style="color:var(--muted);font-weight:400">${tickToSec(r.startTick).toFixed(0)}s · ${dur}s</span>`;
+      btn.onclick = () => {
+        applyRoundFilter(i);
+        updatePlayhead(findCmdIdx(r.startTick));
+      };
+      list.appendChild(btn);
+    });
+    document.getElementById('round-status').textContent = `${rounds.length} round(s) - showing all`;
+  }
+}
+
+// ─── Event filter chips ───────────────────────────────────────────────────────
+{
+  const activeFilters = new Set();
+  const allTypes = [...new Set(EVENTS.map(e => e.event))];
+  const chipsEl = document.getElementById('ev-filter-chips');
+
+  for (const type of allTypes) {
+    const chip = document.createElement('span');
+    chip.className = 'ev-chip';
+    chip.textContent = type.replace('teamplay_', 'tp_').replace('player_', 'p_');
+    chip.title = type;
+    chip.dataset.type = type;
+    chip.addEventListener('click', () => {
+      if (activeFilters.has(type)) {
+        activeFilters.delete(type);
+        chip.classList.remove('active');
+      } else {
+        activeFilters.add(type);
+        chip.classList.add('active');
+      }
+      applyEventFilter();
+    });
+    chipsEl.appendChild(chip);
+  }
+
+  function applyEventFilter() {
+    allEventRows.forEach((row, i) => {
+      const ev = EVENTS[i];
+      const passesChip  = activeFilters.size === 0 || activeFilters.has(ev.event);
+      const passesRound = !row.dataset.roundHidden;
+      row.style.display = (passesChip && passesRound) ? '' : 'none';
+    });
+  }
+}
+
+// ─── Arrow key frame stepping ─────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.target !== document.body) return;
+  const step = e.shiftKey ? 10 : 1;
+  if (e.code === 'ArrowRight') {
+    e.preventDefault();
+    updatePlayhead(Math.min(CMDS.length - 1, currentCmdIdx + step));
+  } else if (e.code === 'ArrowLeft') {
+    e.preventDefault();
+    updatePlayhead(Math.max(0, currentCmdIdx - step));
+  } else if (e.code === 'ArrowUp') {
+    e.preventDefault();
+    const speeds = [0.5, 1, 2, 5, 10];
+    const idx = speeds.indexOf(playbackSpeed);
+    if (idx < speeds.length - 1) setSpeed(speeds[idx + 1]);
+  } else if (e.code === 'ArrowDown') {
+    e.preventDefault();
+    const speeds = [0.5, 1, 2, 5, 10];
+    const idx = speeds.indexOf(playbackSpeed);
+    if (idx > 0) setSpeed(speeds[idx - 1]);
+  }
+});
+
+// ─── Minimap ──────────────────────────────────────────────────────────────────
+const mmCanvas = document.getElementById('minimap-canvas');
+const mmCtx = mmCanvas.getContext('2d');
+
+// Precompute minimap bounds from finalPositions (actual world positions).
+// When multi-player tracks are present, extend the bounds to cover every
+// entity's samples so other players don't fall outside the drawable area.
+let mmMinX = Infinity, mmMaxX = -Infinity, mmMinY = Infinity, mmMaxY = -Infinity;
+for (const pos of finalPositions) {
+  const x = pos[0], y = pos[1];
+  if (x < mmMinX) mmMinX = x; if (x > mmMaxX) mmMaxX = x;
+  if (y < mmMinY) mmMinY = y; if (y > mmMaxY) mmMaxY = y;
+}
+// Source coords on multi-player samples are TF2 (x, y, z) - convert y → -y to
+// match the screen-Y flip used elsewhere in this viewer.
+if (typeof mpEntities !== 'undefined' && mpEntities.length > 0) {
+  for (const e of mpEntities) {
+    for (const s of e.samples) {
+      const x = s[1], y = -s[2];
+      if (x < mmMinX) mmMinX = x; if (x > mmMaxX) mmMaxX = x;
+      if (y < mmMinY) mmMinY = y; if (y > mmMaxY) mmMaxY = y;
+    }
+  }
+}
+// Pad bounds slightly so markers near the edge aren't clipped by the canvas border.
+{
+  const padX = Math.max(50, (mmMaxX - mmMinX) * 0.04);
+  const padY = Math.max(50, (mmMaxY - mmMinY) * 0.04);
+  mmMinX -= padX; mmMaxX += padX;
+  mmMinY -= padY; mmMaxY += padY;
+}
+const mmSpanX = (mmMaxX - mmMinX) || 1;
+const mmSpanY = (mmMaxY - mmMinY) || 1;
+
+// ── Minimap heatmap ──────────────────────────────────────────────────────────
+// Bin every player position sample into a 2D grid. When heatmap mode is on we
+// draw the density grid in place of (or under) the route lines. The grid is
+// computed once at script init since the sample data is static.
+let heatmapEnabled = false;
+let heatmapGridSize = 48; // cells per axis - coarse enough to read at a glance
+let heatmapCache = null;  // { grid, max, w, h }
+
+function buildHeatmap() {
+  const W = mmCanvas.width, H = mmCanvas.height;
+  const pad = 8;
+  const pw = W - pad * 2, ph = H - pad * 2;
+  const cells = heatmapGridSize;
+  const grid = new Float32Array(cells * cells);
+  let max = 0;
+
+  function bin(x, y) {
+    // x,y in screen-minimap space already (TF2 y was flipped to make finalPositions).
+    if (x < mmMinX || x > mmMaxX || y < mmMinY || y > mmMaxY) return;
+    const gx = Math.min(cells - 1, Math.max(0, Math.floor((x - mmMinX) / mmSpanX * cells)));
+    const gy = Math.min(cells - 1, Math.max(0, Math.floor((y - mmMinY) / mmSpanY * cells)));
+    const idx = gy * cells + gx;
+    grid[idx] += 1;
+    if (grid[idx] > max) max = grid[idx];
+  }
+
+  if (MP_ACTIVE) {
+    // Sum across all enabled entities (so the heatmap reflects what's visible).
+    for (const e of mpEntities) {
+      if (!e.enabled) continue;
+      if (e.samples.length >= 2) {
+        for (const s of e.samples) bin(s[1], -s[2]);
+      } else if (typeof finalPositions !== 'undefined') {
+        for (const fp of finalPositions) bin(fp[0], fp[1]);
+      }
+    }
+  } else if (typeof finalPositions !== 'undefined') {
+    for (const fp of finalPositions) bin(fp[0], fp[1]);
+  }
+  heatmapCache = { grid, max, cells, pw, ph, pad };
+}
+
+function drawHeatmap() {
+  if (!heatmapCache || !heatmapCache.max) return;
+  const { grid, max, cells, pw, ph, pad } = heatmapCache;
+  const cellW = pw / cells;
+  const cellH = ph / cells;
+  // viridis-ish palette: black → dark blue → magenta → orange → white.
+  // Log scale on the density so a few hotspots don't drown out medium areas.
+  const logMax = Math.log(max + 1);
+  for (let gy = 0; gy < cells; gy++) {
+    for (let gx = 0; gx < cells; gx++) {
+      const v = grid[gy * cells + gx];
+      if (v === 0) continue;
+      const t = Math.log(v + 1) / logMax;
+      // Smooth ramp through a few keyframes.
+      let r, g, b;
+      if (t < 0.25) { r = 30  + t/0.25 * 50;  g = 30  + t/0.25 * 80;  b = 80 + t/0.25 * 100; }
+      else if (t < 0.55) { const k = (t-0.25)/0.30; r = 80 + k*120; g = 110 - k*50; b = 180 + k*30; }
+      else if (t < 0.80) { const k = (t-0.55)/0.25; r = 200 + k*55;  g = 60  + k*150; b = 210 - k*180; }
+      else               { const k = (t-0.80)/0.20; r = 255;         g = 210 + k*45;  b = 30  + k*200; }
+      mmCtx.fillStyle = `rgb(${r|0},${g|0},${b|0})`;
+      mmCtx.globalAlpha = Math.min(0.95, 0.35 + t * 0.65);
+      mmCtx.fillRect(pad + gx * cellW, pad + gy * cellH, Math.ceil(cellW) + 1, Math.ceil(cellH) + 1);
+    }
+  }
+  mmCtx.globalAlpha = 1;
+}
+
+function toggleHeatmap() {
+  heatmapEnabled = !heatmapEnabled;
+  const btn = document.getElementById('btn-heatmap');
+  if (btn) {
+    btn.textContent = heatmapEnabled ? 'Heatmap ✓' : 'Heatmap';
+    btn.classList.toggle('active', heatmapEnabled);
+  }
+  if (heatmapEnabled) buildHeatmap();
+}
+
+function drawMinimap() {
+  const W = mmCanvas.width, H = mmCanvas.height;
+  const pad = 8;
+  const pw = W - pad * 2, ph = H - pad * 2;
+  mmCtx.clearRect(0, 0, W, H);
+
+  function mmX(x) { return pad + (x - mmMinX) / mmSpanX * pw; }
+  function mmY(y) { return pad + (y - mmMinY) / mmSpanY * ph; }
+
+  // Heatmap underlay - drawn before paths so the dots / current-position
+  // marker stay readable above it.
+  if (heatmapEnabled) drawHeatmap();
+
+  const MM_JUMP = JUMP_THRESHOLD;
+
+  if (MP_ACTIVE) {
+    // Draw per-entity track lines for every enabled multi-player entity.
+    // Path-line samples are already pruned to alive intervals, so any
+    // remaining samples are real player movement.
+    for (const e of mpEntities) {
+      if (!e.enabled || !routesVisible) continue;
+      const samples = e.samples;
+      const isPrimary = (currentPrimaryEid != null && e.eid === currentPrimaryEid);
+      mmCtx.strokeStyle = `hsla(${e.hue}, 70%, 60%, ${isPrimary ? 0.95 : 0.55})`;
+      mmCtx.lineWidth = isPrimary ? 1.6 : 1.0;
+      // Sparse-sample entities (spec/recorder) trace finalPositions instead
+      // of m_vecOrigin samples, since their spawn coord doesn't update.
+      if (samples.length < 2 && typeof finalPositions !== 'undefined' && finalPositions.length >= 2) {
+        mmCtx.beginPath();
+        let penDown = false;
+        for (let j = 0; j < finalPositions.length; j++) {
+          const [fx, fy] = finalPositions[j]; // already (x, -y)
+          if (!penDown) {
+            mmCtx.moveTo(mmX(fx), mmY(fy));
+            penDown = true;
+          } else {
+            const [pxx, pyy, pzz] = finalPositions[j - 1];
+            const dx = fx - pxx, dy = fy - pyy, dz = finalPositions[j][2] - pzz;
+            if (Math.sqrt(dx*dx + dy*dy + dz*dz) > MM_JUMP) {
+              mmCtx.stroke(); mmCtx.beginPath();
+              mmCtx.moveTo(mmX(fx), mmY(fy));
+            } else {
+              mmCtx.lineTo(mmX(fx), mmY(fy));
+            }
+          }
+        }
+        mmCtx.stroke();
+        continue;
+      }
+      if (samples.length < 2) continue;
+      mmCtx.beginPath();
+      let penDown = false;
+      for (let j = 0; j < samples.length; j++) {
+        const x = samples[j][1], y = -samples[j][2];
+        if (!penDown) {
+          mmCtx.moveTo(mmX(x), mmY(y));
+          penDown = true;
+        } else {
+          const [t0, px2, py2, pz2] = samples[j-1];
+          const [t1, bx, by, bz] = samples[j];
+          // Velocity-based break - same rule as the 3D path-line.
+          if (isSampleTeleport(t0, px2, py2, pz2, t1, bx, by, bz)) {
+            mmCtx.stroke(); mmCtx.beginPath();
+            mmCtx.moveTo(mmX(x), mmY(y));
+          } else {
+            mmCtx.lineTo(mmX(x), mmY(y));
+          }
+        }
+      }
+      mmCtx.stroke();
+    }
+  } else {
+    // Legacy single-player life lines
+    for (let li = 0; li < lifeSegments.length; li++) {
+      const seg = lifeSegments[li];
+      if (lifeObjects[li] && !lifeObjects[li].visible) continue;
+      const hue = lifeHue(li);
+      mmCtx.strokeStyle = `hsla(${hue}, 60%, 55%, 0.55)`;
+      mmCtx.lineWidth = 1;
+      mmCtx.beginPath();
+      let penDown = false;
+      for (let j = seg.start; j <= seg.end; j++) {
+        const [x, y, z] = finalPositions[j];
+        if (!penDown) {
+          mmCtx.moveTo(mmX(x), mmY(y));
+          penDown = true;
+        } else {
+          const [px, py, pz] = finalPositions[j - 1];
+          const dx = x - px, dy = y - py, dz = z - pz;
+          if (Math.sqrt(dx*dx + dy*dy + dz*dz) > MM_JUMP) {
+            mmCtx.stroke(); mmCtx.beginPath();
+            mmCtx.moveTo(mmX(x), mmY(y));
+          } else {
+            mmCtx.lineTo(mmX(x), mmY(y));
+          }
+        }
+      }
+      mmCtx.stroke();
+    }
+  }
+
+  // Death markers - only when deaths layer is enabled
+  if (deathsVisible) {
+    if (MP_ACTIVE) {
+      // Primary deaths get a bigger bright red marker; other entities get a
+      // smaller dot in their entity hue.
+      for (const d of mpDeathPoints) {
+        const x = d.x, y = -d.y;
+        if (x < mmMinX || x > mmMaxX || y < mmMinY || y > mmMaxY) continue;
+        if (d.isPrimary) {
+          mmCtx.fillStyle = '#ff2222';
+          mmCtx.beginPath();
+          mmCtx.arc(mmX(x), mmY(y), 3.5, 0, Math.PI * 2);
+          mmCtx.fill();
+          mmCtx.strokeStyle = '#fff';
+          mmCtx.lineWidth = 1;
+          mmCtx.stroke();
+        } else {
+          const ent = mpEntities.find(e => e.eid === d.eid);
+          mmCtx.fillStyle = ent ? `hsl(${ent.hue}, 70%, 55%)` : '#ff4444';
+          mmCtx.beginPath();
+          mmCtx.arc(mmX(x), mmY(y), 2, 0, Math.PI * 2);
+          mmCtx.fill();
+        }
+      }
+    } else {
+      for (const ev of EVENTS) {
+        if (ev.event !== 'player_death') continue;
+        const idx = Math.min(findCmdIdx(ev.tick), finalPositions.length - 1);
+        const x = finalPositions[idx][0], y = finalPositions[idx][1];
+        mmCtx.fillStyle = '#ff4444';
+        mmCtx.beginPath();
+        mmCtx.arc(mmX(x), mmY(y), 2.5, 0, Math.PI * 2);
+        mmCtx.fill();
+      }
+    }
+  }
+
+  // Multi-player live positions (only for enabled entities)
+  if (typeof mpEntities !== 'undefined' && mpEntities.length > 0) {
+    const playTick = isPlaying ? playbackGameTick : (CMDS[currentCmdIdx]?.[0] ?? 0);
+    for (const e of mpEntities) {
+      if (!e.enabled) continue;
+      // Only filter by life-state for richly-sampled entities; sparse ones
+      // (spectators) always show their last known position.
+      // Same rule as the 3D updateMultiPlayer: hide on the minimap whenever
+      // we have life-state data and the entity is currently dead, regardless
+      // of how many position samples they have.
+      // Same "Hide specs" filter as the 3D view.
+      if (hideSpecsActive && isSpectatorEntity(e)) continue;
+      const _hasLife = (ENTITY_LIFE_STATES[e.eid] || []).length > 0;
+      if (_hasLife && !mpIsAliveAt(e.eid, playTick)) continue;
+      // Hide the recorder's dot during spec windows - see updateMultiPlayer.
+      if (e.samples.length < 3 && isRecorderSpeccing(playTick)) continue;
+      // For sparse entities (the spectator), pull position from the camera
+      // trajectory so the dot moves with playback instead of staying parked
+      // at the recorder's spawn coordinate.
+      let px, py;
+      if (e.samples.length < 3 && typeof finalPositions !== 'undefined' && finalPositions.length > 0) {
+        const idx = Math.max(0, Math.min(currentCmdIdx | 0, finalPositions.length - 1));
+        const fp = finalPositions[idx];
+        px = fp[0]; py = fp[1]; // finalPositions already in (x, -y) screen space
+      } else {
+        const s = mpSampleAt(e.samples, playTick);
+        if (!s) continue;
+        px = s[1]; py = -s[2];
+      }
+      if (px < mmMinX || px > mmMaxX || py < mmMinY || py > mmMaxY) continue;
+      const isPrimary = (currentPrimaryEid != null && e.eid === currentPrimaryEid);
+      mmCtx.fillStyle = isPrimary ? '#58a6ff' : `hsl(${e.hue}, 70%, 55%)`;
+      mmCtx.beginPath();
+      mmCtx.arc(mmX(px), mmY(py), isPrimary ? 6 : 2.4, 0, Math.PI * 2);
+      mmCtx.fill();
+      if (isPrimary) {
+        mmCtx.strokeStyle = '#fff';
+        mmCtx.lineWidth = 2;
+        mmCtx.stroke();
+        // Pulsing outer ring
+        mmCtx.strokeStyle = 'rgba(88,166,255,0.5)';
+        mmCtx.lineWidth = 1;
+        mmCtx.beginPath();
+        mmCtx.arc(mmX(px), mmY(py), 10, 0, Math.PI * 2);
+        mmCtx.stroke();
+      }
+    }
+  }
+
+  // Current position - skip when multi-player is active (primary entity dot represents the recorder)
+  const _mpActive = typeof mpEntities !== 'undefined' && mpEntities.length > 0 && currentPrimaryEid != null;
+  if (!_mpActive && finalPositions.length > 0) {
+    const x = finalPositions[currentCmdIdx][0], y = finalPositions[currentCmdIdx][1];
+    mmCtx.fillStyle = '#ffffff';
+    mmCtx.strokeStyle = '#00aaff';
+    mmCtx.lineWidth = 1.5;
+    mmCtx.beginPath();
+    mmCtx.arc(mmX(x), mmY(y), 4, 0, Math.PI * 2);
+    mmCtx.fill();
+    mmCtx.stroke();
+
+    // View direction arrow
+    const yawR = CMDS[currentCmdIdx][2] * Math.PI / 180;
+    const arrowLen = 10;
+    mmCtx.strokeStyle = '#00aaff';
+    mmCtx.lineWidth = 1.5;
+    mmCtx.beginPath();
+    mmCtx.moveTo(mmX(x), mmY(y));
+    mmCtx.lineTo(mmX(x) + Math.cos(yawR) * arrowLen, mmY(y) - Math.sin(yawR) * arrowLen);
+    mmCtx.stroke();
+  }
+}
+
+// ─── Improved stats ───────────────────────────────────────────────────────────
+{
+  let totalDist = 0;
+  const maxSpeed = REAL_SPEED.peak;
+  let jumpCount = 0, duckCount = 0, attackCount = 0;
+  let prevBtns = CMDS.length > 0 ? CMDS[0][5] : 0;
+  for (let i = 1; i < finalPositions.length; i++) {
+    const [x0, y0, z0] = finalPositions[i-1];
+    const [x1, y1, z1] = finalPositions[i];
+    const seg = Math.sqrt((x1-x0)**2 + (y1-y0)**2 + (z1-z0)**2);
+    // Don't count teleport gaps toward distance traveled
+    if (seg * seg <= JUMP_THRESHOLD_SQ) totalDist += seg;
+    const btns = CMDS[i][5];
+    if ((btns & 2) && !(prevBtns & 2)) jumpCount++;
+    if ((btns & 4) && !(prevBtns & 4)) duckCount++;
+    if ((btns & 1) && !(prevBtns & 1)) attackCount++;
+    prevBtns = btns;
+  }
+  const statsEl = document.getElementById('stats-content');
+  const stats = [
+    ['Distance', (totalDist / 1000).toFixed(1) + ' ku'],
+    ['Max Speed', maxSpeed.toFixed(0) + ' u/s'],
+    ['Duration', META.duration.toFixed(1) + 's'],
+    ['Tick Rate', TICK_RATE.toFixed(1) + ' Hz'],
+    ['Lives', lifeSegments.length],
+    ['Deaths', EVENTS.filter(e => e.event === 'player_death').length],
+    ['Teleports', EVENTS.filter(e => e.event === 'player_teleported').length],
+    ['Jumps', jumpCount],
+    ['Ducks', duckCount],
+    ['Attacks', attackCount],
+  ];
+  statsEl.innerHTML = stats.map(([label, val]) =>
+    `<div class="stat-row"><span class="stat-label">${label}</span><span class="stat-val">${val}</span></div>`
+  ).join('');
+}
+
+// ─── Multi-player override of life-lines + main player avatar ────────────────
+// If --multi-player produced tracks, hide:
+//   1. the legacy life-line path (built from democmdinfo.viewOrigin - a
+//      spec-target composite that duplicates the per-entity tracks)
+//   2. the main playerGroup (box + cone + arrow), since the recorder is now
+//      represented by their own multi-player avatar tagged "YOU"
+if (window._mpHideLifePaths && typeof lifeObjects !== 'undefined') {
+  for (const g of lifeObjects) g.visible = false;
+  routesVisible = true; // we auto-enable mp routes, button reflects that
+  const btnRoutes = document.getElementById('btn-routes');
+  if (btnRoutes) btnRoutes.textContent = 'Routes ✓';
+  if (typeof playerGroup !== 'undefined') playerGroup.visible = false;
+  // Populate the revamped Lives panel + primary-aware header meta
+  if (typeof refreshMpLives === 'function') refreshMpLives();
+  if (currentPrimaryEid != null) {
+    const lives = (mpAliveIntervals.get(currentPrimaryEid) || []).length;
+    const lE = document.getElementById('m-lives'); if (lE) lE.textContent = lives;
+    const dcount = (ENTITY_LIFE_STATES[currentPrimaryEid] || []).filter(([_, s]) => s !== 0).length;
+    const dE = document.getElementById('m-deaths'); if (dE) dE.textContent = dcount;
+
+    // Snap the orbit camera to frame the primary entity at startup, so
+    // sparse-sample players (e.g. spectators with 1 sample) aren't off-screen.
+    const ent = mpEntities.find(e => e.eid === currentPrimaryEid);
+    if (ent && ent.samples.length > 0) {
+      const s = ent.samples[0];
+      const px = s[1], py = -s[2], pz = s[3];
+      // Three.js: X=px, Y=pz (height), Z=py
+      controls.target.set(px, pz + 50, py);
+      camera.position.set(px + 600, pz + 800, py + 800);
+      controls.update();
+    }
+  }
+}
+
+// ─── Start render loop ────────────────────────────────────────────────────────
 animate();
 
 // ─── Initial update ───────────────────────────────────────────────────────────

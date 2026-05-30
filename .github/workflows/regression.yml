@@ -1,0 +1,89 @@
+name: regression
+
+# Light-weight smoke tests: build the release binary, then run it against
+# every demo + reference BSP committed under `DEMOS TESTING/`. Asserts the
+# parser doesn't crash, produces a valid HTML, and emits a known count of
+# entities / samples on a couple of stable reference demos.
+#
+# Note: large demos / BSPs are NOT shipped in the repo by default. Add them
+# under `DEMOS TESTING/` (or set the `DEMOS_DIR` env var to a path that has
+# them) for the assertions to fire. Missing files → workflow skips them and
+# only enforces the build + smoke check.
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build release
+        run: cargo build --release
+
+      - name: Lint (deny warnings)
+        run: cargo build --release 2>&1 | tee build.log
+            && ! grep -E "^warning" build.log
+
+      - name: Smoke-run on every demo
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEMOS_DIR="${DEMOS_DIR:-DEMOS TESTING}"
+          if [ ! -d "$DEMOS_DIR" ]; then
+            echo "No demos directory at '$DEMOS_DIR' - skipping."
+            exit 0
+          fi
+          pass=0; fail=0
+          for d in "$DEMOS_DIR"/*.dem; do
+            [ -e "$d" ] || continue
+            echo "::group::$d"
+            if ./target/release/demoscope "$d" --summary; then
+              if ./target/release/demoscope "$d" --html /tmp/out.html > /dev/null 2>&1; then
+                # Quick HTML sanity check: must contain the script we generate
+                # and parse as syntactically valid JS via node.
+                grep -q 'const META' /tmp/out.html || { echo "missing META"; fail=$((fail+1)); continue; }
+                node -e "
+                  const fs = require('fs');
+                  const h = fs.readFileSync('/tmp/out.html','utf8');
+                  const m = h.match(/<script>([\s\S]*?)<\/script>\s*<\/body>/);
+                  if (!m) { console.error('no script tag'); process.exit(1); }
+                  try { new Function(m[1]); } catch (e) { console.error('JS:', e.message); process.exit(1); }
+                "
+                pass=$((pass+1))
+              else
+                fail=$((fail+1))
+              fi
+            else
+              fail=$((fail+1))
+            fi
+            echo "::endgroup::"
+          done
+          echo "Pass: $pass  Fail: $fail"
+          [ "$fail" -eq 0 ]
+
+      - name: Reference-demo parse stats
+        shell: bash
+        run: |
+          set -euo pipefail
+          # If a known-good reference demo exists, assert the entity / sample
+          # counts haven't drifted. Add more references as the test corpus
+          # grows. Numbers track what was current at the time of writing -
+          # update when the decoder intentionally changes behaviour.
+          ref="DEMOS TESTING/2025-07-18_10-13-29.dem"
+          [ -e "$ref" ] || { echo "Reference demo not in repo - skipping."; exit 0; }
+          out=$(./target/release/demoscope "$ref" --html /tmp/ref.html 2>&1)
+          echo "$out"
+          # Counts as of 2026-05-28: 3 entities, 12637 samples, 3 named,
+          # 113 life transitions, 1183 yaw samples, 90 weapon switches, 8
+          # weapon classes. Loose-match the first half - keeping a check on
+          # the full string would require frequent updates as new SendProps
+          # are added; entity / sample / life counts are the meaningful ones.
+          echo "$out" | grep -E "3 entities, 12637 samples, 3 named, 113 life transitions" \
+            || { echo "Reference demo decode drifted!"; exit 1; }

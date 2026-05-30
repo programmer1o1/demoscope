@@ -1,0 +1,60 @@
+name: pages
+
+# Builds the WebAssembly bundle and publishes the drag-and-drop in-browser
+# viewer (web/) to GitHub Pages. The .wasm + JS glue are NOT committed - they
+# are produced fresh here from src/ via scripts/build-wasm.sh, so the hosted
+# site always matches the source.
+#
+# One-time setup: repo Settings → Pages → "Build and deployment" → Source:
+# "GitHub Actions". After that, every push to master redeploys.
+
+on:
+  push:
+    branches: [master, main]
+  workflow_dispatch:
+
+# Allow one concurrent deployment; let an in-progress run finish.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
+      # Prebuilt wasm-bindgen-cli, version-pinned to the wasm-bindgen crate in
+      # Cargo.lock (must match exactly or the generated glue is rejected).
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen-cli@0.2.122
+
+      - name: Build WASM bundle
+        run: bash scripts/build-wasm.sh
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

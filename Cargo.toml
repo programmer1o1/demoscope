@@ -1,9 +1,28 @@
 [package]
 name = "demoscope"
-version = "0.1.0"
+version = "0.3.0"
 edition = "2024"
 description = "Fast parser and 3D visualiser for Source Engine HL2DEMO files"
 repository = "https://github.com/programmer1o1/demoscope"
 
 [dependencies]
 base64 = "0.21"
+lzma-rs = "0.3"
+
+# WASM-only deps. wasm-bindgen exposes the parser to JS, console_error_panic_hook
+# routes Rust panics to the browser console for better debugging. Both are
+# pulled in only when targeting wasm32 so the native CLI build stays minimal.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+console_error_panic_hook = "0.1"
+
+[lib]
+name = "demoscope"
+path = "src/lib.rs"
+# rlib is needed so `cargo test` and tooling on the native target work;
+# cdylib produces the `.wasm` artifact when compiling for wasm32.
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "demoscope"
+path = "src/main.rs"

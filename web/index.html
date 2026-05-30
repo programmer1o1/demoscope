@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>demoscope — in-browser</title>
+<style>
+:root {
+  --bg: #0d1117;
+  --panel: #161b22;
+  --border: #30363d;
+  --text: #e6edf3;
+  --muted: #8b949e;
+  --accent: #58a6ff;
+  --death: #ff4d4d;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+  font-family: -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 14px; }
+#shell { display: flex; flex-direction: column; height: 100%; }
+header {
+  display: flex; align-items: center; gap: 14px;
+  padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--border);
+}
+header h1 { margin: 0; font-size: 16px; letter-spacing: 0.04em; font-weight: 700; color: var(--accent); }
+header .sub { color: var(--muted); font-size: 12px; }
+header .version { color: var(--muted); font-size: 11px; margin-left: auto; font-family: monospace; }
+main { flex: 1; display: flex; min-height: 0; }
+#drop {
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 14px; padding: 32px; cursor: pointer;
+  background: repeating-linear-gradient(45deg, var(--panel), var(--panel) 8px, #1c232b 8px, #1c232b 16px);
+  border: 2px dashed var(--border); border-radius: 12px; margin: 16px;
+  transition: border-color .15s, background .15s;
+  user-select: none;
+}
+#drop.dragover { border-color: var(--accent); background: rgba(88, 166, 255, 0.06); }
+#drop .icon { font-size: 48px; opacity: 0.5; font-family: monospace; }
+#drop .msg { font-size: 16px; color: var(--text); text-align: center; max-width: 460px; line-height: 1.5; }
+#drop .hint { color: var(--muted); font-size: 12px; text-align: center; max-width: 520px; line-height: 1.4; }
+#drop button { padding: 8px 18px; background: var(--accent); color: #0d1117; border: 0;
+  border-radius: 6px; cursor: pointer; font-weight: 600; }
+#drop input[type=file] { display: none; }
+#status {
+  padding: 10px 14px; background: var(--panel); border-top: 1px solid var(--border);
+  font-family: monospace; font-size: 11px; color: var(--muted);
+  white-space: pre-wrap; max-height: 180px; overflow-y: auto;
+}
+#status .ok { color: #7ee787; }
+#status .err { color: var(--death); }
+#viewer { flex: 1; display: none; border: 0; }
+#viewer.active { display: block; }
+#again {
+  position: fixed; top: 16px; right: 16px; padding: 6px 12px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
+  color: var(--text); cursor: pointer; font-family: inherit; font-size: 12px;
+  display: none; z-index: 10;
+}
+#again.active { display: block; }
+.kbd { background: var(--bg); border: 1px solid var(--border); border-radius: 3px;
+  padding: 1px 5px; font-family: monospace; font-size: 11px; color: var(--text); }
+</style>
+</head>
+<body>
+<div id="shell">
+  <header>
+    <h1>demoscope</h1>
+    <span class="sub">in-browser parser · drag a <code>.dem</code> to begin</span>
+    <span class="version" id="version-tag">loading…</span>
+  </header>
+  <main>
+    <label id="drop">
+      <div class="icon">⤓</div>
+      <div class="msg">
+        Drop a <b>.dem</b> file anywhere here, or
+        <button type="button" id="pick">browse…</button>
+      </div>
+      <div class="hint">
+        Optionally also drop the matching <b>.bsp</b> map file to render the 3D world overlay.
+        Files never leave your machine. Everything runs in this page.
+        <br><br>
+        Keyboard: <span class="kbd">Esc</span> to start over once a demo is loaded.
+      </div>
+      <input type="file" id="file" accept=".dem,.bsp" multiple>
+    </label>
+    <iframe id="viewer"></iframe>
+    <button id="again" type="button">← back</button>
+  </main>
+  <div id="status"></div>
+</div>
+<script type="module">
+import init, { parse_demo_to_html, version } from './demoscope.js';
+
+const drop    = document.getElementById('drop');
+const picker  = document.getElementById('file');
+const status  = document.getElementById('status');
+const viewer  = document.getElementById('viewer');
+const again   = document.getElementById('again');
+const verTag  = document.getElementById('version-tag');
+
+// Track the BSP across loads so the user can drop them one at a time.
+let pendingBsp = null;
+let pendingBspName = '';
+
+function log(msg, cls) {
+  const line = document.createElement('div');
+  if (cls) line.className = cls;
+  line.textContent = msg;
+  status.appendChild(line);
+  status.scrollTop = status.scrollHeight;
+}
+
+function clearStatus() { status.innerHTML = ''; }
+
+async function boot() {
+  log('Loading WASM…');
+  await init();
+  verTag.textContent = 'wasm v' + version();
+  log('Ready. Drop a .dem file.', 'ok');
+}
+
+function showViewer(html) {
+  // Self-contained HTML → blob URL → iframe. The iframe gets its own
+  // origin so localStorage etc. won't collide with this page.
+  const blob = new Blob([html], { type: 'text/html' });
+  viewer.src = URL.createObjectURL(blob);
+  viewer.classList.add('active');
+  drop.style.display = 'none';
+  again.classList.add('active');
+}
+
+function hideViewer() {
+  viewer.classList.remove('active');
+  drop.style.display = '';
+  again.classList.remove('active');
+  if (viewer.src.startsWith('blob:')) URL.revokeObjectURL(viewer.src);
+  viewer.src = '';
+}
+
+async function parse(demoBytes, demoName) {
+  log(`Parsing ${demoName} (${(demoBytes.length / 1024 / 1024).toFixed(1)} MB)…`);
+  const t0 = performance.now();
+  try {
+    // jump_threshold = 0 → auto-derive in the viewer JS.
+    const html = parse_demo_to_html(demoBytes, pendingBsp, demoName, 0);
+    const t1 = performance.now();
+    log(`Done in ${(t1 - t0).toFixed(0)} ms — HTML is ${(html.length / 1024).toFixed(0)} KB.`, 'ok');
+    showViewer(html);
+  } catch (e) {
+    log('Parse failed: ' + (e && e.message || e), 'err');
+  }
+}
+
+async function handleFiles(fileList) {
+  let demo = null, demoName = '';
+  for (const f of fileList) {
+    const name = f.name.toLowerCase();
+    if (name.endsWith('.dem')) { demo = f; demoName = f.name; }
+    else if (name.endsWith('.bsp')) {
+      const buf = new Uint8Array(await f.arrayBuffer());
+      pendingBsp = buf;
+      pendingBspName = f.name;
+      log(`BSP ready: ${f.name} (${(buf.length / 1024 / 1024).toFixed(1)} MB)`, 'ok');
+    }
+  }
+  if (demo) {
+    const bytes = new Uint8Array(await demo.arrayBuffer());
+    await parse(bytes, demoName);
+  } else if (!fileList.length) {
+    log('No files selected.', 'err');
+  } else if (!pendingBsp && fileList.length === 1) {
+    log('Got a BSP. Drop the matching .dem next.', 'ok');
+  }
+}
+
+drop.addEventListener('click', (e) => {
+  // Don't intercept clicks on the button — the label triggers the file input,
+  // but a stray click on the button would double-fire.
+  if (e.target.id !== 'pick') return;
+  picker.click();
+});
+picker.addEventListener('change', () => handleFiles([...picker.files]));
+
+['dragenter', 'dragover'].forEach(ev => {
+  drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('dragover'); });
+});
+['dragleave', 'drop'].forEach(ev => {
+  drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove('dragover'); });
+});
+drop.addEventListener('drop', (e) => {
+  if (e.dataTransfer && e.dataTransfer.files) handleFiles([...e.dataTransfer.files]);
+});
+
+// Same for window-wide drops — convenient when the user misses the dashed box.
+['dragenter', 'dragover'].forEach(ev => window.addEventListener(ev, (e) => e.preventDefault()));
+window.addEventListener('drop', (e) => {
+  e.preventDefault();
+  if (e.dataTransfer && e.dataTransfer.files) handleFiles([...e.dataTransfer.files]);
+});
+
+again.addEventListener('click', () => { hideViewer(); clearStatus(); log('Ready.', 'ok'); });
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && viewer.classList.contains('active')) {
+    hideViewer(); clearStatus(); log('Ready.', 'ok');
+  }
+});
+
+boot().catch(e => log('Boot failed: ' + e.message, 'err'));
+</script>
+</body>
+</html>
