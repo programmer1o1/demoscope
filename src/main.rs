@@ -22,7 +22,9 @@ mod multi_player;
 
 const DEMO_MAGIC: &[u8; 8] = b"HL2DEMO\0";
 const HEADER_SIZE: usize = 1072;
-const DEMOCMDINFO_SIZE: usize = 76; // flags(4) + 6 × vec3(12) = 76
+// Size of one democmdinfo Split_t. The full block is SPLIT_SIZE × splitscreen
+// slots - see detect_splitscreen() (L4D ships 4 slots, not 1).
+const SPLIT_SIZE: usize = 76; // flags(4) + 6 × vec3(12) = 76
 
 // Packet command IDs
 const DEM_SIGNON: u8 = 1;
@@ -32,7 +34,12 @@ const DEM_CONSOLECMD: u8 = 4;
 const DEM_USERCMD: u8 = 5;
 const DEM_DATATABLES: u8 = 6;
 const DEM_STOP: u8 = 7;
+// Two demo command enums share demo_protocol 4. Orange Box/Portal 2 put
+// StringTables at 8. L4D/CS:GO inserted CustomData at 8 and pushed StringTables
+// to 9. Both StringTables variants are length-prefixed, so we walk them the
+// same way; the only thing that moves is the command id.
 const DEM_STRINGTABLES: u8 = 8;
+const DEM_STRINGTABLES_V2: u8 = 9; // L4D/CS:GO (CustomData took slot 8)
 
 
 // MAX_EDICT_BITS / WEAPON_SUBTYPE_BITS from Source SDK
@@ -320,7 +327,7 @@ fn print_usage(prog: &str) {
     eprintln!("  --html     Generate interactive 3D HTML visualization (always includes multi-player tracks)");
     eprintln!("  --jump-threshold N  Path-break distance in units (default: auto-derived from data)");
     eprintln!();
-    eprintln!("Supports: TF2, CS:S, HL2, Portal, DOD, HL2DM, GMod (demo_protocol 2/3/4)");
+    eprintln!("Supports: TF2, CS:S, CS:GO, HL2, Portal, DOD, HL2DM, GMod, L4D, L4D2 (demo_protocol 2/3/4)");
 }
 
 // ── HTML generation structures ────────────────────────────────────────────────
@@ -1444,29 +1451,39 @@ struct DemoPacketInfo {
     payload_end: usize,
 }
 
+// Proto-4's democmdinfo is an array of Split_t[MAX_SPLITSCREEN_CLIENTS], each
+// Split_t being 76 bytes (flags(4) + 6 × vec3(12)). The slot count varies by
+// game: L4D1/L4D2 ship 4, Portal 2/Stanley/CS:GO 2, most others 1. Detect it by
+// probing the first SIGNON/PACKET frame: for each candidate N, read the length
+// field that *would* sit at democmdinfo(76*N)+8 and accept the first N whose
+// length reads as a sane payload size. demo_protocol <= 3 has no Split_t array.
+//
+// Every code path that walks the demo command stream MUST size democmdinfo with
+// this - hardcoding 76 (splitscreen=1) desyncs L4D right after the first signon.
+fn detect_splitscreen(data: &[u8], demo_protocol: i32) -> usize {
+    let extra: usize = if demo_protocol > 3 { 1 } else { 0 };
+    let pkt_hdr = 5 + extra;
+    if demo_protocol > 3 && data.len() > HEADER_SIZE + pkt_hdr + 100 {
+        let pkt_start = HEADER_SIZE + pkt_hdr;
+        for n in [4, 2, 1] {
+            let len_off = pkt_start + SPLIT_SIZE * n + 8;
+            if len_off + 4 > data.len() { continue; }
+            let length = le_i32(data, len_off);
+            if length <= 0 { continue; }
+            let payload_end = len_off.saturating_add(4).saturating_add(length as usize);
+            if (length as usize) < (data.len() - pkt_start) && payload_end < data.len() {
+                return n;
+            }
+        }
+    }
+    1
+}
+
 fn iterate_demo_packets(data: &[u8], demo_protocol: i32) -> Vec<DemoPacketInfo> {
     // demo_protocol > 3 (L4D, Portal 2, CS:GO, …) adds a player_slot byte after cmd+tick
     let extra: usize = if demo_protocol > 3 { 1 } else { 0 };
     let pkt_hdr = 5 + extra;
-    // Proto-4's democmdinfo is an array of Split_t[MAX_SPLITSCREEN_CLIENTS].
-    // L4D1/L4D2 ship with 4 slots, Portal 2/Stanley/CS:GO with 2. Detect by
-    // trying N = 4, 2, 1 on the first SIGNON/PACKET and picking the one
-    // whose length-field reads as a sensible payload size.
-    let mut splitscreen: usize = 1;
-    if demo_protocol > 3 && data.len() > HEADER_SIZE + pkt_hdr + 100 {
-        let pkt_start = HEADER_SIZE + pkt_hdr;
-        for n in [4, 2, 1] {
-            let len_off = pkt_start + 76 * n + 8;
-            if len_off + 4 > data.len() { continue; }
-            let length = le_i32(data, len_off);
-            let payload_end = len_off + 4 + length as usize;
-            if length > 0 && (length as usize) < (data.len() - pkt_start) && payload_end < data.len() {
-                splitscreen = n;
-                break;
-            }
-        }
-    }
-    let democmdinfo = 76 * splitscreen;
+    let democmdinfo = SPLIT_SIZE * detect_splitscreen(data, demo_protocol);
     let preamble = democmdinfo + 12;
 
     let mut packets = Vec::new();
@@ -1488,9 +1505,12 @@ fn iterate_demo_packets(data: &[u8], demo_protocol: i32) -> Vec<DemoPacketInfo> 
             }
             1 | 2 => {
                 if offset + preamble > data.len() { break; }
-                let length = le_i32(data, offset + democmdinfo + 8) as usize;
+                // A negative length is desync garbage (and would overflow usize
+                // on the add in a debug build); treat it as end-of-stream.
+                let length = le_i32(data, offset + democmdinfo + 8);
+                if length < 0 { break; }
                 let payload_start = offset + preamble;
-                let payload_end = payload_start + length;
+                let payload_end = payload_start.saturating_add(length as usize);
                 if payload_end > data.len() { break; }
                 packets.push(DemoPacketInfo { cmd, tick, payload_start, payload_end });
                 offset = payload_end;
@@ -1498,24 +1518,30 @@ fn iterate_demo_packets(data: &[u8], demo_protocol: i32) -> Vec<DemoPacketInfo> 
             4 => {
                 // ConsoleCmd
                 if offset + 4 > data.len() { break; }
-                let length = le_i32(data, offset) as usize;
-                offset += 4 + length;
+                let length = le_i32(data, offset);
+                if length < 0 { break; }
+                let next = offset.saturating_add(4).saturating_add(length as usize);
+                if next > data.len() { break; }
+                offset = next;
                 packets.push(DemoPacketInfo { cmd, tick, payload_start: offset, payload_end: offset });
             }
             5 => {
                 // UserCmd
                 if offset + 8 > data.len() { break; }
-                let length = le_i32(data, offset + 4) as usize;
-                let next = offset + 8 + length;
+                let length = le_i32(data, offset + 4);
+                if length < 0 { break; }
+                let next = offset.saturating_add(8).saturating_add(length as usize);
                 if next > data.len() { break; }
                 packets.push(DemoPacketInfo { cmd, tick, payload_start: offset, payload_end: offset });
                 offset = next;
             }
-            6 | 8 => {
-                // DataTables / StringTables
+            6 | 8 | 9 => {
+                // 6=DataTables, 8=StringTables(old)/CustomData(new), 9=StringTables(new)
                 if offset + 4 > data.len() { break; }
-                let length = le_i32(data, offset) as usize;
-                let next = (offset + 4 + length).min(data.len());
+                let length = le_i32(data, offset);
+                if length < 0 { break; }
+                let next = offset.saturating_add(4).saturating_add(length as usize);
+                if next > data.len() { break; }
                 packets.push(DemoPacketInfo { cmd, tick, payload_start: offset, payload_end: offset });
                 offset = next;
             }
@@ -1537,6 +1563,7 @@ const MAX_CMDS_EMBED: usize = 20_000;
 fn parse_userinfo_from_demo(data: &[u8], proto: i32) -> (HashMap<i32, (String, bool)>, HashMap<usize, i32>) {
     let extra: usize = if proto > 3 { 1 } else { 0 };
     let pkt_hdr = 5 + extra;
+    let democmdinfo = SPLIT_SIZE * detect_splitscreen(data, proto); // L4D = 4 slots
     let mut offset = HEADER_SIZE;
     let mut result = HashMap::new();
     let mut slot_to_uid: HashMap<usize, i32> = HashMap::new();
@@ -1549,27 +1576,33 @@ fn parse_userinfo_from_demo(data: &[u8], proto: i32) -> (HashMap<i32, (String, b
         match cmd {
             7 => break,
             1 | 2 => {
-                if offset + 88 > data.len() { break; }
-                let length = le_i32(data, offset + 84) as usize;
-                offset = offset.saturating_add(88 + length);
+                if offset + democmdinfo + 12 > data.len() { break; }
+                let length = le_i32(data, offset + democmdinfo + 8);
+                if length < 0 { break; }
+                offset = offset.saturating_add(democmdinfo + 12).saturating_add(length as usize);
             }
             3 => {}
             4 => {
                 if offset + 4 > data.len() { break; }
-                let length = le_i32(data, offset) as usize;
-                offset = offset.saturating_add(4 + length);
+                let length = le_i32(data, offset);
+                if length < 0 { break; }
+                offset = offset.saturating_add(4).saturating_add(length as usize);
             }
             5 => {
                 if offset + 8 > data.len() { break; }
-                let length = le_i32(data, offset + 4) as usize;
-                offset = offset.saturating_add(8 + length);
+                let length = le_i32(data, offset + 4);
+                if length < 0 { break; }
+                offset = offset.saturating_add(8).saturating_add(length as usize);
             }
-            6 | 8 => {
+            // StringTables is cmd 8 (old enum: Portal 2/Orange Box) or cmd 9
+            // (new enum: L4D/CS:GO). userinfo lives in that block, so probe both.
+            6 | 8 | 9 => {
                 if offset + 4 > data.len() { break; }
-                let length = le_i32(data, offset) as usize;
+                let length = le_i32(data, offset);
+                if length < 0 { break; }
                 let payload_start = offset + 4;
-                let payload_end = (payload_start + length).min(data.len());
-                if cmd == 8 && payload_end > payload_start {
+                let payload_end = payload_start.saturating_add(length as usize).min(data.len());
+                if (cmd == 8 || cmd == 9) && payload_end > payload_start {
                     if let Some((m, s)) = try_parse_userinfo_tables(&data[payload_start..payload_end]) {
                         result.extend(m);
                         slot_to_uid.extend(s);
@@ -1824,6 +1857,23 @@ fn multi_yaws_to_json(data: &multi_player::MultiPlayerData) -> String {
     format!("{{{}}}", entries.join(","))
 }
 
+fn view_angles_to_json(data: &multi_player::MultiPlayerData) -> String {
+    // Recorder's per-frame camera angles [tick, pitch, yaw] from democmdinfo.
+    // Dense (~1 per game packet) and authoritative - drives the FPS camera on
+    // demos with no usercmds. Keep generous resolution; this is the whole point.
+    const TARGET: usize = 6000;
+    let v = &data.view_angles;
+    let stride = if v.len() > TARGET { (v.len() + TARGET - 1) / TARGET } else { 1 };
+    let mut pts: Vec<String> = v.iter().step_by(stride)
+        .map(|(t, p, y)| format!("[{},{:.2},{:.2}]", t, p, y)).collect();
+    if stride > 1 {
+        if let Some(last) = v.last() {
+            pts.push(format!("[{},{:.2},{:.2}]", last.0, last.1, last.2));
+        }
+    }
+    format!("[{}]", pts.join(","))
+}
+
 fn multi_names_to_json(data: &multi_player::MultiPlayerData) -> String {
     let mut entries: Vec<String> = data.names.iter().map(|(eid, meta)| {
         let aliases: Vec<String> = meta.aliases.iter()
@@ -1943,6 +1993,7 @@ pub fn generate_html_string(
 
     if usercmd_supported {
         let pkt_hdr = 5 + extra; // cmd(1)+tick(4)+[slot(1)]
+        let democmdinfo = SPLIT_SIZE * detect_splitscreen(&data, proto); // L4D = 4 slots
         let mut offset = HEADER_SIZE;
         while offset < data.len() {
             if offset + 5 > data.len() { break; }
@@ -1952,7 +2003,7 @@ pub fn generate_html_string(
                 7 => break,
                 1 | 2 => {
                     let p = offset + pkt_hdr;
-                    if p + DEMOCMDINFO_SIZE + 12 > data.len() { break; }
+                    if p + democmdinfo + 12 > data.len() { break; }
                     // democmdinfo layout: flags(4) + viewOrigin(12) + ...
                     // Extract viewOrigin from cmd=2 (game packets only, not signon)
                     if cmd == 2 && p + 16 <= data.len() {
@@ -1963,14 +2014,17 @@ pub fn generate_html_string(
                             world_positions.push((tick, x, y, z));
                         }
                     }
-                    let length = le_i32(&data, p + DEMOCMDINFO_SIZE + 8) as usize;
-                    offset = p + DEMOCMDINFO_SIZE + 12 + length;
+                    let length = le_i32(&data, p + democmdinfo + 8);
+                    if length < 0 { break; }
+                    offset = p.saturating_add(democmdinfo + 12).saturating_add(length as usize);
                 }
                 3 => { offset += pkt_hdr; }
                 4 => {
                     let p = offset + pkt_hdr;
                     if p + 4 > data.len() { break; }
-                    let length = le_i32(&data, p) as usize;
+                    let length = le_i32(&data, p);
+                    if length < 0 { break; }
+                    let length = length as usize;
                     if p + 4 + length <= data.len() {
                         let s = std::str::from_utf8(&data[p + 4..p + 4 + length])
                             .unwrap_or("")
@@ -1981,14 +2035,15 @@ pub fn generate_html_string(
                             console_cmds.push((tick, s));
                         }
                     }
-                    offset = p + 4 + length;
+                    offset = p.saturating_add(4).saturating_add(length);
                 }
                 5 => {
                     let p = offset + pkt_hdr;
                     if p + 8 > data.len() { break; }
                     let out_seq = le_i32(&data, p);
-                    let length = le_i32(&data, p + 4) as usize;
-                    let next = p + 8 + length;
+                    let length = le_i32(&data, p + 4);
+                    if length < 0 { break; }
+                    let next = p.saturating_add(8).saturating_add(length as usize);
                     if next > data.len() { break; }
                     let ucmd_bytes = &data[p + 8..next];
                     if let Some(ucmd) = parse_usercmd(ucmd_bytes) {
@@ -2009,11 +2064,16 @@ pub fn generate_html_string(
                     }
                     offset = next;
                 }
-                6 | 8 => {
+                // 6=DataTables, 8=StringTables(old enum)/CustomData(new enum),
+                // 9=StringTables(new enum, L4D/CS:GO). All length-prefixed, so
+                // we can skip them uniformly. (CustomData is callback+length, but
+                // POV demos don't carry it - see detect_splitscreen note.)
+                6 | 8 | 9 => {
                     let p = offset + pkt_hdr;
                     if p + 4 > data.len() { break; }
-                    let length = le_i32(&data, p) as usize;
-                    offset = (p + 4 + length).min(data.len());
+                    let length = le_i32(&data, p);
+                    if length < 0 { break; }
+                    offset = p.saturating_add(4).saturating_add(length as usize).min(data.len());
                 }
                 _ => break,
             }
@@ -2198,7 +2258,7 @@ pub fn generate_html_string(
     // Multi-player entity tracks - always extracted now. If the native decoder
     // can't make sense of the demo we fall back to empty objects so the
     // template still parses (legacy single-POV view will still render).
-    let (multi_tracks_json, multi_names_json, multi_life_json, multi_obs_json, multi_yaws_json, multi_weps_json, multi_wep_classes_json, primary_eid_json) = {
+    let (multi_tracks_json, multi_names_json, multi_life_json, multi_obs_json, multi_yaws_json, multi_weps_json, multi_wep_classes_json, primary_eid_json, view_angles_json) = {
         eprint!("  Extracting multi-player tracks ...");
         io::stderr().flush().ok();
         match multi_player::extract_from_bytes(data) {
@@ -2222,11 +2282,12 @@ pub fn generate_html_string(
                     multi_weapons_to_json(&data),
                     multi_weapon_classes_to_json(&data),
                     primary_str,
+                    view_angles_to_json(&data),
                 )
             }
             Err(e) => {
                 eprintln!(" failed: {}", e);
-                ("{}".to_string(), "{}".to_string(), "{}".to_string(), "{}".to_string(), "{}".to_string(), "{}".to_string(), "{}".to_string(), "null".to_string())
+                ("{}".to_string(), "{}".to_string(), "{}".to_string(), "{}".to_string(), "{}".to_string(), "{}".to_string(), "{}".to_string(), "null".to_string(), "[]".to_string())
             }
         }
     };
@@ -2238,6 +2299,7 @@ pub fn generate_html_string(
     html = html.replace("__ENTITY_WEAPONS__", &multi_weps_json);
     html = html.replace("__WEAPON_CLASSES__", &multi_wep_classes_json);
     html = html.replace("__PRIMARY_ENTITY__", &primary_eid_json);
+    html = html.replace("__VIEW_ANGLES__", &view_angles_json);
     html = html.replace("__VIEW_SWITCHES__", &view_switches_json);
 
     Ok(html)
@@ -2342,11 +2404,12 @@ fn main() -> io::Result<()> {
     // demo_protocol > 3 adds a player_slot byte after cmd+tick
     let pkt_extra: usize = if header.demo_protocol > 3 { 1 } else { 0 };
     let ph = 5 + pkt_extra; // packet header size (cmd+tick+[slot])
+    let democmdinfo = SPLIT_SIZE * detect_splitscreen(&data, header.demo_protocol); // L4D = 4 slots
 
     // ── Packet loop ───────────────────────────────────────────────────────────
     let mut offset = HEADER_SIZE;
     let mut pkt_num = 0u32;
-    let mut counts = [0u32; 9]; // indexed by cmd byte (1-8)
+    let mut counts = [0u32; 10]; // indexed by cmd byte (1-9)
     let mut usercmd_count = 0u32;
     let mut json_first = true;
     let mut last_tick = 0i32;
@@ -2360,7 +2423,7 @@ fn main() -> io::Result<()> {
         if tick > last_tick {
             last_tick = tick;
         }
-        if (1..=8).contains(&cmd) {
+        if (1..=9).contains(&cmd) {
             counts[cmd as usize] += 1;
         }
 
@@ -2376,11 +2439,13 @@ fn main() -> io::Result<()> {
             // ── Signon / Packet ───────────────────────────────────────────────
             DEM_SIGNON | DEM_PACKET => {
                 let base = offset + ph;
-                if base + DEMOCMDINFO_SIZE + 12 > data.len() { break; }
-                let in_seq = le_i32(&data, base + DEMOCMDINFO_SIZE);
-                let out_seq = le_i32(&data, base + DEMOCMDINFO_SIZE + 4);
-                let length = le_i32(&data, base + DEMOCMDINFO_SIZE + 8) as usize;
-                let next = base + DEMOCMDINFO_SIZE + 12 + length;
+                if base + democmdinfo + 12 > data.len() { break; }
+                let in_seq = le_i32(&data, base + democmdinfo);
+                let out_seq = le_i32(&data, base + democmdinfo + 4);
+                let length = le_i32(&data, base + democmdinfo + 8);
+                if length < 0 { break; }
+                let length = length as usize;
+                let next = base.saturating_add(democmdinfo + 12).saturating_add(length);
                 if next > data.len() { break; }
                 if show_all && !csv_mode && !json_mode {
                     let label = if cmd == DEM_SIGNON { "SIGNON " } else { "PACKET " };
@@ -2399,8 +2464,10 @@ fn main() -> io::Result<()> {
             DEM_CONSOLECMD => {
                 let p = offset + ph;
                 if p + 4 > data.len() { break; }
-                let length = le_i32(&data, p) as usize;
-                let next = p + 4 + length;
+                let length = le_i32(&data, p);
+                if length < 0 { break; }
+                let length = length as usize;
+                let next = p.saturating_add(4).saturating_add(length);
                 if next > data.len() { break; }
                 if !csv_mode && !json_mode {
                     let s = read_cstring(&data, p + 4, length);
@@ -2413,8 +2480,10 @@ fn main() -> io::Result<()> {
                 let p = offset + ph;
                 if p + 8 > data.len() { break; }
                 let out_seq = le_i32(&data, p);
-                let length = le_i32(&data, p + 4) as usize;
-                let next = p + 8 + length;
+                let length = le_i32(&data, p + 4);
+                if length < 0 { break; }
+                let length = length as usize;
+                let next = p.saturating_add(8).saturating_add(length);
                 if next > data.len() { break; }
                 let ucmd_bytes = &data[p + 8..next];
                 offset = next;
@@ -2542,8 +2611,10 @@ fn main() -> io::Result<()> {
             DEM_DATATABLES => {
                 let p = offset + ph;
                 if p + 4 > data.len() { break; }
-                let length = le_i32(&data, p) as usize;
-                let next = p + 4 + length;
+                let length = le_i32(&data, p);
+                if length < 0 { break; }
+                let length = length as usize;
+                let next = p.saturating_add(4).saturating_add(length);
                 if next > data.len() { break; }
                 if show_all && !csv_mode && !json_mode {
                     println!("[{pkt_num:>6}] DATATABLES tick={tick:>7}  len={length}");
@@ -2551,14 +2622,16 @@ fn main() -> io::Result<()> {
                 offset = next;
             }
 
-            DEM_STRINGTABLES => {
+            DEM_STRINGTABLES | DEM_STRINGTABLES_V2 => {
                 let p = offset + ph;
                 if p + 4 > data.len() { break; }
-                let length = le_i32(&data, p) as usize;
+                let length = le_i32(&data, p);
+                if length < 0 { break; }
+                let length = length as usize;
                 if show_all && !csv_mode && !json_mode {
                     println!("[{pkt_num:>6}] STRTABLES  tick={tick:>7}  len={length}");
                 }
-                offset = (p + 4 + length).min(data.len());
+                offset = p.saturating_add(4).saturating_add(length).min(data.len());
             }
 
             other => {
@@ -2608,7 +2681,7 @@ fn main() -> io::Result<()> {
         );
         println!(
             "║  StringTables     : {}",
-            counts[DEM_STRINGTABLES as usize]
+            counts[DEM_STRINGTABLES as usize] + counts[DEM_STRINGTABLES_V2 as usize]
         );
         println!("╚══");
     }

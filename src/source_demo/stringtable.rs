@@ -86,18 +86,22 @@ pub fn parse_userinfo(payload: &[u8]) -> Option<StringTablesParse> {
     else { Some(StringTablesParse { players: out, table_names }) }
 }
 
-/// Parse a `player_info_s` userdata blob. The struct's leading layout differs
-/// by engine generation:
+/// Parse a `player_info_s` userdata blob. The struct's layout differs by engine
+/// generation in three ways: the leading prefix, the name-field width, and the
+/// integer byte order:
 ///
-///   TF2 / CS:S / HL2 (proto-3):     name[32] starts at offset 0.
-///   Portal 2 / Stanley (proto-4):   an 8-byte `xuid` (uint64) precedes name,
-///                                    so name[32] starts at offset 8.
+///   TF2 / CS:S / HL2 (proto-3):     no prefix,        name[32] at offset 0,  LE
+///   Portal 2 / Stanley / L4D(2):    xuid(8) prefix,   name[32] at offset 8,  LE
+///   CS:GO:                          version(8)+xuid(8) prefix (16),
+///                                   name[128] at offset 16,                  BE
 ///
-/// From `name_off` onward the relative layout is identical:
-///   name_off+0 ..+32  : name[32] (null-terminated)
-///   name_off+32..+36  : user_id (u32)
-///   name_off+36..     : guid / steam_id (null-terminated, "STEAM_…" or "[U:…]")
-///   name_off+108      : is_fake_player (u8)  (best-effort)
+/// CS:GO's blob is ~344 bytes (the 128-byte name); the older variants are ≤144.
+/// We use that size split to pick the name width and prefix candidates, then
+/// from `name_off` the relative layout is:
+///   name_off+0 ..+N   : name[N] (null-terminated, N = 32 or 128)
+///   name_off+N ..+N+4 : user_id (u32, BE on CS:GO else LE)
+///   name_off+N+4..    : guid / steam_id (null-terminated, "STEAM_…" or "[U:…]")
+///   name_off+108      : is_fake_player (u8)  (best-effort, name[32] layout only)
 ///   name_off+109      : is_hl_tv (u8)
 ///
 /// We auto-detect `name_off` rather than thread a per-game flag: offset 0 holds
@@ -110,22 +114,31 @@ pub fn parse_player_info_blob(bytes: &[u8]) -> Option<PlayerInfo> {
         eprintln!("[UINFO] len={} ascii=\"{}\"", bytes.len(), ascii);
     }
     let printable = |b: u8| b.is_ascii_graphic() || b == b' ';
-    let name_off = if bytes.first().is_some_and(|&b| printable(b)) {
-        0
-    } else if bytes.len() >= 8 + 36 && bytes.get(8).is_some_and(|&b| printable(b)) {
-        8 // proto-4 xuid prefix
-    } else {
-        0
-    };
-    if bytes.len() < name_off + 36 { return None; }
+    // CS:GO carries a 16-byte version+xuid prefix and a 128-byte name, making the
+    // blob ~344B; older Source uses a 0/8-byte prefix and a 32-byte name (≤144B).
+    let csgo = bytes.len() >= 200;
+    let name_len = if csgo { 128 } else { 32 };
+    // Find the prefix by locating the first candidate offset that begins a
+    // printable name. Bias toward 16 for the large CS:GO blob, where offset 8 can
+    // land mid-xuid on a stray printable byte.
+    let candidates: &[usize] = if csgo { &[16, 8, 0] } else { &[0, 8, 16] };
+    let name_off = candidates.iter().copied()
+        .find(|&off| bytes.len() >= off + name_len + 4 && bytes.get(off).is_some_and(|&b| printable(b)))
+        .unwrap_or(0);
     let at = |o: usize| name_off + o;
-    let uid = u32::from_le_bytes([bytes[at(32)], bytes[at(33)], bytes[at(34)], bytes[at(35)]]);
-    let is_fake = bytes.len() > at(108) && bytes[at(108)] != 0;
-    let is_hltv = bytes.len() > at(109) && bytes[at(109)] != 0;
-    let name_end = bytes[at(0)..at(32)].iter().position(|&b| b == 0).unwrap_or(32);
+    if bytes.len() < at(name_len) + 4 { return None; }
+    // user_id sits right after the name field; CS:GO writes integers big-endian.
+    let uid_bytes = [bytes[at(name_len)], bytes[at(name_len) + 1], bytes[at(name_len) + 2], bytes[at(name_len) + 3]];
+    let uid = if csgo { u32::from_be_bytes(uid_bytes) } else { u32::from_le_bytes(uid_bytes) };
+    // is_fake / is_hltv offsets are only mapped for the name[32] layout.
+    let is_fake = !csgo && bytes.len() > at(108) && bytes[at(108)] != 0;
+    let is_hltv = !csgo && bytes.len() > at(109) && bytes[at(109)] != 0;
+    let name_end = bytes[at(0)..at(name_len)].iter().position(|&b| b == 0).unwrap_or(name_len);
     let actual_name = String::from_utf8_lossy(&bytes[at(0)..at(0) + name_end]).into_owned();
     if actual_name.is_empty() { return None; }
-    let steam_id: String = bytes[at(36)..at(36) + 32.min(bytes.len().saturating_sub(at(36)))]
+    // guid / steam_id is the null-terminated string right after user_id.
+    let guid_off = at(name_len) + 4;
+    let steam_id: String = bytes[guid_off..(guid_off + 33).min(bytes.len())]
         .iter().take_while(|&&b| b != 0)
         .map(|&b| b as char).collect();
     Some(PlayerInfo {

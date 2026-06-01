@@ -621,6 +621,11 @@ const ENTITY_OBSERVER = __ENTITY_OBSERVER__;
 // degrees, +Y world axis = 90°). Drives the local-frame WSAD reconstruction
 // in the input panel for non-recorder primaries.
 const ENTITY_YAWS = __ENTITY_YAWS__;
+// Recorder's per-frame camera angles [[tick, pitch, yaw], ...] read straight
+// from the democmdinfo viewAngles - dense (≈1 per game packet) and the engine's
+// actual playback camera. Drives the FPS camera on demos with no usercmds
+// (Portal 2 etc.), where it's far denser + more accurate than ENTITY_YAWS.
+const VIEW_ANGLES = __VIEW_ANGLES__;
 // entity_id → [[tick, weaponEntityId], ...] - what weapon each player was
 // holding at every switch. Resolves to a class name via WEAPON_CLASSES.
 const ENTITY_WEAPONS = __ENTITY_WEAPONS__;
@@ -667,7 +672,13 @@ const TICK_RATE = META.tick_rate || 66.0;
 // from that track so the whole playback/scrub/follow-cam pipeline runs on real
 // data instead of throwing on CMDS[currentCmdIdx]. No-op when usercmds exist
 // (CMDS already populated) or when no usable track was decoded.
+// True when CMDS were synthesized from an entity track (proto-4 demos with no
+// real usercmds, e.g. Portal 2). Such CMDS are keyframed only at the sparse
+// track ticks, so the FPS camera sources view angles from the denser
+// dense democmdinfo VIEW_ANGLES instead (see viewAngleAt / the FPS branch).
+let CMDS_SYNTHESIZED = false;
 if (CMDS.length === 0) {
+  CMDS_SYNTHESIZED = true;
   // Prefer the recorder/POV entity; otherwise fall back to the densest track.
   let key = (PRIMARY_ENTITY != null) ? String(PRIMARY_ENTITY) : null;
   if (!key || !(ENTITY_TRACKS[key] && ENTITY_TRACKS[key].length > 1)) {
@@ -1098,7 +1109,11 @@ scene.add(gridHelper);
 // OrbitControls
 const controls = new THREE.OrbitControls(camera, renderer.domElement);
 controls.target.set(tcx, tcy, tcz);
-controls.enableDamping = true;
+// Damping (inertia) is intentionally OFF: it made the follow/POV camera glide
+// toward its aim for ~30 frames after every move and kept easing after playback
+// stopped, which read as a laggy "smoothing camera". With it off, the camera
+// turns 1:1 and settles instantly - like an actual in-game view.
+controls.enableDamping = false;
 controls.dampingFactor = 0.08;
 controls.screenSpacePanning = true;
 controls.update();
@@ -1700,6 +1715,17 @@ function mpPrimaryPositionAt(tick) {
   if (!s) return null;
   return { x: s[1], y: s[2], z: s[3] };
 }
+// True when the current primary is dead or spectating at `tick` - i.e. their
+// m_vecOrigin stream is no longer their own body (the engine repoints it at the
+// spectated target during deathcam/freeze). The Follow / FPS cameras use this
+// to FREEZE in place instead of chasing the death/spectate coordinates, which
+// otherwise reads as "the camera keeps following the player after they die".
+// Returns false when we have no shown-interval info for them (assume alive).
+function mpPrimaryDeadAt(tick) {
+  if (!MP_ACTIVE || currentPrimaryEid == null) return false;
+  if (!mpShownIntervals.has(currentPrimaryEid)) return false;
+  return !mpIsShownAt(currentPrimaryEid, tick);
+}
 function setPrimaryEntity(eid) {
   currentPrimaryEid = String(eid);
   // Update YOU tags
@@ -1777,6 +1803,34 @@ function yawSampleAt(yawSamples, tick) {
     if (yawSamples[mid][0] <= tick) lo = mid; else hi = mid;
   }
   return yawSamples[lo][1];
+}
+
+// Interpolated recorder camera {yaw, pitch} from the dense VIEW_ANGLES stream
+// (democmdinfo viewAngles) at `tick`. Used by the FPS camera on demos with no
+// usercmds (Portal 2 etc.). Because this stream is dense (≈1 per game packet),
+// interpolating between adjacent samples is both smooth AND accurate - the view
+// turns at the camera's real cadence, not the slow sweep that interpolating the
+// sparse ENTITY_YAWS produced. Samples are [tick, pitch, yaw].
+function viewAngleAt(tick) {
+  const s = VIEW_ANGLES;
+  if (!Array.isArray(s) || s.length === 0) return null;
+  if (tick <= s[0][0]) return { pitch: s[0][1], yaw: s[0][2] };
+  const last = s[s.length - 1];
+  if (tick >= last[0]) return { pitch: last[1], yaw: last[2] };
+  let lo = 0, hi = s.length - 1;
+  while (lo < hi - 1) {
+    const mid = (lo + hi) >> 1;
+    if (s[mid][0] <= tick) lo = mid; else hi = mid;
+  }
+  const t0 = s[lo][0], p0 = s[lo][1], y0 = s[lo][2];
+  const t1 = s[hi][0], p1 = s[hi][1], y1 = s[hi][2];
+  const span = t1 - t0;
+  if (span <= 0) return { pitch: p0, yaw: y0 };
+  const f = (tick - t0) / span;
+  let dy = y1 - y0;
+  if (dy >  180) dy -= 360;
+  if (dy < -180) dy += 360;
+  return { pitch: p0 + f * (p1 - p0), yaw: y0 + f * dy };
 }
 
 // ── Multi-player speedometer helpers ─────────────────────────────────────────
@@ -2905,19 +2959,44 @@ document.addEventListener('keydown', e => {
   if (e.key === ']') { e.preventDefault(); if (typeof seekRound === 'function') seekRound(1); return; }
 });
 
-function updatePlayhead(idx) {
+function updatePlayhead(idx, exactTick) {
   // No timeline (a demo with neither usercmds nor a decoded entity track) -
   // nothing to scrub. Bail before indexing empty arrays.
   if (CMDS.length === 0 || finalPositions.length === 0) return;
-  if (!isPlaying) { playbackGameTick = CMDS[idx]?.[0] ?? playbackGameTick; }
   currentCmdIdx = Math.max(0, Math.min(CMDS.length - 1, idx));
-  const [px, py, pz] = finalPositions[currentCmdIdx];
-  const [, pitch, yaw] = CMDS[currentCmdIdx];
+  // Render at a continuous tick when one is supplied (timeline drag); otherwise
+  // snap to the cmd's own tick (frac stays 0 → identical to the old behaviour
+  // for row/event/keyboard seeks).
+  const renderTick = (exactTick != null) ? exactTick : CMDS[currentCmdIdx][0];
+  if (!isPlaying) { playbackGameTick = renderTick; }
+
+  // Interpolate position + view angle to renderTick (sub-cmd) instead of
+  // snapping to the cmd sample - keeps dragging smooth on sparse timelines.
+  const _n1 = Math.min(currentCmdIdx + 1, CMDS.length - 1);
+  const _t0 = CMDS[currentCmdIdx][0], _t1 = CMDS[_n1][0];
+  const _frac = (_t1 > _t0) ? Math.max(0, Math.min(1, (renderTick - _t0) / (_t1 - _t0))) : 0;
+  const _p0 = finalPositions[currentCmdIdx], _p1 = finalPositions[_n1];
+  const _dpx = _p1[0]-_p0[0], _dpy = _p1[1]-_p0[1], _dpz = _p1[2]-_p0[2];
+  const _tele = _dpx*_dpx + _dpy*_dpy + _dpz*_dpz > JUMP_THRESHOLD_SQ;
+  const px = _tele ? _p0[0] : _p0[0] + _frac*_dpx;
+  const py = _tele ? _p0[1] : _p0[1] + _frac*_dpy;
+  const pz = _tele ? _p0[2] : _p0[2] + _frac*_dpz;
 
   // Update player position (TF2 y→Z, z→Y in Three.js)
   playerGroup.position.set(px, pz, py);
 
-  // Compute look direction from yaw+pitch
+  // Look direction: dense democmdinfo angle for synthesized demos, else the
+  // interpolated CMDS view angle (yaw needs 0/360 wraparound handling).
+  let pitch, yaw;
+  const _eye = CMDS_SYNTHESIZED ? viewAngleAt(renderTick) : null;
+  if (_eye) {
+    pitch = _eye.pitch; yaw = _eye.yaw;
+  } else {
+    const y0 = CMDS[currentCmdIdx][2], y1 = CMDS[_n1][2];
+    const p0a = CMDS[currentCmdIdx][1], p1a = CMDS[_n1][1];
+    let _dy = y1 - y0; if (_dy > 180) _dy -= 360; if (_dy < -180) _dy += 360;
+    yaw = y0 + _frac * _dy; pitch = p0a + _frac * (p1a - p0a);
+  }
   const yawR = yaw * Math.PI / 180;
   const pitchR = pitch * Math.PI / 180;
   const dx =  Math.cos(pitchR) * Math.cos(yawR);
@@ -3546,14 +3625,22 @@ function drawTimeline() {
   }
   ctx.globalAlpha = 1;
 
-  // Progress fill
-  const tPlayhead = currentCmdIdx / (N - 1);
+  // Progress fill. Playhead position is TICK-based (not cmd-index based) so it
+  // advances smoothly even when CMDS are sparse with wide tick gaps - an
+  // index-based playhead froze between samples on Portal 2's synthesized
+  // timeline. playbackGameTick is the continuous render tick (kept in sync when
+  // paused/scrubbing), so the knob tracks a drag smoothly too.
+  const curTick = playbackGameTick;
+  const tPlayhead = (maxTick > minTick)
+    ? Math.max(0, Math.min(1, (curTick - minTick) / (maxTick - minTick))) : 0;
   ctx.fillStyle = 'rgba(31, 58, 95, 0.6)';
   ctx.fillRect(pad, H * 0.28, pw * tPlayhead, H * 0.44);
 
-  // Life segment markers
+  // Life segment markers (tick-based, to line up with the playhead)
   for (const brk of LIFE_BREAKS) {
-    const t = brk / (N - 1);
+    const bt = CMDS[brk]?.[0];
+    if (bt == null) continue;
+    const t = (bt - minTick) / (maxTick - minTick);
     const x = pad + t * pw;
     ctx.strokeStyle = '#88ff88';
     ctx.globalAlpha = 0.5;
@@ -3581,7 +3668,7 @@ function drawTimeline() {
   ctx.textAlign = 'right';
   ctx.fillText(META.duration.toFixed(0) + 's', W - pad, H);
   ctx.textAlign = 'center';
-  ctx.fillText(tickToSec(CMDS[currentCmdIdx][0]).toFixed(1) + 's', knobX, H);
+  ctx.fillText(tickToSec(curTick).toFixed(1) + 's', knobX, H);
 }
 
 function tlEventAt(mx, W) {
@@ -3602,7 +3689,15 @@ function tlHandleSeek(clientX) {
   const W  = rect.width;
   const pad = 10, pw = W - pad * 2;
   const t = Math.max(0, Math.min(1, (mx - pad) / pw));
-  updatePlayhead(Math.round(t * (CMDS.length - 1)));
+  if (CMDS.length < 2) { updatePlayhead(0); return; }
+  // Seek to a CONTINUOUS tick from the drag position (not snapped to a cmd
+  // index). updatePlayhead interpolates the avatar/camera to this exact tick,
+  // so scrubbing stays smooth even on sparse timelines (e.g. Portal 2's 242
+  // samples - snapping to indices made the drag feel chunky/rough).
+  const tk = CMDS[0][0] + t * (CMDS[CMDS.length - 1][0] - CMDS[0][0]);
+  let lo = 0, hi = CMDS.length - 1;
+  while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (CMDS[mid][0] <= tk) lo = mid; else hi = mid - 1; }
+  updatePlayhead(lo, tk);
 }
 
 tlCanvas.addEventListener('mousedown', (e) => { tlDragging = true; tlHandleSeek(e.clientX); });
@@ -3638,7 +3733,6 @@ onResize();
 
 // ─── Animation loop ───────────────────────────────────────────────────────────
 let animFrame;
-const followOffset = new THREE.Vector3();
 const lerpTarget = new THREE.Vector3();
 
 function animate() {
@@ -3654,22 +3748,45 @@ function animate() {
   // When multi-player is active we follow the primary YOU entity (raw TF2
   // coords); otherwise fall back to finalPositions (already y-flipped).
   if (!isPlaying && CMDS.length > 0 && finalPositions.length > 0) {
-    // Resolve current world position in Three.js coordinates
+    // Resolve current world position in Three.js coordinates at the continuous
+    // render tick (playbackGameTick) so the camera tracks a timeline drag
+    // smoothly instead of snapping to sparse cmd samples.
     let tx, ty, tz; // Three.js scene coords (Y is height)
     if (MP_ACTIVE) {
-      const p = mpPrimaryPositionAt(CMDS[currentCmdIdx]?.[0] ?? 0);
+      const p = mpPrimaryPositionAt(playbackGameTick);
       if (p) { tx = p.x; ty = p.z; tz = -p.y; }
     }
     if (tx === undefined) {
-      const [px, py, pz] = finalPositions[currentCmdIdx];
+      // Interpolate finalPositions to playbackGameTick (sub-cmd, teleport-safe).
+      const _n1 = Math.min(currentCmdIdx + 1, CMDS.length - 1);
+      const _t0 = CMDS[currentCmdIdx][0], _t1 = CMDS[_n1][0];
+      const _f = (_t1 > _t0) ? Math.max(0, Math.min(1, (playbackGameTick - _t0) / (_t1 - _t0))) : 0;
+      const _p0 = finalPositions[currentCmdIdx], _p1 = finalPositions[_n1];
+      const _dx = _p1[0]-_p0[0], _dy = _p1[1]-_p0[1], _dz = _p1[2]-_p0[2];
+      const _tele = _dx*_dx + _dy*_dy + _dz*_dz > JUMP_THRESHOLD_SQ;
+      const px = _tele ? _p0[0] : _p0[0] + _f*_dx;
+      const py = _tele ? _p0[1] : _p0[1] + _f*_dy;
+      const pz = _tele ? _p0[2] : _p0[2] + _f*_dz;
       tx = px; ty = pz; tz = py;
     }
+    // Hold the camera still while the primary is dead/spectating - their
+    // coordinates during that window belong to the spectated target, not them.
+    const _deadNow = mpPrimaryDeadAt(playbackGameTick);
     if (cameraMode === 'follow') {
-      lerpTarget.set(tx, ty + 50, tz);
-      controls.target.lerp(lerpTarget, 0.08);
+      if (!_deadNow) {
+        // Snap the look-target to the player instead of lerping - the position
+        // is already sub-tick interpolated, so a direct set tracks smoothly
+        // while turning instantly. (A lerp here lagged the camera ~30 frames
+        // behind the player and made scrubbing feel like a smoothing cam.)
+        lerpTarget.set(tx, ty + 50, tz);
+        controls.target.copy(lerpTarget);
+      }
       controls.update();
-    } else if (cameraMode === 'fps') {
-      const [, pitch, yaw] = CMDS[currentCmdIdx];
+    } else if (cameraMode === 'fps' && !_deadNow) {
+      // Dense democmdinfo view angle for synthesized-CMDS demos (see playback).
+      let pitch = CMDS[currentCmdIdx][1], yaw = CMDS[currentCmdIdx][2];
+      const _eye = CMDS_SYNTHESIZED ? viewAngleAt(playbackGameTick) : null;
+      if (_eye) { pitch = _eye.pitch; yaw = _eye.yaw; }
       camera.position.set(tx, ty + 64, tz);
       const yawR = yaw * Math.PI / 180;
       const pitchR = pitch * Math.PI / 180;
@@ -3713,14 +3830,24 @@ function animate() {
     const iz = _isTele ? p0[2] : p0[2] + frac * _dpz;
     playerGroup.position.set(ix, iz, iy);   // Three.js: Y=TF2-z, Z=TF2-y
 
-    // Interpolate view angles (yaw needs wraparound handling)
-    const [, pitch0, yaw0] = CMDS[lo];
-    const [, pitch1, yaw1] = CMDS[n1];
-    let dYaw = yaw1 - yaw0;
-    if (dYaw >  180) dYaw -= 360;
-    if (dYaw < -180) dYaw += 360;
-    const iYaw   = yaw0   + frac * dYaw;
-    const iPitch = pitch0 + frac * (pitch1 - pitch0);
+    // View angles. On demos without usercmds the CMDS are sparse (one keyframe
+    // per track sample), so interpolating their yaw smears quick turns into slow
+    // sweeps. Source from the dense democmdinfo VIEW_ANGLES (the engine's actual
+    // camera) instead; for real usercmd demos keep the authoritative per-tick
+    // CMDS angles.
+    let iYaw, iPitch;
+    const _eye = CMDS_SYNTHESIZED ? viewAngleAt(playbackGameTick) : null;
+    if (_eye) {
+      iYaw = _eye.yaw; iPitch = _eye.pitch;
+    } else {
+      const [, pitch0, yaw0] = CMDS[lo];
+      const [, pitch1, yaw1] = CMDS[n1];
+      let dYaw = yaw1 - yaw0;
+      if (dYaw >  180) dYaw -= 360;
+      if (dYaw < -180) dYaw += 360;
+      iYaw   = yaw0   + frac * dYaw;
+      iPitch = pitch0 + frac * (pitch1 - pitch0);
+    }
     const yR = iYaw   * Math.PI / 180;
     const pR = iPitch * Math.PI / 180;
     const idir = new THREE.Vector3(
@@ -3741,11 +3868,18 @@ function animate() {
       const p = mpPrimaryPositionAt(playbackGameTick);
       if (p) { camPx = p.x; camPy = -p.y; camPz = p.z; }
     }
+    // Freeze the camera during the primary's death/spectate window (see
+    // mpPrimaryDeadAt) so it doesn't chase the spectated target's coordinates.
+    const _deadNow = mpPrimaryDeadAt(playbackGameTick);
     if (cameraMode === 'follow') {
-      lerpTarget.set(camPx, camPz + 50, camPy);
-      controls.target.lerp(lerpTarget, 0.08);
+      if (!_deadNow) {
+        // Snap (not lerp) - position is already interpolated, so this tracks
+        // smoothly during playback yet turns instantly. See the scrub branch.
+        lerpTarget.set(camPx, camPz + 50, camPy);
+        controls.target.copy(lerpTarget);
+      }
       controls.update();
-    } else if (cameraMode === 'fps') {
+    } else if (cameraMode === 'fps' && !_deadNow) {
       camera.position.set(camPx, camPz + 64, camPy);
       camera.lookAt(camPx + idir.x * 200, camPz + 64 + idir.y * 200, camPy + idir.z * 200);
     }
@@ -3765,7 +3899,12 @@ function animate() {
 
   if (cameraMode === 'orbit') controls.update();
   if (typeof mmCtx !== 'undefined') drawMinimap();
-  const _playTick = isPlaying ? playbackGameTick : (CMDS[currentCmdIdx]?.[0] ?? 0);
+  // Redraw the timeline every frame while playing so the playhead advances
+  // smoothly even across wide gaps between sparse CMDS (Portal 2's synthesized
+  // timeline) - updatePlayhead only fires on a cmd-index change, which would
+  // leave the playhead frozen between samples.
+  if (isPlaying && N >= 2) drawTimeline();
+  const _playTick = playbackGameTick;
   if (fireVisible) updateFireMarkers(_playTick);
   if (mpEntities.length > 0) updateMultiPlayer(_playTick);
 
@@ -3785,9 +3924,18 @@ function animate() {
   const _jmp = document.getElementById('ik-jmp');
   const _duck = document.getElementById('ik-duck');
   const _label = document.getElementById('ik-label');
+  // The recorder's real usercmd button flags live in CMDS, but they only apply
+  // when the current primary IS the recorder. Match the authoritative recorder
+  // entity id (PRIMARY_ENTITY) rather than guessing from sample density - since
+  // non-local origins now decode (commit 8fb9e1d), the recorder's own avatar
+  // can carry >=3 samples and the old sparseness heuristic mislabeled it as a
+  // non-recorder primary, showing "derived" instead of the real inputs. Only
+  // fall back to the sparseness proxy when no recorder entity was matched.
   const _isRecorderPrimary = !MP_ACTIVE
     || currentPrimaryEid == null
-    || (mpEntities.find(e => e.eid === currentPrimaryEid)?.samples.length || 0) < 3;
+    || (PRIMARY_ENTITY != null
+        ? currentPrimaryEid === String(PRIMARY_ENTITY)
+        : (mpEntities.find(e => e.eid === currentPrimaryEid)?.samples.length || 0) < 3);
   if (_isRecorderPrimary) {
     const _cmd = CMDS[currentCmdIdx];
     const _btns = _cmd ? _cmd[5] : 0;
@@ -3883,7 +4031,7 @@ function animate() {
   // Throttled (~4 Hz) highlight of the active console line.
   consoleHighlightTick = (consoleHighlightTick + 1) & 15;
   if (consoleEntries.length > 0 && consoleHighlightTick === 0) {
-    window.playTick = isPlaying ? playbackGameTick : (CMDS[currentCmdIdx]?.[0] ?? 0);
+    window.playTick = playbackGameTick;
     highlightCurrentConsoleLine();
   }
 }
@@ -4311,7 +4459,7 @@ function drawMinimap() {
 
   // Multi-player live positions (only for enabled entities)
   if (typeof mpEntities !== 'undefined' && mpEntities.length > 0) {
-    const playTick = isPlaying ? playbackGameTick : (CMDS[currentCmdIdx]?.[0] ?? 0);
+    const playTick = playbackGameTick;
     for (const e of mpEntities) {
       if (!e.enabled) continue;
       // Only filter by life-state for richly-sampled entities; sparse ones

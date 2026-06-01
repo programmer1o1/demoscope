@@ -56,6 +56,11 @@ pub struct PlayerTrackData {
     /// the HTML resolve `weapons[eid][i] = wep_eid` to a human-readable name.
     pub weapon_classes: HashMap<i32, String>,
     pub names: HashMap<u32, PlayerInfo>,
+    /// Recorder's per-frame camera angles (tick, pitch, yaw) straight from the
+    /// democmdinfo viewAngles. Far denser + more accurate than the networked
+    /// eye-angle SendProp - this is the engine's actual playback camera. Drives
+    /// the FPS camera on demos without usercmds (Portal 2 etc.).
+    pub view_angles: Vec<(i32, f32, f32)>,
 }
 
 fn le_i32(d: &[u8], off: usize) -> i32 {
@@ -124,7 +129,9 @@ pub fn extract_from_bytes(data: &[u8]) -> Result<PlayerTrackData, Box<dyn Error>
     // - that heuristic can false-positive (a puzzlemaker-export demo probed as
     // N=4 and desynced on the first packet). Fall back to probing only for
     // proto-4 games we can't identify.
-    let portal2_engine = datatable::DataTableQuirks::for_game(&out.game_dir).portal2_extra_bits;
+    // Container quirks (message-ID remap + splitscreen=2) are Portal2-engine
+    // only - NOT keyed off the SendProp flag format, which L4D also uses.
+    let portal2_engine = datatable::is_portal2_engine(&out.game_dir);
     let mut splitscreen_count: usize = 1;
     if out.demo_protocol > 3 {
         if portal2_engine {
@@ -135,8 +142,9 @@ pub fn extract_from_bytes(data: &[u8]) -> Result<PlayerTrackData, Box<dyn Error>
                 let len_off = pkt_start + 76 * n + 8;
                 if len_off + 4 > data.len() { continue; }
                 let length = le_i32(&data, len_off);
-                let payload_end = len_off + 4 + length as usize;
-                if length > 0 && (length as usize) < (data.len() - pkt_start) && payload_end < data.len() {
+                if length <= 0 { continue; }
+                let payload_end = len_off.saturating_add(4).saturating_add(length as usize);
+                if (length as usize) < (data.len() - pkt_start) && payload_end < data.len() {
                     splitscreen_count = n;
                     break;
                 }
@@ -183,10 +191,21 @@ pub fn extract_from_bytes(data: &[u8]) -> Result<PlayerTrackData, Box<dyn Error>
             DEM_SYNCTICK => { /* no payload */ }
             DEM_SIGNON | DEM_PACKET => {
                 if offset + democmdinfo_bytes + 12 > data.len() { break; }
-                let length = le_i32(&data, offset + democmdinfo_bytes + 8) as usize;
+                let length = le_i32(&data, offset + democmdinfo_bytes + 8);
+                if length < 0 { break; }
                 let payload_start = offset + democmdinfo_bytes + 12;
-                let payload_end = payload_start + length;
+                let payload_end = payload_start.saturating_add(length as usize);
                 if payload_end > data.len() { break; }
+                // democmdinfo Split_t[0]: flags(4)+viewOrigin(12)+viewAngles(12).
+                // viewAngles = the recorder's per-frame camera direction; capture
+                // it as the dense FPS-camera angle source (game packets only).
+                if raw_cmd == 2 && offset + 24 <= data.len() {
+                    let pitch = le_f32(&data, offset + 16);
+                    let yaw = le_f32(&data, offset + 20);
+                    if pitch.is_finite() && yaw.is_finite() {
+                        out.view_angles.push((tick, pitch, yaw));
+                    }
+                }
                 dbg_pkts += 1;
                 scan_game_payload(
                     &data[payload_start..payload_end],
@@ -205,19 +224,22 @@ pub fn extract_from_bytes(data: &[u8]) -> Result<PlayerTrackData, Box<dyn Error>
             }
             DEM_CONSOLECMD => {
                 if offset + 4 > data.len() { break; }
-                let length = le_i32(&data, offset) as usize;
-                offset += 4 + length;
+                let length = le_i32(&data, offset);
+                if length < 0 { break; }
+                offset = offset.saturating_add(4).saturating_add(length as usize);
             }
             DEM_USERCMD => {
                 if offset + 8 > data.len() { break; }
-                let length = le_i32(&data, offset + 4) as usize;
-                offset += 8 + length;
+                let length = le_i32(&data, offset + 4);
+                if length < 0 { break; }
+                offset = offset.saturating_add(8).saturating_add(length as usize);
             }
             DEM_DATATABLES => {
                 if offset + 4 > data.len() { break; }
-                let length = le_i32(&data, offset) as usize;
+                let length = le_i32(&data, offset);
+                if length < 0 { break; }
                 let payload_start = offset + 4;
-                let payload_end = (payload_start + length).min(data.len());
+                let payload_end = payload_start.saturating_add(length as usize).min(data.len());
                 let quirks = datatable::DataTableQuirks::for_game(&out.game_dir);
                 if let Some(dt) = datatable::parse(&data[payload_start..payload_end], out.demo_protocol, quirks) {
                     // DUMP_FLAT=<class_id> dumps that server class's flattened
@@ -256,14 +278,16 @@ pub fn extract_from_bytes(data: &[u8]) -> Result<PlayerTrackData, Box<dyn Error>
                 // of the packet stream remains aligned.
                 if offset + 8 > data.len() { break; }
                 let _id = le_i32(&data, offset);
-                let length = le_i32(&data, offset + 4) as usize;
-                offset = (offset + 8 + length).min(data.len());
+                let length = le_i32(&data, offset + 4);
+                if length < 0 { break; }
+                offset = offset.saturating_add(8).saturating_add(length as usize).min(data.len());
             }
             DEM_STRINGTABLES => {
                 if offset + 4 > data.len() { break; }
-                let length = le_i32(&data, offset) as usize;
+                let length = le_i32(&data, offset);
+                if length < 0 { break; }
                 let payload_start = offset + 4;
-                let payload_end = (payload_start + length).min(data.len());
+                let payload_end = payload_start.saturating_add(length as usize).min(data.len());
                 if let Some(parsed) = parse_userinfo(&data[payload_start..payload_end]) {
                     out.names.extend(parsed.players);
                     userinfo_table_id = parsed.table_names.iter()
@@ -339,6 +363,13 @@ fn scan_game_payload(
                 }
                 _ => {}
             }
+        }
+        // DUMP_MSG=1 prints every raw 6-bit message id. Pipe through
+        // `sort | uniq -c | sort -rn` to histogram a new game's net-message
+        // enum when porting (the once-per-packet ids are net_Tick + the
+        // PacketEntities equivalent). See README "Investigating L4D2".
+        if std::env::var("DUMP_MSG").is_ok() {
+            eprintln!("[MSG] raw={}", msg_type_raw);
         }
         let msg_type = if portal2 {
             match msg_type_raw {

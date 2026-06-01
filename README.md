@@ -2,7 +2,18 @@
 
 Fast Rust parser and interactive 3D visualiser for Source Engine demo files (`.dem`).
 
-Supports Team Fortress 2, Half-Life 2 (all versions), Counter-Strike: Source, Day of Defeat: Source, Portal, Portal 2, and The Stanley Parable - i.e. **HL2DEMO** Source 1 games on `net_protocol ≥ 24`, where it decodes player positions, inputs, and game state into a full visualisation. Older `net_protocol = 7` titles (Garry's Mod 9, HL2 Old Engine) parse only their header + console log, and L4D is in progress - see the [Compatibility](#compatibility) table and [Investigating Stanley Parable & L4D2](#investigating-stanley-parable--l4d2).
+Supports Team Fortress 2, Half-Life 2 (all versions), Counter-Strike: Source, Day of Defeat: Source, Portal, Portal 2, and The Stanley Parable - i.e. **HL2DEMO** Source 1 games on `net_protocol ≥ 24`, where it decodes player positions, inputs, and game state into a full visualisation. Left 4 Dead 1/2 and CS:GO parse end-to-end (header, inputs, names, recorder camera path) with per-player entity tracks still in progress. Older `net_protocol = 7` titles (Garry's Mod 9, HL2 Old Engine) parse only their header + console log. See the [Compatibility](#compatibility) table and [Investigating Stanley Parable & L4D2](#investigating-stanley-parable--l4d2).
+
+---
+
+## What's new in v0.4.0
+
+- **Left 4 Dead 1 & 2 now parse end-to-end** - the full demo stream walks to `DEM_STOP` (inputs, names, recorder camera path; `data23.dem` = 509 usercmds, `ellisfloor.dem` = 432). Two container quirks were peeled back: L4D ships **4 splitscreen slots** (`Split_t[4]`, 304-byte `democmdinfo`), and its newer command enum inserts `dem_customdata` at 8 and pushes `dem_stringtables` to **9** (Portal 2 / Orange Box keep it at 8). The **SendTable/DataTable format was also cracked** by sweeping flag-width × priority × `m_nBits` for a sane server-class count: L4D1 uses 16-bit TF2 flags with **`m_nBits = 6`** (222 classes); L4D2 uses 19-bit Alien-Swarm flags + priority with `m_nBits = 6` (278 classes). The shared L4D quirk is the 6-bit `m_nBits` field - everything else uses 7, and a one-bit miscount desyncs the whole table walk. The previously-conflated `portal2_engine` boolean is now decoupled into three independent axes (`portal2_extra_bits` flag format, `bit_count_bits`, and container `is_portal2_engine`). Per-player entity *tracks* still need the L4D net-message map - see [Investigating Stanley Parable & L4D2](#investigating-stanley-parable--l4d2).
+- **CS:GO parses end-to-end** - the command-enum shift (stringtables at 9) and the splitscreen handling apply, so CS:GO walks to STOP with full inputs and player names. Its `player_info_s` blob has a distinct layout (16-byte `version + xuid` prefix, **128-byte name field, big-endian integers**) - the userinfo parser now detects it by blob size and reads names/SteamIDs correctly. Entity tracks need a protobuf decoder (its DataTables and PacketEntities are protobuf-encoded) - a separate, larger effort.
+- **First-person POV camera now uses the real per-frame camera** - on demos with no usercmds (Portal 2, Stanley), the view angle is sourced from the dense `democmdinfo.viewAngles` stream (≈1 sample per game packet) instead of the sparse networked eye-angle SendProp (which a recorder barely networks for itself). Interpolating the dense stream gives a smooth, accurate POV that turns at the camera's real cadence - no slow "smoothing-cam" sweep, no freeze-then-snap. Exposed as `__VIEW_ANGLES__`/`viewAngleAt()`.
+- **Smoother camera & timeline** - OrbitControls inertia is off and the follow-target snaps (1:1 tracking, no glide); the timeline playhead is **tick-based** and redraws every frame so it advances continuously even on sparse synthesized timelines (it used to freeze between samples); and **dragging the timeline seeks to a continuous tick** with the avatar/camera interpolated to it, so scrubbing is smooth instead of snapping to sparse cmd samples.
+- **Player-name parsing across engines** - `parse_player_info_blob` now handles all three `player_info_s` layouts by blob size: proto-3 (`name[32]`@0), proto-4 (xuid + `name[32]`@8), and CS:GO (version + xuid + `name[128]`@16, big-endian). The dead-player camera-follow case is fixed too (it no longer chases a dead primary's spectated coordinates).
+- **Overflow-hardened demo walkers** - every length read in the packet walkers (`main.rs` + `player_tracks.rs`) now guards a negative/garbage length and uses saturating arithmetic. This fixes debug-build panics (`attempt to add with overflow`) on desync; release builds silently wrapped before. Validated across a **450-demo corpus** (TF2, HL2 + episodes, DoD:S, CS:S, CS:GO, Portal 1/2, Stanley, L4D1/2, plus Source 2 cs2/dota2) with **zero crashes** - the 10 non-parsing files are correctly rejected Source 2 (`PBDEMS2`) and HL2-beta (`HLDEMO`) magic.
 
 ---
 
@@ -162,8 +173,9 @@ Place the `.bsp` map file in the same directory as the demo for the full 3D map 
 | HL2 Old Engine | ⚠ Same - too old (demo_protocol = 2, net_protocol = 7). Empty viewer. |
 | Portal 2 / Aperture Tag / Portal Stories / Portal Reloaded | ✅ Entity positions, eye-yaw, full DataTables (306 tables / 235 classes). Real `m_vecOrigin` decode verified against an `engine.dll` bit-trace. No game events yet (Portal 2 event schema differs). |
 | The Stanley Parable | ✅ Same Portal 2-engine path - 237 classes, real positions (2226 samples on the sample demo). `net_protocol = 1000` but shares the 19+8 flag format, splitscreen = 2, and message-ID remap. |
-| L4D1 / L4D2 | ⚠ header + userinfo + splitscreen preamble work; SendTable / DataTables decode does **not** - different engine generation (splitscreen = 4, different net-message map, possibly different flag layout). 0 entities. See [Investigating Stanley Parable & L4D2](#investigating-stanley-parable--l4d2). |
-| GMod 13+ / SFM / Titanfall / new CS:GO | ✗ Different file format entirely |
+| L4D1 / L4D2 | ⚠ Parse end-to-end: header, inputs (509 / 432 usercmds), names, and recorder camera path all work, and DataTables now decode (222 / 278 classes - L4D1 = 16-bit flags + `m_nBits` 6; L4D2 = 19+8 + `m_nBits` 6). Per-player entity *tracks* still 0 - the net-message map remains. See [Investigating Stanley Parable & L4D2](#investigating-stanley-parable--l4d2). |
+| CS:GO (Source 1, ≤ 2023) | ⚠ Parses end-to-end: inputs, names/SteamIDs (big-endian `player_info_s`), recorder camera path. Entity tracks need a protobuf decoder (DataTables + PacketEntities are protobuf-encoded). 0 entity tracks for now. |
+| GMod 13+ (`GMODEMO`) / SFM (DMX) / Titanfall (`R1DEMO`) / CS2 + Dota 2 (`PBDEMS2`, Source 2) | ✗ Different file format entirely - rejected on magic |
 
 Multi-player entity decode is native on TF2 / CS:S / Portal 2 / Stanley Parable; on other Source 1 games it's best-effort and depends on common SendProp table names being present.
 
@@ -201,7 +213,8 @@ The diagnostic tooling that cracked Portal 2 is in the tree and env-gated, so th
 | `DUMP_FLAT=<id>` | dumps that class's flattened prop list (`index / type / bits / priority / CO`) - the thing you diff against an engine bit-trace fingerprint. |
 | `DUMP_ENT=1` | per `svc_PacketEntities` packet: `delta / max-entries / updates / length-bits / decode ok\|NONE / world-size / class histogram`. Shows whether the baseline ever establishes. |
 | `DUMP_ENT2=1` | per entity within a packet (first 12): `index / eid / update-type / class_id / flat-len`. Pinpoints the exact entity where a snapshot desyncs. |
-| `DUMP_USERINFO=1` | every `player_info_s` userdata blob as length + ASCII - shows where the name actually sits (proto-4 prepends an 8-byte `xuid`, so the name starts at offset 8, not 0). |
+| `DUMP_USERINFO=1` | every `player_info_s` userdata blob as length + ASCII - shows where the name actually sits (proto-4 prepends an 8-byte `xuid` → name@8; CS:GO prepends 16 bytes → name@16). |
+| `DUMP_MSG=1` | every raw 6-bit net-message id. Pipe through `sort \| uniq -c \| sort -rn` to histogram a new game's message enum - the once-per-packet ids are `net_Tick` and the `svc_PacketEntities` equivalent. **The tool for the remaining L4D net-message map.** |
 
 ```bash
 DUMP_SCAN=1   demoscope demo.dem --html /tmp/x.html
@@ -215,16 +228,18 @@ DUMP_FLAT=108 demoscope demo.dem --html /tmp/x.html | grep FLAT   # Stanley's CP
 |---|---|---|---|---|---|
 | The Stanley Parable | `thestanleyparable` | 1000 | 2 | 237 classes ✅ | **Works** - added to the Portal 2-engine allowlist; ships `CPortal_Player`, real positions. |
 | Portal 2 | `portal2` | 2001 | 2 | 235 classes ✅ | **Works.** |
-| L4D2 | `left4dead2` | 2100 | 4 | `parse` returns `None` ✗ | Not working - see below. |
-| L4D1 | `left4dead` | 1041 | 4 | - | Same family as L4D2. |
+| L4D2 | `left4dead2` | 2100 | 4 | 278 classes ✅ | DataTables decode; entity *tracks* blocked on the net-message map (below). |
+| L4D1 | `left4dead` | 1041 | 4 | 222 classes ✅ | Same - DataTables decode; tracks blocked on net-message map. |
 
-**Why Stanley "just worked":** it's the Portal 2 engine (Source 2013 SP) under a different `game_dir` and `net_protocol`. Adding `"thestanleyparable"` to `PORTAL2_ENGINE` in `DataTableQuirks::for_game` (`src/source_demo/datatable.rs`) flipped it from `0 classes` to `237 classes, 2226 position samples`. If you find another Portal 2-engine mod, the fix is likely one line in that list - confirm with `DUMP_SCAN` showing `N classes` after the change.
+**Why Stanley "just worked":** it's the Portal 2 engine (Source 2013 SP) under a different `game_dir` and `net_protocol`. Adding `"thestanleyparable"` to the Portal 2-engine list in `DataTableQuirks::for_game` (`src/source_demo/datatable.rs`) flipped it from `0 classes` to `237 classes, 2226 position samples`. If you find another Portal 2-engine mod, the fix is likely one line in that list - confirm with `DUMP_SCAN` showing `N classes` after the change.
 
-**Why L4D is harder (don't just add it to the allowlist):** the single `portal2_engine` boolean conflates three independent things - splitscreen count (L4D = **4**, not 2), the 19+8 flag format, and the Portal 2 net-message map. Forcing the flag on also pins splitscreen to 2, which immediately desyncs L4D's preamble (`abort at offset 0x4e0 after 1 packet`). With the auto-detected splitscreen = 4, `DEM_DATATABLES` is reached but `datatable::parse` returns `None` (desync inside the table walk). To make progress, decouple the quirks into separate fields:
+**L4D DataTables - solved (v0.4.0).** The single `portal2_engine` boolean used to conflate three independent things; they're now decoupled into separate axes:
 
-1. **Splitscreen count** - drive from a per-game table (L4D = 4) rather than the conflated boolean; the length-probe stays as fallback.
-2. **Flag format** - L4D is Source 2009 / Alien Swarm-era. It may use 19-bit flags *without* the 8-bit priority byte, or a different `SPROP_NUMFLAGBITS_NETWORKED`. Verify by reading `dt_common.h` in the matching SDK and watching `DUMP_SCAN` for `N classes > 0` once the width is right.
-3. **Net-message map** - L4D's `net_protocol` (2100 / 1041) differs from Portal 2's 2001; the message IDs almost certainly differ. The reliable way to confirm the actual wire encodings is the same Frida bit-trace used for Portal 2 (`scripts/p2_bittrace.js`, repointed at the L4D `engine.dll` RVAs) diffed against `DUMP_FLAT`. NeKzor/sdp covers only the Portal 2 engine, so it won't help here - the Alien Swarm SDK is the closest open reference.
+1. **Splitscreen count** - driven from a per-game table (L4D = **4**, Portal 2 / Stanley = 2); the length-probe stays as fallback for unidentified proto-4 games.
+2. **Command enum** - L4D's newer enum inserts `dem_customdata` at 8 and moves `dem_stringtables` to **9**; `userinfo` lives in that cmd-9 block.
+3. **Flag format + `m_nBits`** - found by sweeping flag-width × priority × `m_nBits` for a sane class count (`DUMP_SCAN`): **L4D1 = 16-bit TF2 flags, no priority, `m_nBits` 6** → 222 classes; **L4D2 = 19-bit Alien-Swarm flags + 8-bit priority, `m_nBits` 6** → 278 classes. The shared L4D quirk is the **6-bit `m_nBits`** field (`bit_count_bits` in `DataTableQuirks`) - everything else uses 7, and a one-bit miscount desyncs the table walk. `is_portal2_engine()` (container: splitscreen=2 + message remap) is now separate from `portal2_extra_bits` (flag format), so L4D2 can share the flag format without the Portal 2 container.
+
+**What remains - the net-message map.** DataTables decode, but `svc_PacketEntities` never fires because L4D renumbered and widened the 6-bit svc enum (ids run up to 62; `net_Tick` is raw 4 not 3, PacketEntities looks like raw ~48 not 26). `scan_game_payload` needs an L4D remap like the existing Portal 2 one. Histogram the enum with `DUMP_MSG=1 … | sort | uniq -c | sort -rn`, but the authoritative id→name table (and the `svc_PacketEntities` header layout) is best confirmed with the same Frida bit-trace used for Portal 2 (`scripts/p2_bittrace.js`, repointed at the L4D `engine.dll`). NeKzor/sdp covers only the Portal 2 engine; the Alien Swarm SDK is the closest open reference.
 
 #### Known gap: full-snapshot demos (speedruns, mid-game recordings)
 
@@ -254,22 +269,23 @@ metadata-only viewer.
 
 ### Smoke-test corpus
 
-A 77-demo corpus across 17 game folders (TF2, CSTRIKE, CSGO old, HL2 + episodes + Lost Coast, HL2DM, DoD:S, Portal, Portal 2, L4D1/L4D2, GMOD 9/13, Stanley Parable, SFM, HL2BETA, Titanfall) is run through the parser as part of release smoke checks. Latest full-sweep results:
+A **450-demo corpus** across 16 game folders (TF2, CS:S, CS:GO, HL2 + episodes, DoD:S, Portal, Portal 2, Stanley, L4D1/L4D2, DIPRIP, Dystopia, plus Source 2 cs2/dota2 and HL2-beta) is run through the full `--html` pipeline as a release smoke check, in a **debug build** (so integer-overflow checks are on - `--release` silently wraps them). Latest full-sweep results:
 
 | Outcome | Count | What it means |
 |---|---|---|
-| ✅ Valid HTML viewer produced | **68 / 77** | parsed cleanly, HTML JS validates |
-| ✗ Rejected - `not a valid HL2DEMO file` | 9 / 77 | `GMOD/` (×3, new format), `HL2BETA/` (×2), `SFM/` (×1), `CSGO/data10` (Source 2), `Titanfall 2/` (×1), and a `type1generated` fixture - Source 2 / Respawn / pre-release formats. Clean error, no crash. |
+| ✅ Valid HTML viewer produced | **440 / 450** | parsed cleanly to `DEM_STOP`, no crash |
+| ✗ Rejected on magic | 10 / 450 | 6 × CS2 + 3 × Dota 2 (`PBDEMS2`, Source 2) and 1 × HL2-beta (`HLDEMO`) - not `HL2DEMO`. Clean error, no panic. |
+| 💥 Panics / crashes | **0** | the overflow-hardened walkers held across the whole corpus |
 
-Of the 68 valid viewers, by position source:
+Of the 440 valid viewers, by position source:
 
-| Position source | Count | Games |
-|---|---|---|
-| Multi-player entity tracks (`m_vecOrigin`) | **52** | TF2, CS:S, DoD:S, HL2DM, Portal, **Portal 2**, **Stanley Parable**, most HL2 |
-| Single-POV only (`viewOrigin`, 0 MP entities) | 10 | 8 HL2 + 2 TF2 STV/POV demos - still render the recorder path |
-| Empty scene (parses, no positions) | 6 | 2 old CS:GO (proto-4), GMOD 9, HL2 Old Engine, L4D1, L4D2 - engines not yet decoded |
+| Position source | Games |
+|---|---|
+| Multi-player entity tracks (`m_vecOrigin`) | TF2, CS:S, DoD:S, HL2DM, Portal, **Portal 2**, **Stanley Parable**, multiplayer HL2 |
+| Single-POV camera path (`viewOrigin`) | single-player HL2 / EP1 / EP2 / Portal - the recorder's own `m_vecOrigin` isn't networked, so they render the recorder camera path (correct, not a gap) |
+| Camera path + names, no entity tracks | **L4D1, L4D2, CS:GO** - parse fully; per-player entity tracks pending (see [Investigating Stanley Parable & L4D2](#investigating-stanley-parable--l4d2)) |
 
-Multi-player entity decode behaves well on TF2 + CS:S (per-player tracks, weapons, eye-yaw, life states) and on Portal 2 + Stanley Parable (recorder positions + eye-yaw via `m_vecOrigin`, synthesized playback timeline). On HL2 single-player and Portal 1, only the recorder's `viewOrigin` is captured (no networked player entities to decode); the viewer falls back to legacy single-POV mode and still renders the playthrough path. On L4D1 / L4D2 / older CS:GO, entity decode currently yields zero MP entities - the viewer falls back to single-POV the same way. See [Investigating Stanley Parable & L4D2](#investigating-stanley-parable--l4d2) for the L4D path.
+Multi-player entity decode behaves well on TF2 + CS:S (per-player tracks, weapons, eye-yaw, life states) and on Portal 2 + Stanley Parable (recorder positions, synthesized playback timeline, dense `democmdinfo.viewAngles` POV camera). On HL2 single-player and Portal 1, only the recorder's `viewOrigin` is captured and the viewer renders the playthrough path. L4D1 / L4D2 / CS:GO parse end-to-end (inputs, names, recorder camera) but yield zero MP entity tracks - the viewer renders the recorder path the same way.
 
 ---
 
@@ -413,6 +429,14 @@ Empty fields = unchanged from previous frame. Fill-forward to get the current va
 
 Ranked roughly easy → hard. PRs welcome.
 
+### Done (in v0.4.0)
+
+- ✅ **L4D1 / L4D2 parse end-to-end** - container quirks (splitscreen = 4, `dem_customdata`@8 / `dem_stringtables`@9) and the cracked SendTable format (L4D1 16-bit flags + `m_nBits` 6; L4D2 19+8 + `m_nBits` 6). DataTables decode (222 / 278 classes); per-player entity tracks pending the net-message map.
+- ✅ **CS:GO parses end-to-end** - command-enum + splitscreen handling, plus a big-endian `player_info_s` (`name[128]`@16) for correct names/SteamIDs. Entity tracks need a protobuf decoder.
+- ✅ **Dense POV camera** - first-person view angle sourced from per-frame `democmdinfo.viewAngles` (`__VIEW_ANGLES__` / `viewAngleAt()`) instead of the sparse networked eye-angle, for a smooth, accurate POV on usercmd-less demos.
+- ✅ **Smoother camera & timeline** - OrbitControls inertia off + snapped follow target; tick-based timeline playhead that redraws every frame; continuous-tick timeline dragging with interpolated avatar/camera.
+- ✅ **Overflow-hardened walkers** - every packet-length read guards negatives + uses saturating arithmetic, fixing debug-build panics on desync. Validated on a 450-demo corpus with zero crashes.
+
 ### Done
 
 - ✅ **Demo metadata panel** - server, map, game, tickrate, demo protocol, lives/deaths/teleports surfaced in the header.
@@ -462,7 +486,8 @@ Ranked roughly easy → hard. PRs welcome.
 
 ### Hard (a real project)
 
-- **L4D1 / L4D2 entity decode** - decouple the conflated `portal2_engine` boolean into separate splitscreen-count / flag-format / message-map quirks, then verify each against an L4D `engine.dll` bit-trace. Full breakdown in [Investigating Stanley Parable & L4D2](#investigating-stanley-parable--l4d2). The diagnostic switches (`DUMP_SCAN`, `DUMP_FLAT`) and the Frida scripts (`scripts/p2_bittrace.js`, `scripts/run_trace.py`) are in the tree.
+- **L4D1 / L4D2 entity tracks** - DataTables now decode (v0.4.0); the remaining blocker is the L4D net-message map (`svc_PacketEntities` lands at a renumbered id). Histogram with `DUMP_MSG=1`, confirm the id→name table + PacketEntities header layout with an L4D `engine.dll` bit-trace (`scripts/p2_bittrace.js` repointed), then add an L4D remap to `scan_game_payload` like the Portal 2 one. Full breakdown in [Investigating Stanley Parable & L4D2](#investigating-stanley-parable--l4d2).
+- **CS:GO / Source 2 entity decode** - CS:GO's DataTables and PacketEntities are protobuf-encoded (and Source 2 / CS2 / Dota 2 are protobuf throughout), so they need a protobuf message reader rather than the bit-packed SendTable path. CS:GO already parses inputs/names/camera; this is the entity-track layer.
 - **Proto-4 game events** - Portal 2 / Stanley decode positions but no game events yet (their event schema differs from the TF2/CS:S filters).
 - **Side-by-side demo diff** - overlay two demos in the same scene; useful for jump-map comparisons and speedrun analysis.
 - **Streaming parse** - mmap or chunked I/O for 1 GB+ STV demos that currently get fully loaded into memory.

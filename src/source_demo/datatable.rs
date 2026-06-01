@@ -120,23 +120,55 @@ pub struct DataTableQuirks {
     /// and use the Portal 2 net-message ID remap. The Stanley Parable
     /// (game_dir `thestanleyparable`, net_protocol 1000) shares all three even
     /// though its net protocol differs - it ships `CPortal_Player` and decodes
-    /// with this flag set (237 classes, real positions). L4D1/L4D2 do NOT
-    /// belong here: they use splitscreen = 4 and a different message map, so
-    /// this single boolean can't model them - see README "Investigating L4D2".
+    /// with this flag set (237 classes, real positions).
+    ///
+    /// NOTE: this flag is ONLY the SendTable flag-encoding (19 + 8). It is
+    /// independent of the *container* quirks (splitscreen count, net-message-ID
+    /// remap) handled by `is_portal2_engine()`, and of the `m_nBits` field width
+    /// (`bit_count_bits`). The proto-4 family mixes these axes independently:
+    ///   - L4D1 (net 1041): 16-bit TF2 flags, no priority, m_nBits = 6
+    ///   - L4D2 (net 2100): 19-bit AS flags + priority, m_nBits = 6
+    ///   - Portal 2 / Stanley: 19-bit AS flags + priority, m_nBits = 7
+    /// All verified by parsing to a sane server-class count (222 / 278 / 235).
     pub portal2_extra_bits: bool,
+    /// Width of the SendProp `m_nBits` field (PROPINFOBITS_NUMBITS). The L4D
+    /// engine uses 6; everything else we support uses 7. A 1-bit miscount here
+    /// desyncs the whole table walk on the first numeric prop.
+    pub bit_count_bits: u32,
 }
 
 impl DataTableQuirks {
     pub fn for_game(game_dir: &str) -> Self {
-        const PORTAL2_ENGINE: &[&str] = &[
+        // Games whose SendTables use the post-Orange-Box 19-bit flag + 8-bit
+        // priority encoding (Portal 2 / Alien Swarm lineage). L4D2 also uses it;
+        // L4D1 does NOT (it keeps the older 16-bit TF2 flag layout).
+        const EXTRA_FLAG_BITS: &[&str] = &[
             "portal2", "aperturetag", "TWTM",
             "portal_stories", "portalreloaded", "Portal 2 Speedrun Mod",
             "thestanleyparable",
+            "left4dead2",
         ];
+        // The L4D engine (both games) writes m_nBits as a 6-bit field.
+        const NBITS6: &[&str] = &["left4dead", "left4dead2"];
+        let eq = |set: &[&str]| set.iter().any(|g| g.eq_ignore_ascii_case(game_dir));
         DataTableQuirks {
-            portal2_extra_bits: PORTAL2_ENGINE.iter().any(|g| g.eq_ignore_ascii_case(game_dir)),
+            portal2_extra_bits: eq(EXTRA_FLAG_BITS),
+            bit_count_bits: if eq(NBITS6) { 6 } else { 7 },
         }
     }
+}
+
+/// Portal 2 / Source-2013-SP engine *container* quirks: the net-message-ID
+/// remap and MAX_SPLITSCREEN_CLIENTS = 2. Distinct from `portal2_extra_bits`
+/// (the SendProp flag format) - L4D shares that flag format but uses the
+/// canonical message map and splitscreen = 4, so it is NOT a portal2 engine.
+pub fn is_portal2_engine(game_dir: &str) -> bool {
+    const PORTAL2_ENGINE: &[&str] = &[
+        "portal2", "aperturetag", "TWTM",
+        "portal_stories", "portalreloaded", "Portal 2 Speedrun Mod",
+        "thestanleyparable",
+    ];
+    PORTAL2_ENGINE.iter().any(|g| g.eq_ignore_ascii_case(game_dir))
 }
 
 /// Parse the DEM_DATATABLES payload. The payload starts with a sequence of
@@ -219,10 +251,13 @@ fn read_send_prop_def(br: &mut BitReader, demo_protocol: i32, quirks: DataTableQ
     // different bit positions than TF2's 16-bit space, so we normalise them
     // back to canonical TF2 positions for the shared flatten + decode paths.
     let (flags, priority) = if quirks.portal2_extra_bits {
+        // Alien Swarm / Portal 2 / L4D2 lineage: 19 networked flag bits (whose
+        // positions diverge from TF2's 16-bit layout) + an 8-bit priority byte.
         let raw = br.read_bits(19)?;
         let prio = br.read_bits(8)? as u8;
         (normalize_portal2_flags(raw), prio)
     } else {
+        // TF2 / CS:S / HL2 / L4D1: 16-bit flags, no priority byte.
         (br.read_bits(SPROP_NUM_FLAG_BITS)?, 0u8)
     };
 
@@ -243,7 +278,7 @@ fn read_send_prop_def(br: &mut BitReader, demo_protocol: i32, quirks: DataTableQ
     } else {
         low_value = br.read_bit_float()?;
         high_value = br.read_bit_float()?;
-        bit_count = br.read_bits(SPROP_NUM_BITS_NETWORKED)?;
+        bit_count = br.read_bits(quirks.bit_count_bits)?;
     }
 
     Some(RawSendPropDef {

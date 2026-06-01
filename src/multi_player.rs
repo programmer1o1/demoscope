@@ -45,6 +45,8 @@ pub struct MultiPlayerData {
     pub weapons: HashMap<u32, Vec<(i32, i32)>>,
     pub weapon_classes: HashMap<i32, String>,
     pub primary_entity: Option<u32>,
+    /// Recorder's per-frame camera angles (tick, pitch, yaw) from democmdinfo.
+    pub view_angles: Vec<(i32, f32, f32)>,
 }
 
 #[allow(dead_code)] // CLI flow now reads bytes up front and calls extract_from_bytes.
@@ -75,6 +77,7 @@ fn wrap_raw(raw: player_tracks::PlayerTrackData) -> Result<MultiPlayerData, Box<
         observer_modes: raw.observer_modes, yaws: raw.yaws,
         weapons: raw.weapons, weapon_classes: raw.weapon_classes,
         primary_entity,
+        view_angles: raw.view_angles,
     })
 }
 
