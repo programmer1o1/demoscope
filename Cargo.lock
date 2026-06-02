@@ -53,7 +53,7 @@ checksum = "217698eaf96b4a3f0bc4f3662aaa55bdf913cd54d7204591faa790070c6d0853"
 
 [[package]]
 name = "demoscope"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "base64",
  "console_error_panic_hook",

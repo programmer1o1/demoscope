@@ -35,6 +35,18 @@ mod wasm {
         // Route panics to console.error so a browser session shows a real
         // stack trace instead of "unreachable executed".
         console_error_panic_hook::set_once();
+        // Quake-family demos (Q1/Q2/Q3) route to the dedicated decoder; HL2DEMO
+        // demos fall through to the Source path. Detection checks the HL2DEMO
+        // magic first, so Source demos are never misclassified.
+        if let Some(kind) = super::cli::quake::detect(name_hint, demo) {
+            return super::cli::generate_quake_html(demo, kind, bsp.as_deref(), name_hint)
+                .map_err(|e| JsValue::from_str(&e.to_string()));
+        }
+        // GoldSrc (HL1) HLDEMO container - recorder POV (+ optional BSP overlay).
+        if super::cli::goldsrc::is_goldsrc(demo) {
+            return super::cli::generate_goldsrc_html(demo, bsp.as_deref(), name_hint)
+                .map_err(|e| JsValue::from_str(&e.to_string()));
+        }
         super::cli::generate_html_string(demo, bsp.as_deref(), name_hint, jump_threshold)
             .map_err(|e| JsValue::from_str(&e.to_string()))
     }

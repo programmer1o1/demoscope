@@ -485,6 +485,7 @@ tr.highlight-row td { background: #1f3a5f; color: var(--text); }
         <button class="cam-btn" id="btn-heatmap" onclick="toggleHeatmap()" title="Show a density heatmap of player positions on the minimap">Heatmap</button>
         <button class="cam-btn" id="btn-deaths" onclick="toggleDeaths()">Deaths</button>
         <button class="cam-btn" id="btn-fire" onclick="toggleFire()">Fire ✓</button>
+        <button class="cam-btn" id="btn-kills" onclick="toggleKills()" title="Draw an arc from attacker to victim on each kill, lit up during playback (headshots in gold)">Kills</button>
       </div>
     </div>
     <div class="sidebar-section" id="players-panel" style="display:none">
@@ -537,6 +538,16 @@ tr.highlight-row td { background: #1f3a5f; color: var(--text); }
     <div id="threejs-container">
       <div id="cam-mode-badge"></div>
       <div id="fire-labels"></div>
+      <!-- Kill-arc color legend (shown only while the Kills layer is on) -->
+      <div id="kill-legend" style="display:none;position:absolute;right:10px;top:34px;z-index:8;
+           background:rgba(13,17,23,0.82);border:1px solid #30363d;border-radius:6px;
+           padding:7px 10px;font-size:11px;line-height:1.7;color:#c9d1d9;pointer-events:none;
+           box-shadow:0 2px 10px rgba(0,0,0,0.4)">
+        <div style="font-weight:600;margin-bottom:2px;color:#8b949e">Kill arcs - attacker→victim</div>
+        <div><span style="display:inline-block;width:22px;height:3px;vertical-align:middle;background:#ffd11f;box-shadow:0 0 5px #ffd11f"></span> headshot</div>
+        <div><span style="display:inline-block;width:22px;height:3px;vertical-align:middle;background:#ff5722;box-shadow:0 0 5px #ff5722"></span> body shot</div>
+        <div><span style="display:inline-block;width:22px;height:3px;vertical-align:middle;background:#f28c40;opacity:0.7"></span> non-fatal hurt</div>
+      </div>
       <div id="speedometer">
         <div><span class="sp-now" id="sp-now">0</span><span class="sp-unit">u/s</span></div>
         <div class="sp-peak">peak <b id="sp-peak">0</b></div>
@@ -1204,10 +1215,16 @@ const mpAliveIntervals = new Map(); // entity_id (string) → [[startTick, endTi
       continue;
     }
 
-    // If the first transition is to alive, the entity was dead before that
-    // (just-joined / round-not-yet-started). If first is dead, entity was
-    // also dead before, so either way pre-first-transition is excluded.
-    let aliveSince = null;
+    // m_lifeState is only networked when it CHANGES. A recorder that is alive
+    // from the start (single-player HL2/Portal, and any player already in the
+    // server) therefore has its FIRST transition be the death itself (state != 0)
+    // with no preceding "alive" marker. Treat a leading death-transition as
+    // "alive since tick 0" so the pre-death window becomes a real alive interval.
+    // Without this the entity gets ZERO alive intervals, which blanks its route,
+    // freezes the follow camera (mpPrimaryDeadAt reads it as perpetually dead),
+    // and hides the avatar. If the first transition IS to alive (state 0, e.g. a
+    // mid-match join), the entity was dead before it - leave aliveSince null.
+    let aliveSince = (transitions[0][1] !== 0) ? 0 : null;
     for (const [t, state] of transitions) {
       if (state === 0) {
         // Becoming alive
@@ -1451,8 +1468,27 @@ for (const [eid, samples] of Object.entries(ENTITY_TRACKS)) {
   });
 }
 
+// Holds the synthesized recorder eid (if any) so currentPrimaryEid below can
+// point at it. Single-POV demos (single-player HL2/Portal, GMod sandbox) carry
+// no networked entity tracks; rather than keep a separate legacy avatar
+// (playerGroup), we inject the recorder as one normal sparse entity so EVERY
+// demo renders through the single multi-player path. Its avatar + path come
+// from the camera trajectory (finalPositions), exactly like any other
+// sparse-sample player.
+let _synthRecorderEid = null;
+
 const mpEntities = []; // [{ eid, name, color, samples, pathGroup, avatar, label }]
 {
+  if (Object.keys(ENTITY_TRACKS).length === 0 &&
+      typeof finalPositions !== 'undefined' && finalPositions.length >= 2) {
+    _synthRecorderEid = (typeof PRIMARY_ENTITY !== 'undefined' && PRIMARY_ENTITY != null)
+      ? String(PRIMARY_ENTITY) : '0';
+    ENTITY_TRACKS[_synthRecorderEid] = [];
+    if (!ENTITY_NAMES[_synthRecorderEid]) {
+      const recName = (typeof META !== 'undefined' && META && META.client) ? META.client : 'recorder';
+      ENTITY_NAMES[_synthRecorderEid] = { name: recName };
+    }
+  }
   const entityIds = Object.keys(ENTITY_TRACKS);
   if (entityIds.length > 0) {
     const panel = document.getElementById('players-panel');
@@ -1476,7 +1512,7 @@ const mpEntities = []; // [{ eid, name, color, samples, pathGroup, avatar, label
     for (const eid of entityIds) {
       const samples = ENTITY_TRACKS[eid] || [];
       // Skip only truly empty + unnamed entities. Named players with sparse
-      // tracks (e.g. spectators with 0–1 samples) still get a sidebar row.
+      // tracks (e.g. spectators with 0-1 samples) still get a sidebar row.
       const meta = ENTITY_NAMES[eid] || {};
       const displayName = meta.name || `Entity ${eid}`;
       if (samples.length < 1 && !meta.name) continue;
@@ -1490,7 +1526,7 @@ const mpEntities = []; // [{ eid, name, color, samples, pathGroup, avatar, label
       const lineMat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.55 });
       const runs = [];
       let runStart = 0;
-      // Sparse-sample entities (e.g. spectator/recorder with 0–1 m_vecOrigin
+      // Sparse-sample entities (e.g. spectator/recorder with 0-1 m_vecOrigin
       // updates) don't have per-tick samples to draw, so fall back to
       // finalPositions - the camera trajectory - which IS where they actually
       // were. Path is drawn as a single jump-broken run.
@@ -1686,6 +1722,28 @@ const mpEntities = []; // [{ eid, name, color, samples, pathGroup, avatar, label
 // from the sidebar via right-click. The minimap and avatar code reads this
 // instead of the const PRIMARY_ENTITY.
 let currentPrimaryEid = PRIMARY_ENTITY != null ? String(PRIMARY_ENTITY) : null;
+// A synthesized recorder (single-POV demo) is the primary by default.
+if (currentPrimaryEid == null && _synthRecorderEid != null) currentPrimaryEid = _synthRecorderEid;
+
+// Solo-recorder mode: no entity has a real position track (every entity is the
+// sparse camera-driven recorder). Covers single-player HL2/Portal demos and
+// GMod sandbox demos. Here the spec / view-switch / life-state hiding is both
+// unreliable and pointless - the recorder is the only thing to look at and
+// "spectating" is really just the engine repointing svc_SetView (vehicles,
+// camera tools), not a real spectate - so flag those entities always-visible.
+// Demos with any real per-player tracks (TF2/CS:S/L4D/Portal 2 MP) are
+// untouched, so the spec-hiding that keeps the recorder off whoever they watch
+// still applies there.
+{
+  // soloRecorder also covers single-player demos (one player entity): the sole
+  // recorder, even with a full real track, must not be hidden when m_lifeState
+  // marks it dead - it's the only thing on screen, so hiding it on death (HL2/
+  // Portal single-player) just empties the scene. Multi-player demos keep the
+  // death-hiding (it stops a dead recorder overlapping whoever they spectate).
+  const _solePlayer = mpEntities.length === 1;
+  const _anyRealTracks = mpEntities.some(e => e.samples && e.samples.length >= 3);
+  if (_solePlayer || !_anyRealTracks) for (const e of mpEntities) e.soloRecorder = true;
+}
 
 // Single source of truth for "is multi-player mode active?". Used to short
 // circuit the legacy POV path/avatar/death/teleport rendering - none of
@@ -1766,7 +1824,14 @@ function setPrimaryEntity(eid) {
 // O(log n) binary search of (tick, x, y, z) for the most-recent sample at currentTick.
 // Avoids interpolation across long sample gaps (sparse same-position samples are
 // stripped server-side; gaps now reliably mean "no position update happened").
-const MP_INTERP_MAX_TICKS = 33; // ~0.5s at 66 Hz - interpolate only across short gaps
+// Interpolate across sample gaps up to ~0.5s of REAL TIME. Scaled by the demo's
+// tick rate so it's correct for Quake (ticks are milliseconds, rate 1000) as
+// well as Source (66 Hz → 33, unchanged). Without this, Quake's ms-scale gaps
+// always exceed the window and playback steps sample-to-sample (stutter).
+const MP_INTERP_MAX_TICKS = Math.max(
+  20,
+  Math.round(0.5 * ((typeof META !== 'undefined' && META.tick_rate) || 66))
+);
 function mpSampleAt(samples, currentTick) {
   if (samples.length === 0) return null;
   if (currentTick <= samples[0][0]) return samples[0];
@@ -1902,6 +1967,9 @@ function updateMultiPlayer(currentTick) {
     // props do. Without this the avatar stays glued to the camera / spectated
     // target after death, overlapping whoever they're watching.
     // "Hide specs" toggle: drop any non-primary entity with <3 samples.
+    // Solo-recorder entities (single-POV / GMod) skip all the hide logic - they
+    // are the only thing on screen and the spec/life signals are unreliable.
+    if (!e.soloRecorder) {
     if (hideSpecsActive && isSpectatorEntity(e)) {
       e.avatar.visible = false;
       e.label.style.display = 'none';
@@ -1914,11 +1982,12 @@ function updateMultiPlayer(currentTick) {
       e.label.style.display = 'none';
       continue;
     }
+    } // end !soloRecorder hide checks
     // Sparse-sample entities (typically the recorder / spectator) need the
     // VIEW_SWITCHES signal as a second-line check - their m_lifeState
     // doesn't reliably mark the full dead window in CS:S, so we'd otherwise
     // draw their avatar overlapping whoever they're currently spectating.
-    if (e.samples.length < 3 && isRecorderSpeccing(currentTick)) {
+    if (!e.soloRecorder && e.samples.length < 3 && isRecorderSpeccing(currentTick)) {
       e.avatar.visible = false;
       e.label.style.display = 'none';
       continue;
@@ -3223,6 +3292,123 @@ function rebuildMpDeathMarkers() {
 }
 function buildMpDeathMarkers() { rebuildMpDeathMarkers(); }
 
+// ─── Kill arcs (attacker → victim) ───────────────────────────────────────────
+// For every player_death / player_hurt event that carries both a victim
+// (`userid`) and a real `attacker`, draw a bezier arc from the attacker's
+// position to the victim's position *at the moment of the kill*. Both endpoints
+// are fixed in time, so each arc's geometry is built once and only its opacity
+// animates during playback - the arc lights up for KILL_FADE_SEC around its
+// tick (headshots in gold, body shots in orange-red), the same age-window idea
+// the fire tracers use. Needs per-player entity tracks (MP demos only); on
+// single-POV demos there's no attacker position to anchor to, so it's a no-op.
+const killArcsGroup = new THREE.Group();
+killArcsGroup.visible = false;
+scene.add(killArcsGroup);
+const KILL_ARCS = [];          // [{ tick, mat, impactMat, headshot }]
+let killArcsBuilt = false;
+const KILL_FADE_SEC = 1.6;
+const KILL_COLOR_HEAD = new THREE.Color(1.0, 0.82, 0.12); // gold - headshot
+const KILL_COLOR_BODY = new THREE.Color(1.0, 0.34, 0.12); // orange-red - body
+const KILL_COLOR_HURT = new THREE.Color(0.95, 0.55, 0.25); // faint - non-fatal hurt
+
+function buildKillArcs() {
+  if (killArcsBuilt) return;
+  killArcsBuilt = true;
+  // Only meaningful when we have real per-player tracks to anchor both ends.
+  if (!MP_ACTIVE || !ENTITY_TRACKS || Object.keys(ENTITY_TRACKS).length === 0) return;
+
+  // Reverse map: engine userid → entity id (from the names table).
+  const uidToEid = {};
+  for (const [eid, meta] of Object.entries(ENTITY_NAMES)) {
+    if (meta && typeof meta.user_id === 'number') uidToEid[meta.user_id] = eid;
+  }
+
+  const impactGeo = new THREE.SphereGeometry(10, 8, 8);
+  for (const ev of EVENTS) {
+    const isDeath = ev.event === 'player_death';
+    const isHurt  = ev.event === 'player_hurt';
+    if (!isDeath && !isHurt) continue;
+    const vUid = ev.userid, aUid = ev.attacker;
+    // No attacker, world/suicide, or self-damage → no arc to draw.
+    if (typeof vUid !== 'number' || typeof aUid !== 'number') continue;
+    if (aUid === 0 || aUid === vUid) continue;
+    const vEid = uidToEid[vUid], aEid = uidToEid[aUid];
+    if (vEid == null || aEid == null) continue;
+    const vSamples = ENTITY_TRACKS[vEid] || [];
+    const aSamples = ENTITY_TRACKS[aEid] || [];
+    if (vSamples.length < 2 || aSamples.length < 2) continue;
+
+    const vs = mpSampleAt(vSamples, ev.tick);
+    const as = mpSampleAt(aSamples, ev.tick);
+    if (!vs || !as) continue;
+
+    // Raw tf2 (x,y,z) → Three.js (x, z, -y), same mapping the avatars use,
+    // lifted to roughly chest height so the arc reads above the floor.
+    const v2 = new THREE.Vector3(vs[1], vs[3] + 40, -vs[2]); // victim
+    const v0 = new THREE.Vector3(as[1], as[3] + 40, -as[2]); // attacker
+    // Degenerate (same body, sample gap) - skip rather than draw a dot.
+    if (v0.distanceTo(v2) < 1) continue;
+
+    // Arc the midpoint upward; longer kills bow higher so overlapping shots
+    // across the map stay visually separable.
+    const mid = v0.clone().lerp(v2, 0.5);
+    mid.y += Math.min(900, Math.max(120, v0.distanceTo(v2) * 0.28));
+    const curve = new THREE.QuadraticBezierCurve3(v0, mid, v2);
+
+    const baseCol = isHurt ? KILL_COLOR_HURT : (ev.headshot ? KILL_COLOR_HEAD : KILL_COLOR_BODY);
+    const mat = new THREE.LineBasicMaterial({
+      color: baseCol, transparent: true, opacity: 0,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+    const geo = new THREE.BufferGeometry().setFromPoints(curve.getPoints(48));
+    killArcsGroup.add(new THREE.Line(geo, mat));
+
+    // Impact dot at the victim end (only for fatal kills - hurt would clutter).
+    let impactMat = null;
+    if (isDeath) {
+      impactMat = new THREE.MeshBasicMaterial({
+        color: baseCol, transparent: true, opacity: 0,
+        blending: THREE.AdditiveBlending, depthWrite: false,
+      });
+      const dot = new THREE.Mesh(impactGeo, impactMat);
+      dot.position.copy(v2);
+      killArcsGroup.add(dot);
+    }
+    KILL_ARCS.push({ tick: ev.tick, mat, impactMat, headshot: !!ev.headshot });
+  }
+}
+
+// Per-frame: fade each arc in for KILL_FADE_SEC after its tick. Off-window
+// arcs collapse to zero opacity (cheap; geometry stays resident).
+function updateKillArcs(currentTick) {
+  if (!killArcsBuilt) return;
+  const fadeTicks = KILL_FADE_SEC * TICK_RATE;
+  for (const k of KILL_ARCS) {
+    const age = currentTick - k.tick;
+    let a = 0;
+    if (age >= 0 && age <= fadeTicks) {
+      // Quick snap-in over the first ~10%, then a smooth linear fade-out.
+      const t = age / fadeTicks;
+      a = t < 0.1 ? (t / 0.1) : (1 - (t - 0.1) / 0.9);
+    }
+    k.mat.opacity = a;
+    if (k.impactMat) k.impactMat.opacity = a * 0.9;
+  }
+}
+
+let killsVisible = false;
+function toggleKills() {
+  killsVisible = !killsVisible;
+  if (killsVisible) buildKillArcs();
+  killArcsGroup.visible = killsVisible;
+  const btn = document.getElementById('btn-kills');
+  if (btn) btn.textContent = killsVisible ? 'Kills ✓' : 'Kills';
+  // Show the color legend only while the layer is on, and only if there are
+  // actually arcs to explain (no-op on demos without per-player kill data).
+  const leg = document.getElementById('kill-legend');
+  if (leg) leg.style.display = (killsVisible && KILL_ARCS.length > 0) ? 'block' : 'none';
+}
+
 // ─── Sidebar: console ────────────────────────────────────────────────────────
 // Source-style console log. Mixes chat, kills, spawns, round transitions, and
 // connect/disconnect lines into a single scrollable history. Each entry has
@@ -3906,6 +4092,7 @@ function animate() {
   if (isPlaying && N >= 2) drawTimeline();
   const _playTick = playbackGameTick;
   if (fireVisible) updateFireMarkers(_playTick);
+  if (killsVisible) updateKillArcs(_playTick);
   if (mpEntities.length > 0) updateMultiPlayer(_playTick);
 
   // Project player name labels from 3D world to screen
@@ -4112,7 +4299,7 @@ function applyRoundFilter(idx) {
       row.dataset.roundHidden = inRound ? '' : '1';
       row.style.display = inRound ? '' : 'none';
     });
-    if (status) status.textContent = `Round ${idx + 1}: ${tickToSec(r.startTick).toFixed(0)}–${tickToSec(r.endTick).toFixed(0)}s`;
+    if (status) status.textContent = `Round ${idx + 1}: ${tickToSec(r.startTick).toFixed(0)}-${tickToSec(r.endTick).toFixed(0)}s`;
   }
   // Refresh round list highlight
   document.querySelectorAll('#round-list .cam-btn').forEach((b, i) =>

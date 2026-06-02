@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>demoscope — in-browser</title>
+<title>demoscope - in-browser</title>
 <style>
 :root {
   --bg: #0d1117;
@@ -64,7 +64,7 @@ main { flex: 1; display: flex; min-height: 0; }
 <div id="shell">
   <header>
     <h1>demoscope</h1>
-    <span class="sub">in-browser parser · drag a <code>.dem</code> to begin</span>
+    <span class="sub">in-browser parser · drag a Source / GoldSrc <code>.dem</code> or Quake <code>.dem</code>/<code>.dm2</code>/<code>.dm_68</code> to begin</span>
     <span class="version" id="version-tag">loading…</span>
   </header>
   <main>
@@ -75,12 +75,13 @@ main { flex: 1; display: flex; min-height: 0; }
         <button type="button" id="pick">browse…</button>
       </div>
       <div class="hint">
-        Optionally also drop the matching <b>.bsp</b> map file to render the 3D world overlay.
+        Source 1 (TF2 / CS:S / HL2 / Portal / L4D / GMod), GoldSrc (HL1 / CS 1.6 / DoD), and Quake 1/2/3 demos are all supported.
+        Optionally also drop the matching <b>.bsp</b> map file to render the 3D world overlay. Quake 3 maps live inside a <code>.pk3</code>, so drop the extracted <code>maps/&lt;name&gt;.bsp</code>.
         Files never leave your machine. Everything runs in this page.
         <br><br>
         Keyboard: <span class="kbd">Esc</span> to start over once a demo is loaded.
       </div>
-      <input type="file" id="file" accept=".dem,.bsp" multiple>
+      <input type="file" id="file" accept=".dem,.dm2,.dm_68,.dm_67,.dm_66,.mvd,.qwd,.bsp" multiple>
     </label>
     <iframe id="viewer"></iframe>
     <button id="again" type="button">← back</button>
@@ -158,7 +159,7 @@ async function parse(demoBytes, demoName) {
     // jump_threshold = 0 → auto-derive in the viewer JS.
     const html = parse_demo_to_html(demoBytes, pendingBsp, demoName, 0);
     const t1 = performance.now();
-    log(`Done in ${(t1 - t0).toFixed(0)} ms — HTML is ${(html.length / 1024).toFixed(0)} KB.`, 'ok');
+    log(`Done in ${(t1 - t0).toFixed(0)} ms - HTML is ${(html.length / 1024).toFixed(0)} KB.`, 'ok');
     showViewer(html);
   } catch (e) {
     log('Parse failed: ' + (e && e.message || e), 'err');
@@ -169,7 +170,11 @@ async function handleFiles(fileList) {
   let demo = null, demoName = '';
   for (const f of fileList) {
     const name = f.name.toLowerCase();
-    if (name.endsWith('.dem')) { demo = f; demoName = f.name; }
+    // .dem = Source HL2DEMO or NetQuake; .dm2 = Quake 2; .dm_6x = Quake 3;
+    // .qwd/.mvd = QuakeWorld. The wasm parser auto-detects which.
+    const isDemo = name.endsWith('.dem') || name.endsWith('.dm2')
+      || name.includes('.dm_') || name.endsWith('.mvd') || name.endsWith('.qwd');
+    if (isDemo) { demo = f; demoName = f.name; }
     else if (name.endsWith('.bsp')) {
       const buf = new Uint8Array(await f.arrayBuffer());
       pendingBsp = buf;
@@ -188,7 +193,7 @@ async function handleFiles(fileList) {
 }
 
 drop.addEventListener('click', (e) => {
-  // Don't intercept clicks on the button — the label triggers the file input,
+  // Don't intercept clicks on the button - the label triggers the file input,
   // but a stray click on the button would double-fire.
   if (e.target.id !== 'pick') return;
   picker.click();
@@ -205,7 +210,7 @@ drop.addEventListener('drop', (e) => {
   if (e.dataTransfer && e.dataTransfer.files) handleFiles([...e.dataTransfer.files]);
 });
 
-// Same for window-wide drops — convenient when the user misses the dashed box.
+// Same for window-wide drops - convenient when the user misses the dashed box.
 ['dragenter', 'dragover'].forEach(ev => window.addEventListener(ev, (e) => e.preventDefault()));
 window.addEventListener('drop', (e) => {
   e.preventDefault();

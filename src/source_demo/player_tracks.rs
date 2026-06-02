@@ -84,7 +84,10 @@ pub fn extract(dem_path: &Path) -> Result<PlayerTrackData, Box<dyn Error>> {
 /// Byte-slice variant of `extract`. The CLI's `extract` is now a thin wrapper
 /// around this; WASM calls it directly with a buffer from `FileReader`.
 pub fn extract_from_bytes(data: &[u8]) -> Result<PlayerTrackData, Box<dyn Error>> {
-    if data.len() < HEADER_SIZE || &data[0..8] != b"HL2DEMO\0" {
+    // Accept both the canonical HL2DEMO magic and Garry's Mod 13+'s renamed
+    // GMODEMO (identical container - see is_source_demo_magic in main.rs).
+    let magic_ok = data.len() >= 8 && (&data[0..8] == b"HL2DEMO\0" || &data[0..8] == b"GMODEMO\0");
+    if data.len() < HEADER_SIZE || !magic_ok {
         return Err("not a valid HL2DEMO file".into());
     }
     let mut out = PlayerTrackData::default();
@@ -132,6 +135,16 @@ pub fn extract_from_bytes(data: &[u8]) -> Result<PlayerTrackData, Box<dyn Error>
     // Container quirks (message-ID remap + splitscreen=2) are Portal2-engine
     // only - NOT keyed off the SendProp flag format, which L4D also uses.
     let portal2_engine = datatable::is_portal2_engine(&out.game_dir);
+    // L4D1/L4D2 use the SAME renumbered net-message map as the Portal 2 engine
+    // (verified in L4D1 engine.dll: NET_Tick::GetType()=4, SVC_Print=16,
+    // SVC_UserMessage=23 - the NetSplitScreenUser-at-3 shift), so they need the
+    // same `scan_game_payload` remap. But they are NOT a "portal2 engine":
+    // splitscreen = 4 (handled above) and svc_UserMessage's length field is 11
+    // bits, not Portal 2's 12 (SVC_UserMessage::ReadFromBuffer reads `v & 0x7FF`).
+    // So the message-map remap and the 12-bit user-message width are passed as
+    // two independent flags below.
+    let l4d_msgmap = matches!(out.game_dir.as_str(), "left4dead" | "left4dead2");
+    let remap_msgs = portal2_engine || l4d_msgmap;
     let mut splitscreen_count: usize = 1;
     if out.demo_protocol > 3 {
         if portal2_engine {
@@ -211,6 +224,7 @@ pub fn extract_from_bytes(data: &[u8]) -> Result<PlayerTrackData, Box<dyn Error>
                     &data[payload_start..payload_end],
                     tick,
                     out.demo_protocol,
+                    remap_msgs,
                     portal2_engine,
                     data_tables.as_ref(),
                     world.as_mut(),
@@ -320,7 +334,14 @@ fn scan_game_payload(
     payload: &[u8],
     tick: i32,
     demo_protocol: i32,
-    portal2: bool,
+    // `remap_msgs`: the engine renumbered its net-message IDs (NetSplitScreenUser
+    // at 3, SvcSplitScreen at 22, SvcPrint 7→16, NetTick/StringCmd/SetConVar/
+    // SignonState each −1). True for the Portal 2 engine AND L4D1/L4D2.
+    // `user_msg_12bit`: svc_UserMessage's length field is 12 bits (Portal 2) vs
+    // 11 (older Source incl. L4D). Independent of `remap_msgs` - L4D remaps but
+    // uses 11-bit lengths.
+    remap_msgs: bool,
+    user_msg_12bit: bool,
     data: Option<&DataTables>,
     mut world: Option<&mut EntityWorld>,
     last_pos: &mut HashMap<u32, (f32, f32, f32)>,
@@ -348,8 +369,10 @@ fn scan_game_payload(
         // Portal 2 engine renumbers the message IDs. Handle its two new
         // message types inline, then remap the shifted ones back to our
         // canonical (HL2 / Source 2007) IDs so the match below is shared.
-        // Reference: NeKzor/sdp NetMessages.ts Portal2Engine table.
-        if portal2 {
+        // Reference: NeKzor/sdp NetMessages.ts Portal2Engine table. The L4D
+        // engine shares this map (verified in L4D1 engine.dll), so `remap_msgs`
+        // is true for both.
+        if remap_msgs {
             match msg_type_raw {
                 3 => { // NetSplitScreenUser: 1 bit
                     if !br.skip(1) { return; }
@@ -369,9 +392,9 @@ fn scan_game_payload(
         // enum when porting (the once-per-packet ids are net_Tick + the
         // PacketEntities equivalent). See README "Investigating L4D2".
         if std::env::var("DUMP_MSG").is_ok() {
-            eprintln!("[MSG] raw={}", msg_type_raw);
+            eprintln!("[MSG] t={} raw={} bit_pos={}", tick, msg_type_raw, br.bit_pos());
         }
-        let msg_type = if portal2 {
+        let msg_type = if remap_msgs {
             match msg_type_raw {
                 4 => 3,   // NetTick
                 5 => 4,   // NetStringCmd
@@ -482,8 +505,20 @@ fn scan_game_payload(
                 if !br.skip(length as u32) { return; }
             }
             23 => {
+                // svc_UserMessage: msg_type(8) + length. The Portal 2 engine
+                // widened the length field to 12 bits (verified against
+                // SVC_UserMessage::ReadFromBuffer in engine.dll - m_nLength reads
+                // `v & 0xFFF`); older Source (TF2 / CS:S, proto-3) uses 11. Read
+                // the wrong width and the cursor desyncs the moment any user
+                // message appears - which blanked Portal 2 speedrun demos (the
+                // first user message lives in the tick-0 signon) and silently
+                // killed testingportal after ~750 ticks. Gated on `user_msg_12bit`
+                // (Portal 2 only) - L4D shares the net-message remap but keeps the
+                // 11-bit width (its SVC_UserMessage::ReadFromBuffer reads `v &
+                // 0x7FF`), and older Source (TF2 / CS:S) is untouched.
                 let _ = tryread!(br.read_bits(8));
-                let length = tryread!(br.read_bits(11)) as usize;
+                let len_bits = if user_msg_12bit { 12 } else { 11 };
+                let length = tryread!(br.read_bits(len_bits)) as usize;
                 if !br.skip(length as u32) { return; }
             }
             24 => {
