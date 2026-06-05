@@ -10,25 +10,36 @@ use std::fs::File;
 use std::io::{self, Read, Write as IoWrite};
 use std::path::Path;
 
-use super::bytes::{le_f32, le_i32};
-use super::constants::{HEADER_SIZE, SPLIT_SIZE};
-use super::events::{
+use super::super::util::bytes::{le_f32, le_i32};
+use super::super::util::constants::{HEADER_SIZE, SPLIT_SIZE};
+use super::super::source::events::{
     compute_life_breaks, display_events_for_game, extract_events_from_payload,
     scan_for_game_event_list, EventField, EventValue, GameEvent, SampledCmd,
 };
-use super::bsp::{extract_bsp_from_bytes, find_bsp_file};
-use super::header::{parse_header, parse_usercmd};
+use super::super::bsp::{extract_bsp_from_bytes, find_bsp_file};
+use super::super::header::{parse_header, parse_usercmd};
 use super::json::{
     breaks_to_json, cmds_to_json, escape_html, escape_json_str, events_to_json, json_f32,
     meta_to_json, multi_life_states_to_json, multi_names_to_json, multi_observer_modes_to_json,
     multi_tracks_to_json, multi_weapon_classes_to_json, multi_weapons_to_json, multi_yaws_to_json,
     spawn_to_json, view_angles_to_json, world_positions_to_json,
 };
-use super::packets::{
+use super::super::source::packets::{
     detect_splitscreen, extract_svc_setview, iterate_demo_packets, parse_userinfo_from_demo,
     spectator_switch_intervals,
 };
-use super::{goldsrc, multi_player, quake, source_demo};
+use super::super::source::{self, multi_player};
+use super::super::source::multi_player::PlayerMeta;
+use super::super::{goldsrc, quake, source2};
+
+// Diff-overlay ghost decoding and the Quake/GoldSrc generators live in
+// submodules; the diff helpers are used internally by the Source generator,
+// and the non-Source generators are re-exported so `main.rs`/`lib.rs` keep
+// reaching them as `render::html::generate_{quake,goldsrc}_html`.
+mod diff;
+mod engines;
+use diff::{extract_ghosts, merge_json_obj, Ghost};
+pub use engines::{generate_goldsrc_html, generate_quake_html, generate_source2_html};
 
 const HTML_TEMPLATE: &str = include_str!("template.html");
 
@@ -37,15 +48,50 @@ const MAX_CMDS_EMBED: usize = 20_000;
 // CLI wrapper - reads the dem + (optional) bsp from disk, delegates to the
 // pure-bytes core, then writes the result. Keeps the existing command-line
 // behaviour intact while the WASM build calls the core directly.
-pub(crate) fn generate_html(dem_path: &Path, output_path: &Path, jump_threshold: f32) -> io::Result<()> {
+pub(crate) fn generate_html(dem_path: &Path, output_path: &Path, jump_threshold: f32, diff_path: Option<&Path>, diff_split: bool) -> io::Result<()> {
     eprintln!("Reading {} ...", dem_path.file_name().unwrap_or_default().to_string_lossy());
     let mut file = File::open(dem_path)?;
     let mut data = Vec::new();
     file.read_to_end(&mut data)?;
 
+    // Optional second demo to overlay (--diff). Read up front; only the Source
+    // path consumes it. Its display name is the file stem.
+    let diff_bytes: Option<Vec<u8>> = match diff_path {
+        Some(p) => {
+            eprintln!("  Diff overlay: {}", p.file_name().unwrap_or_default().to_string_lossy());
+            Some(std::fs::read(p)?)
+        }
+        None => None,
+    };
+    let diff_name: String = diff_path
+        .and_then(|p| p.file_stem())
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+
+    let name_hint = dem_path.file_name().unwrap_or_default().to_string_lossy().into_owned();
+
+    // Source 2 (`PBDEMS2`: CS2 / Dota 2 / Deadlock) — a different container from
+    // HL2DEMO. Checked FIRST: its 8-byte magic is unambiguous, whereas the Quake
+    // route below matches by `.dem` extension and would otherwise swallow it.
+    // Metadata-only viewer for now (map / duration / build); position tracks
+    // await the entity pipeline.
+    if source2::is_source2(&data) {
+        // The CS2 world geometry overlay is resolved inside the generator (it
+        // needs the map name, which only appears after the entity parse) by
+        // looking for `<map>.vpk` beside the demo.
+        let html = generate_source2_html(&data, None, Some(dem_path), &name_hint)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
+        let mut out_file = File::create(output_path)?;
+        out_file.write_all(html.as_bytes())?;
+        eprintln!("HTML -> {}  ({:.1} KB)", output_path.display(), html.len() as f64 / 1024.0);
+        return Ok(());
+    }
+
     // Quake-family demos (Q1/Q2/Q3) are a different format from HL2DEMO; route
     // them to the dedicated decoder, which emits the same HTML viewer.
-    let name_hint = dem_path.file_name().unwrap_or_default().to_string_lossy().into_owned();
+    if diff_path.is_some() && (quake::detect(&name_hint, &data).is_some() || goldsrc::is_goldsrc(&data)) {
+        eprintln!("  Note: --diff is currently supported only for Source (HL2DEMO) demos; ignoring");
+    }
     if let Some(kind) = quake::detect(&name_hint, &data) {
         // Resolve a matching .bsp beside the demo. The map name can arrive as a
         // bare stem or a `maps/foo.bsp` path, so normalise to the file stem.
@@ -105,7 +151,19 @@ pub(crate) fn generate_html(dem_path: &Path, output_path: &Path, jump_threshold:
             None
         }
     };
-    let html = generate_html_string(&data, bsp_bytes.as_deref(), &name_hint, jump_threshold)?;
+    let html = match diff_bytes.as_deref() {
+        // --diff-split: side-by-side dual viewer (two full viewers, frame-locked).
+        // Both demos are the same map, so demo 1's BSP serves both panes.
+        Some(d2) if diff_split => generate_dual_html_string(
+            &data, bsp_bytes.as_deref(), &name_hint,
+            d2, bsp_bytes.as_deref(), &diff_name, jump_threshold,
+        )?,
+        // --diff: overlay demo 2's entities as translucent ghosts in one scene.
+        Some(d2) => generate_html_string(
+            &data, bsp_bytes.as_deref(), &name_hint, jump_threshold, Some((d2, &diff_name)),
+        )?,
+        None => generate_html_string(&data, bsp_bytes.as_deref(), &name_hint, jump_threshold, None)?,
+    };
     let mut out_file = File::create(output_path)?;
     out_file.write_all(html.as_bytes())?;
     let size_kb = html.len() as f64 / 1024.0;
@@ -113,14 +171,47 @@ pub(crate) fn generate_html(dem_path: &Path, output_path: &Path, jump_threshold:
     Ok(())
 }
 
+const DUAL_TEMPLATE: &str = include_str!("dual_template.html");
+
+/// Build the side-by-side **dual viewer** (`--diff`): two complete, independent
+/// viewers (each its own scene, camera, kills, events, timeline) embedded as
+/// base64 blobs in a shell that frame-locks them to one master race-clock. Each
+/// inner viewer runs in `#sync` follower mode. Source (HL2DEMO) demos only.
+pub fn generate_dual_html_string(
+    demo_a: &[u8],
+    bsp_a: Option<&[u8]>,
+    name_a: &str,
+    demo_b: &[u8],
+    bsp_b: Option<&[u8]>,
+    name_b: &str,
+    jump_threshold: f32,
+) -> io::Result<String> {
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    let viewer_a = generate_html_string(demo_a, bsp_a, name_a, jump_threshold, None)?;
+    let viewer_b = generate_html_string(demo_b, bsp_b, name_b, jump_threshold, None)?;
+    // JS string-escape for the pane labels (the base64 blobs need no escaping).
+    let esc = |s: &str| s.replace('\\', "\\\\").replace('"', "\\\"").replace(['\n', '\r'], " ");
+    let html = DUAL_TEMPLATE
+        .replace("__VIEWER_A__", &STANDARD.encode(viewer_a.as_bytes()))
+        .replace("__VIEWER_B__", &STANDARD.encode(viewer_b.as_bytes()))
+        .replace("__NAME_A__", &esc(name_a))
+        .replace("__NAME_B__", &esc(name_b));
+    Ok(html)
+}
+
 // Pure-bytes core: takes the demo + optional BSP as byte slices, returns the
 // generated HTML as a String. No filesystem access - used by both the CLI
 // wrapper above and the WASM entry point in lib.rs.
+//
+// `diff` overlays a second demo's entities as translucent "ghosts" in the same
+// scene (same map, tick-aligned to this demo's start) for side-by-side
+// comparison without splitting the display.
 pub fn generate_html_string(
     data: &[u8],
     bsp_bytes: Option<&[u8]>,
     name_hint: &str,
     jump_threshold: f32,
+    diff: Option<(&[u8], &str)>,
 ) -> io::Result<String> {
     let header = parse_header(data).ok_or_else(|| {
         io::Error::new(io::ErrorKind::InvalidData, "not a valid HL2DEMO file")
@@ -249,10 +340,23 @@ pub fn generate_html_string(
                     }
                     offset = next;
                 }
-                // 6=DataTables, 8=StringTables(old enum)/CustomData(new enum),
-                // 9=StringTables(new enum, L4D/CS:GO). All length-prefixed, so
-                // we can skip them uniformly. (CustomData is callback+length, but
-                // POV demos don't carry it - see detect_splitscreen note.)
+                // proto-4 (L4D-era enum) inserted DEM_CustomData at 8 and shifted
+                // DEM_StringTables to 9; proto-3 keeps StringTables at 8 and has no
+                // CustomData. CustomData is callbackIndex(4) + length(4) + data —
+                // reading its length as if it were a plain length-prefixed block
+                // (at p, not p+4) yields garbage and desyncs the walk. Portal 2
+                // demos DO carry a CustomData frame after signon, so the old
+                // uniform handling bailed right there, before any usercmd — which
+                // is why Portal 2 input came back empty. Skip CustomData correctly.
+                8 if proto > 3 => {
+                    let p = offset + pkt_hdr;
+                    if p + 8 > data.len() { break; }
+                    let length = le_i32(&data, p + 4);
+                    if length < 0 { break; }
+                    offset = p.saturating_add(8).saturating_add(length as usize).min(data.len());
+                }
+                // 6=DataTables (both), 8=StringTables (proto-3), 9=StringTables
+                // (proto-4). All plain length-prefixed blocks.
                 6 | 8 | 9 => {
                     let p = offset + pkt_hdr;
                     if p + 4 > data.len() { break; }
@@ -278,7 +382,7 @@ pub fn generate_html_string(
     // Proto-4 net-message remap flags (same derivation as player_tracks): L4D
     // shares the Portal 2 engine's renumbering but keeps the 11-bit user-message
     // width, so the two axes are independent.
-    let p2_engine = source_demo::datatable::is_portal2_engine(&header.game_dir);
+    let p2_engine = source::datatable::is_portal2_engine(&header.game_dir);
     let l4d_msgmap = matches!(header.game_dir.as_str(), "left4dead" | "left4dead2");
     let remap_msgs = p2_engine || l4d_msgmap;
     let user_msg_12bit = p2_engine;
@@ -315,6 +419,14 @@ pub fn generate_html_string(
             let evs = extract_events_from_payload(payload, tick, schemas, &display_ev, remap_msgs, user_msg_12bit, header.demo_protocol);
             game_events.extend(evs);
         }
+    }
+
+    // CS:GO protobuf-wraps its game events (CSVCMsg_GameEvent), which the
+    // bit-packed scanner above can't read. Decode them from the protobuf message
+    // stream (same proto as CS2/Source 2; ids 25/30).
+    if header.game_dir.eq_ignore_ascii_case("csgo") {
+        let csgo_evs = source::csgo::events::decode_events(&signon_payloads, &game_packet_ticks, &data);
+        game_events.extend(csgo_evs);
     }
 
     // Convert collected console commands into GameEvent entries
@@ -450,11 +562,20 @@ pub fn generate_html_string(
     // Multi-player entity tracks - always extracted now. If the native decoder
     // can't make sense of the demo we fall back to empty objects so the
     // template still parses (legacy single-POV view will still render).
-    let (multi_tracks_json, multi_names_json, multi_life_json, multi_obs_json, multi_yaws_json, multi_weps_json, multi_wep_classes_json, primary_eid_json, view_angles_json) = {
+    let (mut multi_tracks_json, mut multi_names_json, mut multi_life_json, multi_obs_json, mut multi_yaws_json, multi_weps_json, multi_wep_classes_json, primary_eid_json, view_angles_json) = {
         eprint!("  Extracting multi-player tracks ...");
         io::stderr().flush().ok();
         match multi_player::extract_from_bytes(data) {
-            Ok(data) => {
+            Ok(mut data) => {
+                // Fallback name source. GOTV CS:GO demos ship no DEM_STRINGTABLES
+                // snapshot, but the CS:GO protobuf string-table decode
+                // (csgo::stringtables) now resolves their names directly from
+                // svc_*StringTable — including players connected before the
+                // recording, which `player_connect` events can't cover. This
+                // backfill only fills any tracked slot still unnamed after that
+                // (it never overrides), so it's a no-op on every current test demo
+                // and stays purely as a safety net.
+                backfill_names_from_connects(&mut data.names, &data.tracks, &game_events);
                 let count = data.tracks.len();
                 let total: usize = data.tracks.values().map(|v| v.len()).sum();
                 let life_total: usize = data.life_states.values().map(|v| v.len()).sum();
@@ -483,6 +604,62 @@ pub fn generate_html_string(
             }
         }
     };
+    // ── Side-by-side diff: overlay the second demo's entities as translucent
+    // ghosts in this scene. Ghost eids are offset by 900000; their ticks are
+    // shifted so both runs start together.
+    let mut ghost_eids: Vec<u32> = Vec::new();
+    if let Some((d2, d2name)) = diff {
+        let ghosts = extract_ghosts(d2, d2name);
+        if ghosts.is_empty() {
+            eprintln!("  --diff: no tracks decoded from '{}' (skipped)", d2name);
+        } else {
+            let d1_anchor = all_cmds
+                .first()
+                .map(|c| c.tick)
+                .or_else(|| world_positions.first().map(|p| p.0))
+                .unwrap_or(0);
+            let d2_anchor = ghosts
+                .iter()
+                .filter_map(|g| g.samples.first().map(|s| s.0))
+                .min()
+                .unwrap_or(0);
+            let shift = d1_anchor - d2_anchor;
+            for g in &ghosts {
+                ghost_eids.push(g.eid);
+                let pos_s = multi_player::subsample(&g.samples, 6000);
+                let pts: Vec<String> = pos_s
+                    .iter()
+                    .map(|(t, x, y, z)| format!("[{},{},{},{}]", t + shift, json_f32(*x), json_f32(*y), json_f32(*z)))
+                    .collect();
+                multi_tracks_json = merge_json_obj(&multi_tracks_json, g.eid, &format!("[{}]", pts.join(",")));
+                let ystride = (g.yaws.len() / 6000).max(1);
+                let ypts: Vec<String> = g.yaws
+                    .iter()
+                    .step_by(ystride)
+                    .map(|(t, y, p)| format!("[{},{:.1},{:.1}]", t + shift, y, p))
+                    .collect();
+                multi_yaws_json = merge_json_obj(&multi_yaws_json, g.eid, &format!("[{}]", ypts.join(",")));
+                let nm = format!(
+                    "{{\"name\":\"{}\",\"steam_id\":\"\",\"user_id\":{},\"is_fake\":false,\"is_hltv\":false,\"aliases\":[\"{}\"]}}",
+                    escape_json_str(&g.name), g.eid, escape_json_str(&g.name),
+                );
+                multi_names_json = merge_json_obj(&multi_names_json, g.eid, &nm);
+                if !g.life.is_empty() {
+                    let lpts: Vec<String> = g.life.iter().map(|(t, s)| format!("[{},{}]", t + shift, s)).collect();
+                    multi_life_json = merge_json_obj(&multi_life_json, g.eid, &format!("[{}]", lpts.join(",")));
+                }
+            }
+            eprintln!(
+                "  --diff: overlaid {} ghost{} from '{}' (tick shift {})",
+                ghosts.len(), if ghosts.len() == 1 { "" } else { "s" }, d2name, shift
+            );
+        }
+    }
+    let ghost_eids_json = format!(
+        "[{}]",
+        ghost_eids.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(",")
+    );
+    html = html.replace("__GHOST_EIDS__", &ghost_eids_json);
     html = html.replace("__ENTITY_TRACKS__", &multi_tracks_json);
     html = html.replace("__ENTITY_NAMES__", &multi_names_json);
     html = html.replace("__ENTITY_LIFE_STATES__", &multi_life_json);
@@ -490,6 +667,10 @@ pub fn generate_html_string(
     html = html.replace("__ENTITY_YAWS__", &multi_yaws_json);
     html = html.replace("__ENTITY_WEAPONS__", &multi_weps_json);
     html = html.replace("__WEAPON_CLASSES__", &multi_wep_classes_json);
+    // Source 1 carries real per-tick buttons via CMDS for the recorder; no
+    // per-entity networked button stream is decoded here, so this is empty and
+    // the viewer falls back to CMDS / velocity-derivation as before.
+    html = html.replace("__ENTITY_BUTTONS__", "{}");
     html = html.replace("__PRIMARY_ENTITY__", &primary_eid_json);
     html = html.replace("__VIEW_ANGLES__", &view_angles_json);
     html = html.replace("__VIEW_SWITCHES__", &view_switches_json);
@@ -497,206 +678,50 @@ pub fn generate_html_string(
     Ok(html)
 }
 
-// Quake-family HTML generator: parses a Q1/Q2/Q3 demo into a MultiPlayerData
-// and fills the SAME template.html as the Source path, leaving Source-only
-// sections (usercmds, events, teleport/life breaks) empty. The 3D viewer,
-// minimap, heatmap, player sidebar, and POV camera all work from the tracks.
-// `bsp_bytes` is the matching `.bsp` (Q1 v29 / Q2 IBSP38 / Q3 IBSP46) if it was
-// found beside the demo, decoded via the shared dispatcher.
-pub fn generate_quake_html(
-    data: &[u8],
-    kind: quake::QuakeKind,
-    bsp_bytes: Option<&[u8]>,
-    name_hint: &str,
-) -> Result<String, Box<dyn std::error::Error>> {
-    eprintln!("  Quake demo: kind={:?}", kind);
-    let demo = quake::parse(kind, data, name_hint)?;
-    let meta = &demo.meta;
-    let mpd = &demo.mpd;
 
-    // The primary (recorder) entity's track doubles as the single-POV
-    // WORLD_POSITIONS path that drives the speedometer and fallback camera.
-    let world_positions: Vec<(i32, f32, f32, f32)> = mpd
-        .primary_entity
-        .and_then(|p| mpd.tracks.get(&p).cloned())
-        .unwrap_or_default();
-
-    let meta_json = meta_to_json(
-        &meta.map,
-        &meta.client,
-        &meta.server,
-        &meta.game,
-        meta.protocol,
-        meta.duration,
-        meta.ncmds,
-        meta.tick_rate,
-        0.0,
-    );
-
-    let mut html = HTML_TEMPLATE.to_string();
-    html = html.replace("__DEMO_NAME__", &escape_html(name_hint));
-    html = html.replace("__META__", &meta_json);
-    html = html.replace("__CMDS__", "[]");
-    html = html.replace("__LIFE_BREAKS__", "[]");
-    html = html.replace("__TELEPORT_BREAKS__", "[]");
-    html = html.replace("__EVENTS__", "[]");
-    html = html.replace("__WORLD_POSITIONS__", &world_positions_to_json(&world_positions));
-    // Quake map overlay (Q1 / Q2 / Q3 BSP), if a matching .bsp was found.
-    let (q_verts, q_idx, q_spawn) = match bsp_bytes {
-        Some(bytes) => match super::bsp::extract_any_bsp(bytes) {
-            Some((v, i, nv, nt, spawn)) => {
-                eprintln!("  Quake BSP: {} verts, {} tris", nv, nt);
-                (v, i, spawn)
-            }
-            None => {
-                eprintln!("  Quake BSP extraction failed (unsupported version?)");
-                (String::new(), String::new(), [0.0f32; 3])
-            }
-        },
-        None => (String::new(), String::new(), [0.0f32; 3]),
-    };
-    html = html.replace("__BSP_VERTS__", &format!("\"{}\"", q_verts));
-    html = html.replace("__BSP_IDX__", &format!("\"{}\"", q_idx));
-    html = html.replace("__BSP_SPAWN__", &spawn_to_json(q_spawn));
-    html = html.replace("__ENTITY_TRACKS__", &multi_tracks_to_json(mpd));
-    html = html.replace("__ENTITY_NAMES__", &multi_names_to_json(mpd));
-    html = html.replace("__ENTITY_LIFE_STATES__", &multi_life_states_to_json(mpd));
-    html = html.replace("__ENTITY_OBSERVER__", &multi_observer_modes_to_json(mpd));
-    html = html.replace("__ENTITY_YAWS__", &multi_yaws_to_json(mpd));
-    html = html.replace("__ENTITY_WEAPONS__", &multi_weapons_to_json(mpd));
-    html = html.replace("__WEAPON_CLASSES__", &multi_weapon_classes_to_json(mpd));
-    html = html.replace(
-        "__PRIMARY_ENTITY__",
-        &mpd.primary_entity.map(|e| e.to_string()).unwrap_or_else(|| "null".to_string()),
-    );
-    html = html.replace("__VIEW_ANGLES__", &view_angles_to_json(mpd));
-    html = html.replace("__VIEW_SWITCHES__", "[]");
-    Ok(html)
-}
-
-// GoldSrc (HL1) HTML generator: decodes the HLDEMO container + the recorder
-// camera path (eye origin + view angles from the NetMsg RefParams stream) and
-// fills the SAME template - the recorder renders as a single entity track so the
-// route / follow / FPS camera all work. The matching GoldSrc `.bsp` (v30), if
-// supplied, is overlaid via `extract_goldsrc_bsp_from_bytes`.
-pub fn generate_goldsrc_html(
-    data: &[u8],
-    bsp_bytes: Option<&[u8]>,
-    name_hint: &str,
-) -> Result<String, Box<dyn std::error::Error>> {
-    let meta = goldsrc::parse(data)
-        .ok_or_else(|| Box::<dyn std::error::Error>::from("not a valid HLDEMO (GoldSrc) file"))?;
-    eprintln!(
-        "  GoldSrc demo: map={} game={} demo_proto={} net_proto={} duration={:.1}s frames={}",
-        meta.map_name, meta.game_dir, meta.demo_protocol, meta.net_protocol, meta.duration, meta.frame_count
-    );
-
-    let tick_rate = if meta.duration > 0.0 && meta.frame_count > 0 {
-        meta.frame_count as f32 / meta.duration
-    } else {
-        100.0
-    };
-
-    // Decode the recorder camera path (eye origin + view angles) from the
-    // NetMsg RefParams stream, mapped onto a synthetic tick = time × tick_rate.
-    let cam = goldsrc::extract_camera(data, &meta);
-    let mut world_positions: Vec<(i32, f32, f32, f32)> = Vec::with_capacity(cam.len());
-    let mut view_angles: Vec<(i32, f32, f32)> = Vec::with_capacity(cam.len());
-    let mut yaws: Vec<(i32, f32, f32)> = Vec::with_capacity(cam.len()); // (tick, yaw, pitch)
-    let mut last_tick = i32::MIN;
-    for &(time, x, y, z, pitch, yaw) in &cam {
-        let tick = (time * tick_rate).round() as i32;
-        // NetMsg samples are time-ordered; keep one per tick so the viewer's
-        // tick-indexed lookups stay monotonic.
-        if tick <= last_tick {
+/// Fallback name source: backfill from `player_connect` game events for any
+/// tracked slot still unnamed after the primary decoders. `player_connect`
+/// carries `name` + slot `index` + `userid`, and the tracked entity id is
+/// `index + 1`. Fills only not-yet-named slots, so it never overrides names from
+/// DEM_STRINGTABLES (POV) or the CS:GO protobuf string-tables (GOTV). Since the
+/// latter now resolves GOTV names directly, this is a no-op on current demos and
+/// remains only to cover a slot those paths might miss.
+fn backfill_names_from_connects(
+    names: &mut std::collections::HashMap<u32, PlayerMeta>,
+    tracks: &std::collections::HashMap<u32, Vec<(i32, f32, f32, f32)>>,
+    events: &[GameEvent],
+) {
+    for ev in events {
+        if ev.event != "player_connect" {
             continue;
         }
-        last_tick = tick;
-        world_positions.push((tick, x, y, z));
-        view_angles.push((tick, pitch, yaw));
-        yaws.push((tick, yaw, pitch));
+        let (mut nm, mut index, mut uid): (Option<String>, Option<i32>, Option<i32>) = (None, None, None);
+        for f in &ev.fields {
+            match f.name.as_str() {
+                "name" => if let EventValue::Str(s) = &f.value { nm = Some(s.clone()); },
+                "index" => if let EventValue::Int(n) = &f.value { index = Some(*n); },
+                "userid" => if let EventValue::Int(n) = &f.value { uid = Some(*n); },
+                _ => {}
+            }
+        }
+        let (nm, idx) = match (nm, index) {
+            (Some(n), Some(i)) if !n.is_empty() && (0..64).contains(&i) => (n, i),
+            _ => continue,
+        };
+        let eid = (idx + 1) as u32;
+        if !tracks.contains_key(&eid) {
+            continue; // only label entities we actually track
+        }
+        if names.get(&eid).is_some_and(|p| !p.name.is_empty()) {
+            continue; // already named (e.g. POV demo via DEM_STRINGTABLES)
+        }
+        names.insert(eid, PlayerMeta {
+            name: nm.clone(),
+            user_id: uid.unwrap_or(0).max(0) as u32,
+            steam_id: String::new(),
+            is_fake: false,
+            is_hltv: false,
+            aliases: vec![nm],
+        });
     }
-    eprintln!("  GoldSrc camera: {} samples ({} after per-tick dedup)", cam.len(), world_positions.len());
-
-    // Feed the recorder as a single multi-player entity (id 1) - the same shape
-    // the Quake path uses. GoldSrc demos carry no usercmds, so `CMDS` is empty
-    // and the WORLD_POSITIONS→finalPositions interpolation (which is indexed by
-    // CMDS ticks) would yield nothing; rendering the recorder as a real entity
-    // track with its own samples sidesteps that and drives the avatar, route,
-    // minimap, and follow/FPS camera directly.
-    const REC_EID: i32 = 1;
-    let entity_tracks_json = {
-        let pts: Vec<String> = world_positions
-            .iter()
-            .map(|(t, x, y, z)| format!("[{},{},{},{}]", t, json_f32(*x), json_f32(*y), json_f32(*z)))
-            .collect();
-        format!("{{\"{}\":[{}]}}", REC_EID, pts.join(","))
-    };
-    let rec_name = if meta.game_dir.is_empty() { "recorder".to_string() } else { format!("{} recorder", meta.game_dir) };
-    let entity_names_json = format!(
-        "{{\"{}\":{{\"name\":\"{}\",\"steam_id\":\"\",\"user_id\":{},\"is_fake\":false,\"is_hltv\":false,\"aliases\":[\"{}\"]}}}}",
-        REC_EID, escape_json_str(&rec_name), REC_EID, escape_json_str(&rec_name),
-    );
-    let entity_yaws_json = {
-        // ENTITY_YAWS shape is [tick, yaw, pitch].
-        let pts: Vec<String> = yaws.iter().map(|(t, y, p)| format!("[{},{:.1},{:.1}]", t, y, p)).collect();
-        format!("{{\"{}\":[{}]}}", REC_EID, pts.join(","))
-    };
-    let view_angles_json = {
-        // VIEW_ANGLES shape is [tick, pitch, yaw].
-        let parts: Vec<String> = view_angles.iter().map(|(t, p, y)| format!("[{},{:.2},{:.2}]", t, p, y)).collect();
-        format!("[{}]", parts.join(","))
-    };
-    // No recorder track decoded (e.g. a header-only / odd demo) → fall back to
-    // empty entities so the template still parses and shows the metadata.
-    let has_track = !world_positions.is_empty();
-
-    let meta_json = meta_to_json(
-        &meta.map_name,
-        &rec_name,
-        "",               // no server name field
-        &meta.game_dir,
-        meta.demo_protocol,
-        meta.duration,
-        world_positions.len(),
-        tick_rate,
-        0.0,
-    );
-
-    let mut html = HTML_TEMPLATE.to_string();
-    html = html.replace("__DEMO_NAME__", &escape_html(name_hint));
-    html = html.replace("__META__", &meta_json);
-    html = html.replace("__CMDS__", "[]");
-    html = html.replace("__LIFE_BREAKS__", "[]");
-    html = html.replace("__TELEPORT_BREAKS__", "[]");
-    html = html.replace("__EVENTS__", "[]");
-    html = html.replace("__WORLD_POSITIONS__", &world_positions_to_json(&world_positions));
-    // GoldSrc map geometry (BSP v30 / Q1 v29), if a matching .bsp was supplied.
-    let (bsp_verts_b64, bsp_idx_b64, bsp_spawn) = match bsp_bytes {
-        Some(bytes) => match super::bsp::extract_goldsrc_bsp_from_bytes(bytes) {
-            Some((v, i, nv, nt, spawn)) => {
-                eprintln!("  GoldSrc BSP: {} verts, {} tris, spawn=[{:.1},{:.1},{:.1}]", nv, nt, spawn[0], spawn[1], spawn[2]);
-                (v, i, spawn)
-            }
-            None => {
-                eprintln!("  GoldSrc BSP extraction failed");
-                (String::new(), String::new(), [0.0f32; 3])
-            }
-        },
-        None => (String::new(), String::new(), [0.0f32; 3]),
-    };
-    html = html.replace("__BSP_VERTS__", &format!("\"{}\"", bsp_verts_b64));
-    html = html.replace("__BSP_IDX__", &format!("\"{}\"", bsp_idx_b64));
-    html = html.replace("__BSP_SPAWN__", &spawn_to_json(bsp_spawn));
-    html = html.replace("__ENTITY_TRACKS__", if has_track { &entity_tracks_json } else { "{}" });
-    html = html.replace("__ENTITY_NAMES__", if has_track { &entity_names_json } else { "{}" });
-    html = html.replace("__ENTITY_LIFE_STATES__", "{}");
-    html = html.replace("__ENTITY_OBSERVER__", "{}");
-    html = html.replace("__ENTITY_YAWS__", if has_track { &entity_yaws_json } else { "{}" });
-    html = html.replace("__ENTITY_WEAPONS__", "{}");
-    html = html.replace("__WEAPON_CLASSES__", "{}");
-    html = html.replace("__PRIMARY_ENTITY__", if has_track { "1" } else { "null" });
-    html = html.replace("__VIEW_ANGLES__", &view_angles_json);
-    html = html.replace("__VIEW_SWITCHES__", "[]");
-    Ok(html)
 }

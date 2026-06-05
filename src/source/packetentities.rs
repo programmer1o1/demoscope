@@ -64,6 +64,7 @@ fn read_bit_var(br: &mut BitReader) -> Option<u32> {
 /// `payload_bits` is the entity-updates section length (the `length` field
 /// from the message header). `num_updates` is the `updated_entries` count.
 /// `has_delta_tick` controls whether the removed-entities list is appended.
+#[allow(clippy::too_many_arguments)]
 pub fn parse_entity_updates(
     payload: &[u8],
     start_bit: usize,
@@ -73,7 +74,18 @@ pub fn parse_entity_updates(
     world: &mut EntityWorld,
     data: &DataTables,
     proto4: bool,
+    separated: bool,
+    // MAX_EDICT_BITS: 11 for stock Source (2048 edicts), 13 for GMod 13 (8192).
+    // Bounds the entity-index space and the removed-entities list field width.
+    edict_bits: u32,
+    // Field-index (prop) encoding selector, decoupled from the entity-index
+    // encoding (`proto4`). GMod 13 keeps the legacy 2-bit-selector entity index
+    // but uses the newer CDeltaBitsReader prop-index path, so these two axes are
+    // independent. When None, falls back to `proto4`.
+    prop_proto4: Option<bool>,
 ) -> Option<()> {
+    let max_edicts: i32 = 1 << edict_bits;
+    let prop_proto4 = prop_proto4.unwrap_or(proto4);
     // Construct a bit reader limited to exactly the entity-updates section.
     // Reads past the message boundary now return None instead of trampling
     // subsequent messages - matches tf-demo-parser's read_bits(length) split.
@@ -96,7 +108,7 @@ pub fn parse_entity_updates(
             read_bit_var(&mut br)? as i32
         };
         entity_idx = entity_idx.saturating_add(diff).saturating_add(1);
-        if entity_idx < 0 || entity_idx >= 2048 { return None; }
+        if entity_idx < 0 || entity_idx >= max_edicts { return None; }
         let eid = entity_idx as u16;
 
         let update_type = br.read_bits(2)?;
@@ -115,16 +127,21 @@ pub fn parse_entity_updates(
                 }
                 let mut state = EntityState { class_id, props: HashMap::new() };
                 if let Some(flat) = data.flat_props.get(&class_id) {
-                    read_prop_deltas(&mut br, flat, &mut state.props, proto4)?;
+                    read_prop_deltas(&mut br, flat, &mut state.props, prop_proto4, separated)?;
                 }
                 world.entities.insert(eid, state);
             }
-            // 00 = Delta - update existing entity
+            // 00 = Delta - update existing entity. A delta can legitimately
+            // reference an entity we never saw ENTER (the server deltas against a
+            // baseline frame the demo never carried - common for high-index sandbox
+            // props in GMod); we can't know its class to size the field list, so the
+            // packet can't continue. Low-index entities (players) decode first, so
+            // their scrape still lands - see the caller, which scrapes regardless.
             0b00 => {
                 let cid = world.entities.get(&eid).map(|s| s.class_id)?;
                 let flat = data.flat_props.get(&cid)?;
                 let state = world.entities.get_mut(&eid).unwrap();
-                read_prop_deltas(&mut br, flat, &mut state.props, proto4)?;
+                read_prop_deltas(&mut br, flat, &mut state.props, prop_proto4, separated)?;
             }
             // 01 = Leave PVS - no further bits
             0b01 => { /* keep entity state, just out of PVS */ }
@@ -139,7 +156,7 @@ pub fn parse_entity_updates(
         while br.bit_pos() < end_bit {
             let more = br.read_bool()?;
             if !more { break; }
-            let removed = br.read_bits(11)? as u16;
+            let removed = br.read_bits(edict_bits)? as u16;
             world.entities.remove(&removed);
         }
     }
@@ -155,9 +172,30 @@ fn read_prop_deltas(
     flat: &[SendPropDef],
     out: &mut HashMap<usize, PropValue>,
     proto4: bool,
+    separated: bool,
 ) -> Option<()> {
     let mut idx: i32 = -1;
-    if proto4 {
+    if separated {
+        // CS:GO (proto-4 container, but newer entity encoding): the field-index
+        // list and the value list are *separated*, not interleaved. The engine
+        // reads every changed prop index first (terminated by 0xFFF), then reads
+        // all the values in that order. (Verified against demoinfocs-golang
+        // `Entity.ApplyUpdate`.) The Portal 2 / Source-2009 path below interleaves
+        // index+value per prop, so this is a distinct mode.
+        let new_way = br.read_bool()?;
+        let mut indices: Vec<usize> = Vec::new();
+        loop {
+            let next = read_field_index(br, idx, new_way)?;
+            if next == -1 { break; }
+            idx = next;
+            if idx < 0 || idx as usize >= flat.len() { return None; }
+            indices.push(idx as usize);
+        }
+        for i in indices {
+            let val = decode_prop(&flat[i], br)?;
+            out.insert(i, val);
+        }
+    } else if proto4 {
         // Proto-4 (Portal 2 / Source 2009): CDeltaBitsReader. The constructor
         // pre-reads ONE bit = `new_way`, used for every field-index read in
         // this entity. (Confirmed via engine.dll CDeltaBitsReader in IDA - the

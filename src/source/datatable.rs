@@ -36,7 +36,7 @@ use super::sendprop::{
 //   16      CELL_COORD_LOWPRECISION          21
 //   17      CELL_COORD_INTEGRAL              22
 //   18      CHANGES_OFTEN                    10
-fn normalize_portal2_flags(raw: u32) -> u32 {
+pub(crate) fn normalize_portal2_flags(raw: u32) -> u32 {
     let mut out = raw & 0x3FF; // bits 0-9 are identical
     let bit = |b: u32| (raw >> b) & 1 != 0;
     if bit(10) { out |= SPROP_IS_VECTOR_ELEM; }
@@ -196,19 +196,28 @@ pub fn parse(payload: &[u8], demo_protocol: i32, quirks: DataTableQuirks) -> Opt
         server_classes.push(ServerClass { id, name, data_table: dt });
     }
 
-    // Flatten props per class
+    Some(build_data_tables(tables, server_classes, demo_protocol >= 4))
+}
+
+/// Assemble raw tables + server classes into a `DataTables` with each class's
+/// flattened leaf-prop list. Shared by the bit-packed `parse` (above) and the
+/// CS:GO protobuf path (`csgo::sendtable`), which produce the same raw structs
+/// from different wire formats but flatten identically.
+pub(crate) fn build_data_tables(
+    tables: Vec<RawSendTable>,
+    server_classes: Vec<ServerClass>,
+    proto4: bool,
+) -> DataTables {
     let mut data = DataTables { tables, server_classes, flat_props: HashMap::new() };
     let class_ids: Vec<(u16, String)> = data.server_classes.iter()
         .map(|c| (c.id, c.data_table.clone()))
         .collect();
-    let proto4 = demo_protocol >= 4;
     for (cid, dt_name) in class_ids {
         if let Some(flat) = flatten(&data, &dt_name, proto4) {
             data.flat_props.insert(cid, flat);
         }
     }
-
-    Some(data)
+    data
 }
 
 fn read_send_table(br: &mut BitReader, demo_protocol: i32, quirks: DataTableQuirks) -> Option<RawSendTable> {
@@ -310,7 +319,7 @@ fn read_send_prop_def(br: &mut BitReader, demo_protocol: i32, quirks: DataTableQ
 fn flatten(data: &DataTables, root_table: &str, proto4: bool) -> Option<Vec<SendPropDef>> {
     let excludes = build_excludes(data, root_table);
     let mut props: Vec<SendPropDef> = Vec::new();
-    push_props_end(data, root_table, &excludes, &mut props, &mut Vec::new());
+    push_props_end(data, root_table, None, &excludes, &mut props, &mut Vec::new());
 
     if proto4 {
         sort_by_priority(&mut props);
@@ -407,18 +416,24 @@ fn walk_excludes(
 fn push_props_end(
     data: &DataTables,
     table_name: &str,
+    parent: Option<&str>,
     excludes: &HashSet<(String, String)>,
     props: &mut Vec<SendPropDef>,
     table_stack: &mut Vec<String>,
 ) {
     let mut local_props: Vec<SendPropDef> = Vec::new();
-    push_props_collapse(data, table_name, excludes, &mut local_props, props, table_stack);
+    push_props_collapse(data, table_name, parent, excludes, &mut local_props, props, table_stack);
     props.extend(local_props);
 }
 
 fn push_props_collapse(
     data: &DataTables,
     table_name: &str,
+    // Name of the SendProp pointing at this table (the array name for
+    // engine-generated SendPropArray element tables). Threaded onto each leaf's
+    // `array_parent` so CCSPlayerResource's numbered scoreboard arrays survive
+    // flattening. `None` at the class root.
+    parent: Option<&str>,
     excludes: &HashSet<(String, String)>,
     local_props: &mut Vec<SendPropDef>,
     props: &mut Vec<SendPropDef>,
@@ -437,9 +452,14 @@ fn push_props_collapse(
             if let Some(dt) = &prop.data_table_name {
                 if !table_stack.contains(dt) {
                     if prop.flags & SPROP_COLLAPSIBLE != 0 {
-                        push_props_collapse(data, dt, excludes, local_props, props, table_stack);
+                        // Collapsible sub-tables merge into the parent namespace,
+                        // so the array-name context passes straight through.
+                        push_props_collapse(data, dt, parent, excludes, local_props, props, table_stack);
                     } else {
-                        push_props_end(data, dt, excludes, props, table_stack);
+                        // A genuine nested table (e.g. a SendPropArray's element
+                        // table): its prop name is the array name our leaves
+                        // should remember.
+                        push_props_end(data, dt, Some(&prop.name), excludes, props, table_stack);
                     }
                 }
             }
@@ -459,6 +479,7 @@ fn push_props_collapse(
                 element_count: e.element_count,
                 element_def: None,
                 priority: e.priority,
+                array_parent: parent.map(|s| s.to_string()),
             }));
             local_props.push(SendPropDef {
                 name: prop.name.clone(),
@@ -471,6 +492,7 @@ fn push_props_collapse(
                 element_count: prop.element_count,
                 element_def,
                 priority: prop.priority,
+                array_parent: parent.map(|s| s.to_string()),
             });
         }
     }

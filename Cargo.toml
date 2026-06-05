@@ -1,6 +1,6 @@
 [package]
 name = "demoscope"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2024"
 description = "Fast parser and 3D visualiser for Source Engine HL2DEMO files"
 repository = "https://github.com/programmer1o1/demoscope"
@@ -8,6 +8,10 @@ repository = "https://github.com/programmer1o1/demoscope"
 [dependencies]
 base64 = "0.21"
 lzma-rs = "0.3"
+# Pure-Rust (no C) zstd decoder, used only to inflate CS2 map resources:
+# a `.vpk`'s KV3 PHYS block (world collision mesh) is zstd-compressed. Keeps
+# the no-C-toolchain build story intact, same as lzma-rs.
+ruzstd = "0.7"
 
 # WASM-only deps. wasm-bindgen exposes the parser to JS, console_error_panic_hook
 # routes Rust panics to the browser console for better debugging. Both are

@@ -17,42 +17,47 @@ use std::io::{self, Read, Write as IoWrite};
 use std::path::{Path, PathBuf};
 
 // Parser sub-modules (shared between the CLI binary and the wasm lib).
-mod bitreader;
+// Grouped by concern: `util` (low-level helpers), `render` (HTML/JSON output),
+// `source` (Source-engine demo decoding), and per-engine folders for `bsp`,
+// `goldsrc`, and `quake`. `header` is the shared HL2DEMO container header.
 mod bsp;
-mod bytes;
-mod constants;
-mod events;
+pub mod check;
 pub mod goldsrc;
 mod header;
-mod html;
-mod json;
-mod packets;
-
-mod source_demo;
-mod multi_player;
+mod protobuf;
 pub mod quake;
+mod render;
+mod source;
+pub mod source2;
+mod util;
 
 // Re-export the byte-slice HTML entry points at the crate-module level so
 // `lib.rs` (which pulls this file in as `mod cli`) can reach them unchanged.
-pub use html::{generate_goldsrc_html, generate_html_string, generate_quake_html};
+pub use render::html::{
+    generate_dual_html_string, generate_goldsrc_html, generate_html_string, generate_quake_html,
+    generate_source2_html,
+};
 
-use self::bytes::{le_i32, read_cstring};
-use self::constants::{
+use self::header::{fmt_buttons, parse_header, parse_usercmd};
+use self::render::html::generate_html;
+use self::source::packets::detect_splitscreen;
+use self::util::bytes::{le_i32, read_cstring};
+use self::util::constants::{
     DEM_CONSOLECMD, DEM_DATATABLES, DEM_PACKET, DEM_SIGNON, DEM_STOP, DEM_STRINGTABLES,
     DEM_STRINGTABLES_V2, DEM_SYNCTICK, DEM_USERCMD, HEADER_SIZE, SPLIT_SIZE,
 };
-use self::header::{fmt_buttons, parse_header, parse_usercmd};
-use self::html::generate_html;
-use self::packets::detect_splitscreen;
 
 fn print_usage(prog: &str) {
     eprintln!("Usage: {prog} <demo.dem> [--all] [--csv] [--json] [--summary] [--html [FILE]]");
+    eprintln!("       {prog} --check <demo.dem|dir>   decode self-check (exit 1 on any FAIL)");
     eprintln!();
     eprintln!("  --all      Print every packet (not just usercmds)");
     eprintln!("  --csv      Output usercmds as CSV");
     eprintln!("  --json     Output usercmds as JSON array");
     eprintln!("  --summary  Print header info and packet counts only");
     eprintln!("  --html     Generate interactive 3D HTML visualization (always includes multi-player tracks)");
+    eprintln!("  --diff D       Overlay a second demo D's entities as translucent ghosts (same map; Source only)");
+    eprintln!("  --diff-split D Side-by-side dual viewer of this demo and D instead of an overlay");
     eprintln!("  --jump-threshold N  Path-break distance in units (default: auto-derived from data)");
     eprintln!();
     eprintln!("Supports: TF2, CS:S, CS:GO, HL2, Portal, DOD, HL2DM, GMod, L4D, L4D2 (demo_protocol 2/3/4)");
@@ -65,6 +70,17 @@ fn main() -> io::Result<()> {
     if args.len() < 2 || args.iter().any(|a| a == "--help" || a == "-h") {
         print_usage(&args[0]);
         std::process::exit(if args.len() < 2 { 1 } else { 0 });
+    }
+
+    // --check [path]: decode self-check over a demo file or a directory of
+    // demos. Prints a per-demo health table and exits non-zero if any FAIL, so
+    // it works both interactively and as a CI regression gate. Accepts the path
+    // either before or after the flag (`--check DIR` or `DIR --check`).
+    if args.iter().any(|a| a == "--check") {
+        let target = args.iter().skip(1).find(|a| !a.starts_with("--"))
+            .cloned().unwrap_or_else(|| ".".to_string());
+        let fails = check::run(std::path::Path::new(&target))?;
+        std::process::exit(if fails == 0 { 0 } else { 1 });
     }
 
     let filename = &args[1];
@@ -97,7 +113,16 @@ fn main() -> io::Result<()> {
             _ => Path::new(filename).with_extension("html"),
         };
         let dem_path = Path::new(filename);
-        return generate_html(dem_path, &output_path, jump_threshold);
+        // --diff <demo2>: overlay a second demo's entities as translucent ghosts.
+        // --diff-split <demo2>: side-by-side dual viewer instead.
+        let split = args.iter().any(|a| a == "--diff-split");
+        let flag = if split { "--diff-split" } else { "--diff" };
+        let diff_path: Option<PathBuf> = args
+            .iter()
+            .position(|a| a == flag)
+            .and_then(|i| args.get(i + 1))
+            .map(PathBuf::from);
+        return generate_html(dem_path, &output_path, jump_threshold, diff_path.as_deref(), split);
     }
 
     let show_all = args.iter().any(|a| a == "--all");

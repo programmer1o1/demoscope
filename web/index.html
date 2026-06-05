@@ -64,7 +64,7 @@ main { flex: 1; display: flex; min-height: 0; }
 <div id="shell">
   <header>
     <h1>demoscope</h1>
-    <span class="sub">in-browser parser · drag a Source / GoldSrc <code>.dem</code> or Quake <code>.dem</code>/<code>.dm2</code>/<code>.dm_68</code> to begin</span>
+    <span class="sub">in-browser parser · drag a Source / Source 2 / GoldSrc <code>.dem</code> or Quake <code>.dem</code>/<code>.dm2</code>/<code>.dm_68</code> to begin</span>
     <span class="version" id="version-tag">loading…</span>
   </header>
   <main>
@@ -75,13 +75,13 @@ main { flex: 1; display: flex; min-height: 0; }
         <button type="button" id="pick">browse…</button>
       </div>
       <div class="hint">
-        Source 1 (TF2 / CS:S / HL2 / Portal / L4D / GMod), GoldSrc (HL1 / CS 1.6 / DoD), and Quake 1/2/3 demos are all supported.
-        Optionally also drop the matching <b>.bsp</b> map file to render the 3D world overlay. Quake 3 maps live inside a <code>.pk3</code>, so drop the extracted <code>maps/&lt;name&gt;.bsp</code>.
+        Source 1 (TF2 / CS:S / CS:GO / HL2 / Portal / L4D / GMod), <b>Source 2 / CS2</b> (also Dota 2 / Deadlock), GoldSrc (HL1 / CS 1.6 / DoD), and Quake 1/2/3 demos are all supported.
+        Optionally also drop the matching map file to render the 3D world overlay: a <b>.bsp</b> for Source 1 / GoldSrc / Quake, or the map's <b>.vpk</b> for <b>CS2</b> (its world geometry is decoded from the pak's collision mesh). Quake 3 maps live inside a <code>.pk3</code>, so drop the extracted <code>maps/&lt;name&gt;.bsp</code>. Drop a <b>second Source <code>.dem</code></b> of the same map to overlay it as a ghost (side-by-side diff).
         Files never leave your machine. Everything runs in this page.
         <br><br>
         Keyboard: <span class="kbd">Esc</span> to start over once a demo is loaded.
       </div>
-      <input type="file" id="file" accept=".dem,.dm2,.dm_68,.dm_67,.dm_66,.mvd,.qwd,.bsp" multiple>
+      <input type="file" id="file" accept=".dem,.dm2,.dm_68,.dm_67,.dm_66,.mvd,.qwd,.bsp,.vpk" multiple>
     </label>
     <iframe id="viewer"></iframe>
     <button id="again" type="button">← back</button>
@@ -101,6 +101,8 @@ const verTag  = document.getElementById('version-tag');
 // Track the BSP across loads so the user can drop them one at a time.
 let pendingBsp = null;
 let pendingBspName = '';
+// First demo, carried so a later second demo overlays as a diff ghost.
+let pendingDemo = null;
 
 function log(msg, cls) {
   const line = document.createElement('div');
@@ -148,16 +150,19 @@ function resetToPicker() {
   hideViewer();
   pendingBsp = null;
   pendingBspName = '';
+  pendingDemo = null;
   clearStatus();
   log('Ready.', 'ok');
 }
 
-async function parse(demoBytes, demoName) {
-  log(`Parsing ${demoName} (${(demoBytes.length / 1024 / 1024).toFixed(1)} MB)…`);
+async function parse(demoBytes, demoName, diffBytes, diffName) {
+  const extra = diffBytes ? ` vs ${diffName}` : '';
+  log(`Parsing ${demoName}${extra} (${(demoBytes.length / 1024 / 1024).toFixed(1)} MB)…`);
   const t0 = performance.now();
   try {
-    // jump_threshold = 0 → auto-derive in the viewer JS.
-    const html = parse_demo_to_html(demoBytes, pendingBsp, demoName, 0);
+    // jump_threshold = 0 → auto-derive in the viewer JS. diffBytes overlays a
+    // second demo as a ghost (Source only; null when not diffing).
+    const html = parse_demo_to_html(demoBytes, pendingBsp, demoName, 0, diffBytes || undefined, diffName || '');
     const t1 = performance.now();
     log(`Done in ${(t1 - t0).toFixed(0)} ms - HTML is ${(html.length / 1024).toFixed(0)} KB.`, 'ok');
     showViewer(html);
@@ -167,28 +172,40 @@ async function parse(demoBytes, demoName) {
 }
 
 async function handleFiles(fileList) {
-  let demo = null, demoName = '';
+  const demos = [];
   for (const f of fileList) {
     const name = f.name.toLowerCase();
     // .dem = Source HL2DEMO or NetQuake; .dm2 = Quake 2; .dm_6x = Quake 3;
     // .qwd/.mvd = QuakeWorld. The wasm parser auto-detects which.
     const isDemo = name.endsWith('.dem') || name.endsWith('.dm2')
       || name.includes('.dm_') || name.endsWith('.mvd') || name.endsWith('.qwd');
-    if (isDemo) { demo = f; demoName = f.name; }
-    else if (name.endsWith('.bsp')) {
+    if (isDemo) { demos.push(f); }
+    // A .bsp (Source 1 / GoldSrc / Quake) or a .vpk (CS2 map pak) both feed the
+    // same map-overlay buffer; the wasm parser picks the right decoder by demo
+    // type. CS2 map paks are large, so this can be a few hundred MB.
+    else if (name.endsWith('.bsp') || name.endsWith('.vpk')) {
       const buf = new Uint8Array(await f.arrayBuffer());
       pendingBsp = buf;
       pendingBspName = f.name;
-      log(`BSP ready: ${f.name} (${(buf.length / 1024 / 1024).toFixed(1)} MB)`, 'ok');
+      const kind = name.endsWith('.vpk') ? 'CS2 map pak' : 'BSP';
+      log(`${kind} ready: ${f.name} (${(buf.length / 1024 / 1024).toFixed(1)} MB)`, 'ok');
     }
   }
-  if (demo) {
-    const bytes = new Uint8Array(await demo.arrayBuffer());
-    await parse(bytes, demoName);
+  // A second demo (this drop, or carried from a previous one) becomes the diff
+  // ghost overlaid on the first - same as the CLI's --diff.
+  if (pendingDemo && demos.length >= 1) { demos.unshift(pendingDemo); pendingDemo = null; }
+  if (demos.length >= 2) {
+    const [a, b] = demos;
+    const [ab, bb] = [new Uint8Array(await a.arrayBuffer()), new Uint8Array(await b.arrayBuffer())];
+    await parse(ab, a.name, bb, b.name);
+  } else if (demos.length === 1) {
+    const bytes = new Uint8Array(await demos[0].arrayBuffer());
+    pendingDemo = demos[0]; // remember so a later second demo can diff against it
+    await parse(bytes, demos[0].name);
   } else if (!fileList.length) {
     log('No files selected.', 'err');
-  } else if (!pendingBsp && fileList.length === 1) {
-    log('Got a BSP. Drop the matching .dem next.', 'ok');
+  } else if (!pendingBsp) {
+    log('Got a map file. Drop the matching .dem next.', 'ok');
   }
 }
 

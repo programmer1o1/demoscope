@@ -5,9 +5,9 @@
 
 use std::collections::HashMap;
 
-use super::bitreader::BitReader;
-use super::bytes::le_i32;
-use super::constants::{HEADER_SIZE, SPLIT_SIZE};
+use super::super::util::bitreader::BitReader;
+use super::super::util::bytes::le_i32;
+use super::super::util::constants::{HEADER_SIZE, SPLIT_SIZE};
 
 pub(crate) struct DemoPacketInfo {
     pub(crate) cmd: u8,
@@ -32,7 +32,7 @@ pub(crate) fn detect_splitscreen(data: &[u8], demo_protocol: i32, game_dir: &str
     // the cmd=1/2 payload boundaries and silently drops every game packet -
     // breaking event/userinfo/setview extraction. player_tracks pins the same
     // way; L4D (splitscreen 4) is NOT portal2-engine, so it still probes.
-    if demo_protocol > 3 && super::source_demo::datatable::is_portal2_engine(game_dir) {
+    if demo_protocol > 3 && super::datatable::is_portal2_engine(game_dir) {
         return 2;
     }
     let extra: usize = if demo_protocol > 3 { 1 } else { 0 };

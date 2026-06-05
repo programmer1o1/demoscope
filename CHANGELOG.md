@@ -1,5 +1,119 @@
 # Changelog
 
+## v0.6.0 — "Trailblazer"
+
+- **CS:GO protobuf string-table decode → live mid-demo player names.** CS:GO
+  wraps `svc_CreateStringTable` / `svc_UpdateStringTable` in protobuf, so the
+  bit-packed Source 1 path couldn't read them — names came only from the
+  `DEM_STRINGTABLES` snapshot. A new `src/source/csgo/stringtables.rs` decodes
+  the protobuf envelope and walks the bit-packed entry stream inside `string_data`
+  (engine `ParseUpdate` format — the catch was a leading "encode using
+  dictionaries" flag before the entry loop). This upgrades CS:GO from
+  snapshot-only names to **live updates**: renames, late joiners, reconnects, and
+  the pre-connected players GOTV demos' `player_connect` backfill structurally
+  couldn't reach. Verified on real GOTV demos (Sierra + 10 named bots, all from
+  the decoded tables); the `player_connect` backfill is demoted to a zero-cost
+  fallback (adds 0 on every test demo).
+- **Ballistic-physics grenade arc for no-aim throws.** The ~30% of POV grenade
+  throws with no aim sample previously drew a distance-fudged Bézier bow. They now
+  draw the gravity parabola the throw + burst points imply (apex = g·T²/8, flight
+  time grows with distance) — a true minimum-assumption projectile path. (Bounces
+  and steep lobs still aren't recoverable without the missing launch pitch.)
+- **`--check` decode self-check harness.** New `demoscope --check <file|dir>` runs
+  the real per-format decoder (Source 1 / Source 2 / Quake / GoldSrc) over a demo
+  or a whole directory, panic-guarded, and prints a PASS/WARN/FAIL health row each
+  — exiting non-zero on any FAIL so it doubles as a CI/regression gate. A Source 1
+  demo with 0 tracks is correctly PASS when the header shows ~0 gameplay ticks (an
+  aborted recording), FAIL only when a substantive demo decodes to nothing. Run
+  over the 35-demo corpus: 33 pass, 2 warn (`85073367` ~5% packet fail, `sierraa`
+  severe desync — both pre-existing), 0 fail.
+
+- **Real input monitoring for CS2 + Portal 2 (not just inferred).** The input
+  panel used to only light up for Source 1 POV demos with parsed usercmds;
+  everything else fell back to a velocity guess. Two finds fixed that. **CS2**
+  ships no usercmd stream, but the pawn's `CCSPlayer_MovementServices` networks
+  the held-button mask (`m_nButtonDownMaskPrev`) — verified bit-for-bit against
+  velocity (bit3=forward, bit4=back, 512/1024=strafes) and against the
+  `m_bDesiresDuck` boolean (mask&4 == it, exactly), so the standard engine `IN_`
+  bit layout is correct. We surface a real W/A/S/D/attack/jump/duck per pawn.
+  **Portal 2** *does* carry usercmds — they were just unreachable: the proto-4
+  command walk treated `DEM_CustomData` (cmd 8, which SAR speedrun demos emit by
+  the thousand) as a plain length-prefixed block, desyncing right after signon
+  before any usercmd. Skipping CustomData correctly (`callback(4)+length(4)+data`)
+  unlocked **5844 usercmds** in `testingportal2` / **12900** in a SAR demo —
+  real buttons + view angles + analog move (forwardmove≠0 = 39% == W+S, proving
+  the decode). Deadlock/Dota keep the (now windowed-velocity) derived fallback —
+  their pawns network only a toggle mask, no live buttons.
+- **Held weapon for CS2.** Decodes `m_pWeaponServices.m_hActiveWeapon` off the
+  pawn → resolves the weapon entity's network class → short name, keyed on the
+  stable per-weapon `class_id`, into the viewer's existing weapon readout. Clean
+  names on a full match: `ak47`, `deagle`, `awp`, grenades, `c4`, `knife`.
+  Deadlock/Dota have no held weapon (ability system), so nothing shows there.
+- **CS2 kill attribution — "who killed whom".** CS2 `player_death` events carry
+  the player as a slot/userid the viewer can't key on, plus a `*_pawn` entity
+  handle. We rewrite `userid`/`attacker`/`assister` to the pawn index decoded
+  from their `*_pawn` handle (`& 0x3FFF`) — exactly what `ENTITY_NAMES`/`TRACKS`
+  are keyed by — so the kill feed, attacker→victim arcs and death markers all
+  resolve names. 55/55 on a de_nuke match. (Source 1 path untouched.)
+- **Round end + bomb events for CS:S / CS:GO / CS2.** The event log now surfaces
+  `round_end` (with winning team), `round_mvp`, `round_freeze_end` and bomb
+  plant/defuse/explode under a Round filter. CS:GO/CS:S carry these as real
+  events; **CS2 emits no `round_end`** (only beeps), so it's synthesized from the
+  `m_totalRoundsPlayed` transition stream (8 rounds on the test match).
+- **Grenade landing markers + thrower (CS2 / CS:GO).** A `Nades` overlay drops a
+  colored diamond + ground ring exactly where each grenade detonated (HE / flash
+  / smoke / molotov / fire / decoy), with the thrower + type in a floating label
+  and the event log. Markers **play out in real-time** (pop + pulse as their tick
+  arrives, linger faintly after), a corner **legend** keys the colors, and an
+  optional **trajectory arc** — the 3rd state of the Nades cycle — lobs from the
+  thrower's eye along their *actual aim* (eye yaw+pitch at the per-type estimated
+  throw tick) to the burst. The real projectile path isn't usable (its networked
+  origin is a local frame, never world-scale), so the arc is a throw-accurate
+  model, not literal physics. **Molotov fire** (`inferno_startburn`) carries no
+  thrower in the event — for CS2 it's attributed via the `CInferno` entity's
+  `m_hOwnerEntity` (accumulated as the fire entities appear, since they're created
+  a beat after the event, then backfilled at finalize): 6/7 on the test match.
+  CS:GO doesn't network the fire's owner, so its fires stay unattributed.
+- **GOTV player names (CS:GO).** GOTV demos ship no `DEM_STRINGTABLES` snapshot
+  (the POV name source) and deliver `userinfo` only via the in-band protobuf
+  string table, so tracked players came back unnamed. Names are, however, in the
+  `player_connect` events (`name` + slot `index` + `userid`; entity id = index+1),
+  so we backfill any tracked, not-yet-named slot from those — 0 → 9 names on a
+  GOTV match, POV demos unaffected. (Players connected *before* recording have no
+  connect event and stay unnamed — that needs the protobuf string-table decode.)
+- **Avatars hide on transmission gaps instead of freezing (PVS / dead).** In a
+  POV demo a player out of the recorder's PVS — or dead between rounds, which the
+  *local* player's life-state misses (it arrives via clientdata, not the entity
+  stream) — stops being networked, and the avatar used to freeze at its last
+  position (the "player just stopped / phantom standing there" bug). It now hides
+  when **both** the position and eye-angle streams go stale (~4.5s): a player
+  merely holding an angle still micro-adjusts their view, so requiring both
+  catches absence without hiding a camper. (GOTV server-side recordings don't hit
+  this — they network every living player continuously; it's a POV property.)
+- **Routes no longer chopped by fast movement.** The path line broke whenever
+  sample-to-sample velocity exceeded a teleport threshold that was set at 900 u/s
+  — below surf/bhop/boosts/knockback/deathcam pans, so fast players got fragmented
+  routes (while the heatmap, which never run-splits, looked fine). Raised to
+  6000 u/s: real teleports are instantaneous (15,000+ u/s in a dense stream) and
+  respawns also break on the death interval, so this cleanly separates them.
+  Reconnected Portal 2 19→4 breaks, CS:GO 13→5, CS2 109→70.
+- **CREDITS.md** added — reference implementations, format docs, RE tooling, and
+  demo contributors.
+- **Coplanar-face z-fighting removed from BSP maps (photosensitivity fix).** The remaining strobing — a field of shimmering stripes across flat floors/walls, worst on detail-heavy maps like TF2 jump maps — was the classic Source z-fight: a `func_detail` brush face landing *exactly* on a world brush face. Same plane → identical depth → the GPU picks a winner per-pixel per-frame, and nothing (depth precision, polygon offset, log-depth) can break a tie at equal depth. The BSP extractor now separates these: faces are bucketed by their (sign-canonicalised) plane, and within a plane the larger faces stay put while any face that **overlaps** a kept one is **nudged a fraction of a unit along its normal** — both faces still render, just at slightly different depths, so the strobe is gone with **no holes** (dropping the duplicate would gouge a gap wherever a partial overlap uniquely covered surface). Overlap is a real 2D test — a corner *strictly* inside the other face (boundary excluded, so adjacent tiles and the two halves of a quad aren't falsely flagged), or edges properly crossing — which catches partial/banded overlaps a centroid test misses. The nudge amount is varied per face so stacked duplicates separate from each other too. Huge tiled buckets are skipped to bound cost. On `jump_academy2_rc9a` ~2,700 faces (1.7%) are nudged; triangle count is unchanged.
+- **Map overlays no longer flicker (photosensitivity fix).** Coplanar/overlapping surfaces — Source 1 water brushes, abutting CS2 collision hulls, decals — z-fought against each other, producing a strobing flicker that's both ugly and a genuine seizure risk. Several fixes: the renderer now uses a **logarithmic depth buffer** (depth precision spread logarithmically instead of bunched near the camera, which the old 1→200000 range couldn't afford), the camera near plane is lifted 1→8, the faint interior wireframe is `depthWrite:false` with a negative polygon offset so it can't fight the solid faces, and **dense overlays are thinned**: above 40k triangles (CS2 collision meshes) the per-triangle wireframe is dropped entirely. The root subtlety: the logarithmic depth buffer makes the shader write its own depth, which **nullifies polygon offset** — the trick that used to lift the coplanar line overlays (structural edges + the faint wireframe) clear of the solid faces. Without it, depth-tested lines z-fight the surface, and depth-test-*off* lines pile into a shimmering x-ray web on dense geometry — both read as flicker. Fix: the faint wireframe is removed outright (barely visible, pure flicker bait), and structural edges are kept only on sparser maps — where there are few enough that drawing them depth-test-off is a crisp outline with nothing to shimmer. Dense maps (big jump maps, CS2 collision) rely on the solid Phong shading alone. Applies to every engine's overlay (Source 1/2, GoldSrc, Quake).
+- **CS2 map overlay hides clip/tool brushes + interior seams.** CS2 maps are packed with invisible collision volumes — player clips, NPC clips, grenade clips, the skybox brush, sound/light blockers — that cluttered the overlay with surfaces you can't see in-game. The extractor now reads each shape's collision attribute (`m_InteractAsStrings`) and skips volumes whose tags are all invisible (`playerclip`, `npcclip`, `csgo_grenadeclip`, `sky`, `blocksound`, …), keeping real world surfaces (`solid`, `window`, `passbullets`, and the untagged default world). It also drops **interior faces shared by abutting brush hulls** (keyed by sorted, quantized corner positions; a face emitted by two solids is invisible in-game and z-fights) and sub-grid degenerate slivers. And because the world solid is a *union of overlapping convex hulls* whose near-coplanar faces GPU-z-fight (the water-like flicker no depth trick fixes — same material, almost-equal depth), **each hull is shrunk a hair toward its own centroid** (1%, capped at 0.6 units) so those surfaces separate in depth without visibly gapping clean seams. On `de_nuke` the mesh ends at 105,990 verts / ~172k triangles, visible bounds unchanged.
+- **CS2 map overlay — world geometry for Source 2 demos.** CS2 demos now render the map behind the player tracks, closing the last gap for the CS2 family (positions, events, scoreboard already worked; they just floated in a void). CS2 maps aren't VBSP — they're VPK-packed Source 2 resources — so this is a from-scratch, pure-Rust stack: a **VPK v2 reader**, the **Source 2 resource container**, a full **KV3 v5 binary decoder** (zstd-decompressed dual value buffers + the typed object/array/blob tree — the format's dual-buffer layout and node-type enum were reverse-engineered against ValveResourceFormat and the real file, since the published summaries had both subtly wrong), and a **physics-shape walker**. Rather than the meshopt-compressed render meshes scattered across 806 model instances, it decodes the single `world_physics.vmdl_c` collision mesh (plain vertex/triangle arrays + half-edge convex hulls, fan-triangulated) — a wireframe hull, exactly the kind of overlay the BSP path already draws, fed through the **same base64 vertex/index buffers with zero template changes**. The CLI auto-loads `<map>.vpk` beside the demo (the map name comes from `svc_ServerInfo`); the in-browser build accepts a `.vpk` in the same drop slot as a `.bsp`. The one new dependency is `ruzstd` (pure-Rust zstd, no C toolchain — same spirit as the existing `lzma-rs`). **Verified:** `de_nuke.vpk` → 5988 hulls + 11 meshes → **115,738 verts / 191,628 triangles**, map-sane bounds; the `w.dem` de_nuke match embeds that geometry alongside 10 player tracks that sit inside the map bounds (same coordinate space → aligned).
+- **Kill markers from `player_death` events.** The Deaths overlay (✕ markers at death sites, cycling you → all players → off) now pairs each death with its `player_death` game event, so it shows *how* a player died, not just *where*: **headshot kills get a gold ring**, and the killer, weapon and distance are attached to every marker (`mpDeathPoints`, ready for the minimap + a future hover tooltip). It also closes a long-standing gap — `m_lifeState` (the prop the markers were built from) doesn't always re-network a death before the next big delta, so some deaths went unmarked; those are now **gap-filled** directly from the events, making the on-map death count match the scoreboard. Each death is matched to the nearest event within ~1s and de-duplicated so nothing draws twice. **Verified** on `s.dem` (CS:S full match): all 9 deaths marked, killer/weapon resolved (e.g. *Josh killed by Sierra w/ ak47, headshot*), 4 headshot rings, zero double-draws.
+- **Economy + scoreboard for CS:S & CS:GO (Source 1).** Counter-Strike: Source and CS:GO demos now decode the in-game **economy + scoreboard** — money, kills, deaths, assists, score, MVPs and team — reaching parity with the existing CS2/Source 2 path. **Money + team** come straight off the player entity (`m_iAccount` / `m_iTeamNum`); **kills / deaths / assists / score / MVPs** come off the singleton `CCSPlayerResource` entity, whose stats are engine-generated `SendPropArray`s indexed by player slot. The catch: those arrays flatten to bare numeric leaf names (`000`..`063`) with the array name dropped, so the SendTable flattener now records an **`array_parent`** on each leaf — recovering `m_iScore.001`, `m_iDeaths.001`, … keyed by player entity id (a purely additive field; existing leaf-name matching and prop ordering are untouched, so no other game's decode changes). CS:S ships only `m_iScore` (the frag count), so kills falls back to score there. The result is embedded in each player's metadata JSON exactly like CS2, and surfaced by a new **floating scoreboard window** (opened from the sidebar or **Tab**, dismissed with Esc) — a roomy overlay that splits players by team (Terrorists / Counter-Terrorists), shows **K / D / A / K/D / Score / MVP / $** plus distance/top-speed/time-alive, sorts on any column, and follows a player on row-click. It replaces the old cramped sidebar table and lights up for CS:S, CS:GO and CS2 alike (non-CS multi-player demos get the movement columns). **Verified:** `s.dem` (CS:S full match) → top fragger 61K/3D with 14 MVPs and sane money; `monasterydemo` (CS:GO GOTV) → 7 players with K/D/A + MVPs + cash; non-CS demos and all 24 unit tests unchanged.
+- **Per-player stats leaderboard (multi-player demos).** The viewer's Statistics panel was single-entity (the recorder's distance / top speed / jumps). For demos with multiple tracked players (CS:GO, GMod, L4D, TF2 MP, GoldSrc, Quake) a new **Player Stats** panel turns the per-player tracks into a comparable, sortable table — distance walked, top speed, time alive, deaths — one row per player, the followed player (YOU) highlighted. Click a header to re-sort, click a row to follow that player (drives the same `setPrimaryEntity` as the roster). Reuses the speedometer's teleport guard so respawn jumps don't inflate distance/speed, and excludes sparse (<3-sample) spectators. Hidden for single-player demos, where the global Statistics panel already covers it. Verified on `monasterydemo` (CS:GO): four real players (`Matt` / `Norm` / `Dennis` + the GOTV cam) with map-sane distances and speeds.
+- **Garry's Mod 13 (`GMODEMO`) per-player entity tracks.** GMod demos now decode **per-player position tracks** (multiple players for MP demos), not just inputs + names + recorder camera. GMod ships a modified Source 2013 net stream; three GMod-specific encodings were reverse-engineered from its own `engine.dll` (no reference parser exists) and each confirmed bit-for-bit against the disassembly — all gated on `game_dir=="garrysmod"`, so no other game's decode path changes: (1) **`MAX_EDICT_BITS = 13`** (GMod raised the edict limit to 8192) — the `svc_PacketEntities` `maxEntries`/`numUpdates` count fields, the removed-entities list, and the entity-index bound are all 13 bits wide, not 11; (2) **`svc_PacketEntities` `length` is 24 bits, not 20** (`SVC_PacketEntities::ReadFromBuffer`) — reading 20 left the cursor 4 bits short and desynced every entity body; (3) **`svc_CreateStringTable`** uses a hybrid layout — 16-bit `max_entries` + a **varint** `length` (in bits) + a trailing `compressed` bit — so the signon string-table walk (22 tables: `downloadables` → `modelprecache` → … → `instancebaseline` → `userinfo` → `GModGameInfo`) stays aligned. The entity-index, prop-index and SendProp value decoders are otherwise identical to TF2 (verified against `CL_ParseDeltaHeader`, `RecvTable_Decode`, `sub_1018ABE0`). **Verified:** `type6interloperedgmod` decodes 100% of entity packets → 2 players with map-sane coordinates; `garrythirteen` 93% → a player track across `gm_construct`. TF2 / Portal 2 / CS:GO re-verified unchanged.
+- **CS:GO per-player entity tracks.** Counter-Strike: Global Offensive demos (Source 1, `demo_protocol 4`, `net_protocol ~13xxx`) now decode **full per-player position / view-angle / life-state / weapon tracks**, not just inputs + names + recorder camera. CS:GO keeps the proto-4 demo container but **protobuf-wraps its net messages and SendTables**, so a dependency-free protobuf wire reader was added (`src/protobuf/`, no `prost`/`protobuf` crate) feeding a CS:GO message / SendTable / PacketEntities layer (`src/source_demo/csgo/`). `CSVCMsg_SendTable` flattens through the **existing** SendProp/flatten machinery and `CSVCMsg_PacketEntities.entity_data` decodes through the **existing** bit-packed entity decoder — the one CS:GO-specific catch (found by diffing demoinfocs-golang, **no IDA needed**) is that CS:GO reads the entity field-index list and the value list **separated**, not interleaved like the Portal 2 path. A non-local `m_vecOrigin[2]` Z-drift artifact (a stationary player's Z ramps skyward) is handled by gating Z updates on horizontal movement. **Verified:** `monasterydemo` (GOTV, `ar_monastery`) decodes 3075/3076 PacketEntities (100%) → 7 players with names + SteamIDs/bot flags and map-sane coordinates; a solo POV demo on a custom map decodes 10877/10877. TF2 (229,069 samples) and Portal 2 (2,485) re-verified unchanged. Phases were each gated against the real demo: protobuf reader → message framing (0/6688 malformed bodies) → SendTables (284 classes, `CCSPlayer` flattens) → entity decode (100%) → viewer tracks.
+- **Side-by-side demo diff.** Compare two same-map Source demos in one view, two ways:
+  - **`--diff demo2.dem` (default) — translucent ghost overlay.** demo 2's entities are overlaid in demo 1's scene as **translucent wireframe "ghosts"** (every networked player for MP demos, or the recorder camera path for single-POV), tick-aligned so both runs start together. Ghosts get their own routes, avatars, minimap dots and sidebar rows but render dimmed so they read clearly as the other run. Stays in one viewport — readable on any display. Ghost entity ids are offset by 900000 so they never collide with the host demo. **Verified:** a cs_office MP diff overlays all 14 of demo 2's players in the same play space as demo 1's; a Portal SP diff overlays the single recorder path.
+  - **`--diff-split demo2.dem` — dual viewer.** Split-screen of two complete, independent viewers (each its own camera/kills/events/timeline), frame-locked to one master race-clock. Each demo is embedded as a base64 blob in an iframe loaded with a `#sync` fragment that puts it in **follower mode** (it renders at whatever tick the shell pushes via `postMessage`); the shell maps a shared "race second" onto each demo's own ticks so different lengths/rates still line up.
+  Source (HL2DEMO) only; Quake/GoldSrc warn and ignore the flag. The ghost overlay is wired through the **WASM/web build** too — drop a second Source `.dem` in the drag-and-drop UI.
+- **GoldSrc other-player entity tracks.** Half-Life 1 / CS 1.6 / DoD / Condition Zero demos now decode **per-player position + view-angle tracks**, not just the recorder camera. The decoder walks the bit-packed svc message stream inside each NetMsg blob (the part the camera walker skipped) and implements GoldSrc's full delta-compression protocol: the hardcoded bootstrap `delta_description_t` meta-table, `svc_deltadescription` field-table registration, and `svc_packetentities` / `svc_deltapacketentities` decode against the registered `entity_state_t` / `entity_state_player_t` / `custom_entity_state_t` tables, accumulating the latest `origin[*]` / `angles[*]` per entity into trajectories. Player names come from `svc_updateuserinfo` infostrings; `svc_serverinfo` gives the player-entity range. Each NetMsg frame is length-framed (`msg_length`), so a mis-sized svc message can only desync *within* one blob - the next frame always resyncs, keeping the whole walk panic- and desync-bounded. The field tables and delta logic mirror the LGPL reference parser (`khanghugo/dem`); no protobuf, no IDA. **Verified on `cs_assault` (czero):** 13 player tracks / 12,211 samples, **100 % of samples inside the decoded `cs_assault.bsp` geometry**, recorder identified as `Sierra` and set as the primary/follow entity. The recorder is shown as a named entity sourced from the camera path (the local player is networked via `svc_clientdata`, not `svc_packetentities`).
+
 ## v0.5.0
 
 The biggest release yet: demoscope stops being Source-only and grows two entire new engine families, finishes the proto-4 Source work, and renders maps for all of them.

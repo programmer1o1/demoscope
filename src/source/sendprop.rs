@@ -101,6 +101,14 @@ pub struct SendPropDef {
     pub element_count: u16,
     pub element_def: Option<Box<SendPropDef>>, // for Array props
     pub priority: u8, // proto-4 explicit priority byte (0 on proto-3)
+    /// Name of the immediate parent SendProp when this leaf came from a nested
+    /// (non-collapsible) DataTable - i.e. the array name for engine-generated
+    /// SendPropArray element tables, whose leaves are bare numeric indices
+    /// ("000".."063"). `None` for top-level / collapsed props. Lets the
+    /// CCSPlayerResource scoreboard arrays (m_iScore[i], m_iDeaths[i], …) be
+    /// recovered on the Source 1 path, where flattening otherwise drops the
+    /// array name and keeps only the per-slot index.
+    pub array_parent: Option<String>,
 }
 
 /// Decoded prop value.

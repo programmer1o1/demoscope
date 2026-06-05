@@ -8,8 +8,8 @@ use std::path::Path;
 // Use `super::` instead of `crate::` so this resolves correctly in both the
 // binary crate (where main.rs is the crate root) and the library crate
 // (where lib.rs pulls main.rs in as a sub-module via #[path]).
-use super::source_demo::player_tracks;
-use super::source_demo::stringtable::PlayerInfo;
+use super::player_tracks::{self, PlayerEcon};
+use super::stringtable::PlayerInfo;
 
 #[derive(Default)]
 pub struct PlayerMeta {
@@ -44,6 +44,9 @@ pub struct MultiPlayerData {
     pub yaws: HashMap<u32, Vec<(i32, f32, f32)>>,
     pub weapons: HashMap<u32, Vec<(i32, i32)>>,
     pub weapon_classes: HashMap<i32, String>,
+    /// Per-player economy + scoreboard (CS:S / CS:GO), keyed by player entity id
+    /// to line up with `names`. Empty on non-CS demos.
+    pub econ: HashMap<u32, PlayerEcon>,
     pub primary_entity: Option<u32>,
     /// Recorder's per-frame camera angles (tick, pitch, yaw) from democmdinfo.
     pub view_angles: Vec<(i32, f32, f32)>,
@@ -76,6 +79,7 @@ fn wrap_raw(raw: player_tracks::PlayerTrackData) -> Result<MultiPlayerData, Box<
         tracks: raw.tracks, names, life_states: raw.life_states,
         observer_modes: raw.observer_modes, yaws: raw.yaws,
         weapons: raw.weapons, weapon_classes: raw.weapon_classes,
+        econ: raw.econ,
         primary_entity,
         view_angles: raw.view_angles,
     })

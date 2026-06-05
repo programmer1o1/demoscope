@@ -25,16 +25,32 @@ mod wasm {
     /// Pass `name_hint` as the display filename - it surfaces in the demo
     /// metadata header. `jump_threshold` should be `0` for auto-derive
     /// (recommended); any positive value overrides.
+    ///
+    /// `diff` optionally overlays a second demo's recorder path as a ghost for
+    /// side-by-side comparison (Source demos only; ignored for Quake/GoldSrc).
+    /// `diff_name` is the ghost's display label.
     #[wasm_bindgen]
     pub fn parse_demo_to_html(
         demo: &[u8],
         bsp: Option<Vec<u8>>,
         name_hint: &str,
         jump_threshold: f32,
+        diff: Option<Vec<u8>>,
+        diff_name: &str,
     ) -> Result<String, JsValue> {
         // Route panics to console.error so a browser session shows a real
         // stack trace instead of "unreachable executed".
         console_error_panic_hook::set_once();
+        // Source 2 (PBDEMS2: CS2 / Dota 2 / Deadlock) - checked first: its magic
+        // is unambiguous, whereas the Quake route matches by `.dem` extension and
+        // would otherwise swallow it. Metadata-only viewer for now.
+        if super::cli::source2::is_source2(demo) {
+            // CS2 maps are VPK-packed Source 2 resources, not VBSP — so the
+            // optional second buffer doubles as the `.vpk` map pak here (the
+            // drag-and-drop UI accepts a `.bsp` or a `.vpk` beside the demo).
+            return super::cli::generate_source2_html(demo, bsp.as_deref(), None, name_hint)
+                .map_err(|e| JsValue::from_str(&e.to_string()));
+        }
         // Quake-family demos (Q1/Q2/Q3) route to the dedicated decoder; HL2DEMO
         // demos fall through to the Source path. Detection checks the HL2DEMO
         // magic first, so Source demos are never misclassified.
@@ -47,7 +63,9 @@ mod wasm {
             return super::cli::generate_goldsrc_html(demo, bsp.as_deref(), name_hint)
                 .map_err(|e| JsValue::from_str(&e.to_string()));
         }
-        super::cli::generate_html_string(demo, bsp.as_deref(), name_hint, jump_threshold)
+        // A second demo overlays as translucent ghosts in the same scene.
+        let diff_arg = diff.as_deref().map(|b| (b, diff_name));
+        super::cli::generate_html_string(demo, bsp.as_deref(), name_hint, jump_threshold, diff_arg)
             .map_err(|e| JsValue::from_str(&e.to_string()))
     }
 

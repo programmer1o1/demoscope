@@ -13,7 +13,7 @@
 use std::collections::HashMap;
 use std::error::Error;
 
-use super::multi_player::{MultiPlayerData, PlayerMeta};
+use super::source::multi_player::{MultiPlayerData, PlayerMeta};
 
 pub mod q1;
 pub mod q2;
@@ -276,6 +276,7 @@ impl TrackBuilder {
             yaws: self.yaws,
             weapons: HashMap::new(),
             weapon_classes: HashMap::new(),
+            econ: HashMap::new(),
             primary_entity: primary,
             view_angles: self.view_angles,
         }

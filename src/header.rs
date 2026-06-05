@@ -1,9 +1,9 @@
 // Demo header + UserCmd: the fixed 1072-byte header struct and the bit-packed
 // CUserCmd payload, plus their parsers and the button-name formatter.
 
-use super::bitreader::BitReader;
-use super::bytes::{le_f32, le_i32, read_cstring};
-use super::constants::{
+use super::util::bitreader::BitReader;
+use super::util::bytes::{le_f32, le_i32, read_cstring};
+use super::util::constants::{
     is_source_demo_magic, HEADER_SIZE, IN_ATTACK, IN_ATTACK2, IN_BACK, IN_DUCK, IN_FORWARD,
     IN_JUMP, IN_LEFT, IN_MOVELEFT, IN_MOVERIGHT, IN_RELOAD, IN_RIGHT, IN_SCORE, IN_SPEED, IN_USE,
     IN_WALK, IN_ZOOM, MAX_EDICT_BITS, WEAPON_SUBTYPE_BITS,

@@ -49,7 +49,13 @@
 // scanning forward to the next `RefParams`-validated NetMsg (≈26 / 24k frames on
 // the CZ sample), so the trajectory stays complete.
 
-use super::bytes::{le_f32, le_i32, read_cstring};
+use super::util::bytes::{le_f32, le_i32, read_cstring};
+
+// The svc delta-compression entity decoder (per-player tracks) lives in its
+// own submodule; its public surface is re-exported so callers keep using
+// `goldsrc::extract_entities` / `goldsrc::GoldSrcEntities` unchanged.
+pub(crate) mod entities;
+pub(crate) use entities::{extract_entities, GoldSrcEntities};
 
 pub(crate) const GOLDSRC_MAGIC: &[u8; 8] = b"HLDEMO\0\0";
 const GOLDSRC_HEADER_SIZE: usize = 544;
@@ -282,3 +288,4 @@ pub(crate) fn extract_camera(data: &[u8], meta: &GoldSrcMeta) -> Vec<CamSample> 
     }
     cam
 }
+

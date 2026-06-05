@@ -6,7 +6,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use super::bitreader::BitReader;
+use super::super::util::bitreader::BitReader;
 
 pub(crate) struct SampledCmd {
     pub(crate) tick: i32,
@@ -650,6 +650,14 @@ pub(crate) fn display_events_for_game(game_dir: &str) -> HashSet<&'static str> {
             s.insert("player_falldamage");
             s.insert("hostage_rescued");
             s.insert("cs_win_panel_match");
+            // Grenade detonations — carry the detonation x/y/z + thrower, so the
+            // viewer can mark where each landed (same overlay as CS2/CS:GO).
+            s.insert("hegrenade_detonate");
+            s.insert("flashbang_detonate");
+            s.insert("smokegrenade_detonate");
+            s.insert("molotov_detonate");
+            s.insert("inferno_startburn");
+            s.insert("decoy_started");
         }
         "left4dead" | "left4dead2" => {
             s.insert("round_start");

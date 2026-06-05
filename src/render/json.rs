@@ -3,8 +3,8 @@
 // dependency surface and wasm size down. The `multi_*` helpers project the
 // shared MultiPlayerData (used by both the Source and Quake paths).
 
-use super::events::{EventValue, GameEvent, SampledCmd};
-use super::multi_player;
+use super::super::source::events::{EventValue, GameEvent, SampledCmd};
+use super::super::source::multi_player;
 
 pub(crate) fn json_f32(v: f32) -> String {
     // Format to 3 decimal places; strip trailing zeros
@@ -224,8 +224,11 @@ pub(crate) fn multi_names_to_json(data: &multi_player::MultiPlayerData) -> Strin
     let mut entries: Vec<String> = data.names.iter().map(|(eid, meta)| {
         let aliases: Vec<String> = meta.aliases.iter()
             .map(|a| format!("\"{}\"", escape_json_str(a))).collect();
+        // Economy + scoreboard (CS:S / CS:GO). Emitted on every player so the
+        // viewer can render a scoreboard panel; all-zero on non-CS demos.
+        let e = data.econ.get(eid).cloned().unwrap_or_default();
         format!(
-            "\"{}\":{{\"name\":\"{}\",\"steam_id\":\"{}\",\"user_id\":{},\"is_fake\":{},\"is_hltv\":{},\"aliases\":[{}]}}",
+            "\"{}\":{{\"name\":\"{}\",\"steam_id\":\"{}\",\"user_id\":{},\"is_fake\":{},\"is_hltv\":{},\"aliases\":[{}],\"kills\":{},\"deaths\":{},\"assists\":{},\"money\":{},\"score\":{},\"mvps\":{},\"team\":{}}}",
             eid,
             escape_json_str(&meta.name),
             escape_json_str(&meta.steam_id),
@@ -233,6 +236,7 @@ pub(crate) fn multi_names_to_json(data: &multi_player::MultiPlayerData) -> Strin
             meta.is_fake,
             meta.is_hltv,
             aliases.join(","),
+            e.kills, e.deaths, e.assists, e.money, e.score, e.mvps, e.team,
         )
     }).collect();
     entries.sort();

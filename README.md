@@ -1,12 +1,13 @@
 # demoscope
 
-Fast, zero-dependency Rust parser and interactive 3D visualiser for game demo files (`.dem`) across three engine families.
+Fast, pure-Rust parser and interactive 3D visualiser for game demo files (`.dem`) across four engine families — built with a handful of pure-Rust crates and no C toolchain.
 
-- **Source 1 (HL2DEMO)** - Team Fortress 2, Half-Life 2 (all versions), Counter-Strike: Source, Day of Defeat: Source, Portal, Portal 2, The Stanley Parable, Left 4 Dead 1/2, and Garry's Mod (`GMODEMO`). Decodes player positions, inputs, game events, and per-player entity tracks into a full visualisation. CS:GO parses end-to-end (header, inputs, names, recorder camera path); its entity tracks need a protobuf decoder.
+- **Source 1 (HL2DEMO)** - Team Fortress 2, Half-Life 2 (all versions), Counter-Strike: Source, Counter-Strike: Global Offensive, Day of Defeat: Source, Portal, Portal 2, The Stanley Parable, Left 4 Dead 1/2, and Garry's Mod (`GMODEMO`). Decodes player positions, inputs, game events, per-player entity tracks, and (CS:S / CS:GO) economy + scoreboard into a full visualisation.
+- **Source 2 (PBDEMS2)** - Counter-Strike 2, Dota 2, Deadlock. Per-player world positions, names, death/respawn, game events, and economy + scoreboard, plus a **CS2 map overlay** decoded from the map's `.vpk` (VPK → Source 2 resource → KV3 → world-collision mesh).
 - **GoldSrc (HLDEMO)** - Half-Life 1, Counter-Strike 1.6, Day of Defeat, Condition Zero. Recorder POV camera + map overlay.
 - **Quake family** - Quake 1 (NetQuake), Quake 2, and Quake 3 Arena, with per-player tracks and map overlays.
 
-All three render through the same viewer (3D scene, minimap, heatmap, POV camera, kill arcs), and any matching `.bsp` placed beside the demo is drawn behind the paths - Source VBSP, GoldSrc/Q1 (v30/v29), Quake 2 (`IBSP` v38), and Quake 3 (`IBSP` v46).
+All four render through the same viewer (3D scene, minimap, heatmap, POV camera, scoreboard, kill arcs). The world geometry is drawn behind the paths from a matching map file placed beside the demo: a `.bsp` for Source 1 / GoldSrc / Quake (VBSP, GoldSrc/Q1 v30/v29, Quake 2 `IBSP` v38, Quake 3 `IBSP` v46), or the map's `.vpk` for CS2.
 
 See the **[full compatibility matrix](docs/COMPATIBILITY.md)** for per-game status.
 
@@ -21,7 +22,7 @@ cargo build --release
 # binary: target/release/demoscope
 ```
 
-Requires Rust stable (≥ 1.85). No external system libraries. No external Rust crates beyond `base64` and `lzma-rs` for the CLI; the WASM build adds `wasm-bindgen` and `console_error_panic_hook` (gated to `target_arch = "wasm32"`).
+Requires Rust stable (≥ 1.85). No external system libraries and no C toolchain — every dependency is pure Rust. The CLI pulls only `base64`, `lzma-rs`, and `ruzstd` (a pure-Rust zstd decoder, used for CS2 map resources); the WASM build adds `wasm-bindgen` and `console_error_panic_hook` (gated to `target_arch = "wasm32"`). Everything engine-specific — the protobuf reader, Snappy and the Source 2 KV3/VPK stack — is hand-rolled in-tree.
 
 ### WASM (in-browser) build
 
@@ -141,3 +142,4 @@ Place the `.bsp` map file in the same directory as the demo for the full 3D map 
 | [docs/PROTO4.md](docs/PROTO4.md) | How proto-4 (Portal 2 / Stanley / L4D) decode was reverse-engineered, plus the env-gated trace switches for investigating a new proto-4 game |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes and the full list of completed work |
 | [ROADMAP.md](ROADMAP.md) | Planned work |
+| [CREDITS.md](CREDITS.md) | Reference implementations, format docs, RE tooling, and demo contributors |

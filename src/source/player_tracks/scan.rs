@@ -1,336 +1,89 @@
-// High-level extractor: walks the demo, finds the DEM_DATATABLES packet,
-// processes svc_PacketEntities messages inside game packets, and produces
-// per-entity position + life-state tracks plus userinfo metadata.
+// Demo packet / svc-message scanning for player tracking. Walks each PACKET
+// frame's payload — both the CS:GO protobuf path (`scan_csgo_payload`) and the
+// pre-CS:GO bitstream path (`scan_game_payload`) — and scrapes per-entity
+// position/life/weapon state into the caller's `OriginTracker` map. The demo
+// container walk and result assembly live in the parent `player_tracks` module,
+// which owns the `le_*`/`read_cstring` readers and the DEM_* command constants.
 
 use std::collections::HashMap;
-use std::error::Error;
-use std::fs::File;
-use std::io::Read;
-use std::path::Path;
 
-use super::bitreader::BitReader;
-use super::datatable::{self, DataTables};
-use super::packetentities::{parse_entity_updates, EntityWorld};
-use super::stringtable::{parse_userinfo, PlayerInfo};
-
-
-const HEADER_SIZE: usize = 1072;
-const DEMOCMDINFO_SIZE: usize = 76;
-
-// Demo packet command IDs (HL2DEMO format)
-const DEM_SIGNON: u8 = 1;
-const DEM_PACKET: u8 = 2;
-const DEM_SYNCTICK: u8 = 3;
-const DEM_CONSOLECMD: u8 = 4;
-const DEM_USERCMD: u8 = 5;
-const DEM_DATATABLES: u8 = 6;
-const DEM_STOP: u8 = 7;
-const DEM_STRINGTABLES: u8 = 8;
-
-/// Per-entity extracted tracks.
-#[derive(Default)]
-pub struct PlayerTrackData {
-    pub map: String,
-    pub server: String,
-    pub duration: f32,
-    pub ticks: i32,
-    pub demo_protocol: i32,
-    pub net_protocol: i32,
-    pub client_name: String,
-    pub game_dir: String,
-    pub tracks: HashMap<u32, Vec<(i32, f32, f32, f32)>>,
-    pub life_states: HashMap<u32, Vec<(i32, u8)>>,
-    /// Observer-mode stream per entity (tick, mode). mode 0 = playing, anything
-    /// else = spectating; used to break the path line + hide the avatar while a
-    /// player's m_vecOrigin is tracking whoever they're watching.
-    pub observer_modes: HashMap<u32, Vec<(i32, u8)>>,
-    /// Eye-angle yaw per entity per tick (degrees, Source convention). Drives
-    /// the local-frame WSAD reconstruction for non-recorder primaries.
-    pub yaws: HashMap<u32, Vec<(i32, f32, f32)>>,
-    /// Active-weapon entity id stream per player entity. Combined with the
-    /// `m_iClassname` lookup, this resolves to a weapon name (rocketlauncher,
-    /// scattergun, etc.) at any tick - enables per-shot weapon labels in the
-    /// fire markers + much richer kill-feed correlation.
-    pub weapons: HashMap<u32, Vec<(i32, i32)>>,
-    /// Weapon entity id → class name (e.g. 47 → "CTFRocketLauncher"). Lets
-    /// the HTML resolve `weapons[eid][i] = wep_eid` to a human-readable name.
-    pub weapon_classes: HashMap<i32, String>,
-    pub names: HashMap<u32, PlayerInfo>,
-    /// Recorder's per-frame camera angles (tick, pitch, yaw) straight from the
-    /// democmdinfo viewAngles. Far denser + more accurate than the networked
-    /// eye-angle SendProp - this is the engine's actual playback camera. Drives
-    /// the FPS camera on demos without usercmds (Portal 2 etc.).
-    pub view_angles: Vec<(i32, f32, f32)>,
-}
-
-fn le_i32(d: &[u8], off: usize) -> i32 {
-    i32::from_le_bytes(d[off..off + 4].try_into().unwrap())
-}
-fn le_f32(d: &[u8], off: usize) -> f32 {
-    f32::from_le_bytes(d[off..off + 4].try_into().unwrap())
-}
-fn read_cstring(data: &[u8], off: usize, max: usize) -> String {
-    let end = data[off..off + max].iter().position(|&b| b == 0).unwrap_or(max);
-    String::from_utf8_lossy(&data[off..off + end]).into_owned()
-}
-
-pub fn extract(dem_path: &Path) -> Result<PlayerTrackData, Box<dyn Error>> {
-    let mut f = File::open(dem_path)?;
-    let mut bytes = Vec::new();
-    f.read_to_end(&mut bytes)?;
-    extract_from_bytes(&bytes)
-}
-
-/// Byte-slice variant of `extract`. The CLI's `extract` is now a thin wrapper
-/// around this; WASM calls it directly with a buffer from `FileReader`.
-pub fn extract_from_bytes(data: &[u8]) -> Result<PlayerTrackData, Box<dyn Error>> {
-    // Accept both the canonical HL2DEMO magic and Garry's Mod 13+'s renamed
-    // GMODEMO (identical container - see is_source_demo_magic in main.rs).
-    let magic_ok = data.len() >= 8 && (&data[0..8] == b"HL2DEMO\0" || &data[0..8] == b"GMODEMO\0");
-    if data.len() < HEADER_SIZE || !magic_ok {
-        return Err("not a valid HL2DEMO file".into());
-    }
-    let mut out = PlayerTrackData::default();
-    out.demo_protocol = le_i32(&data, 8);
-    out.net_protocol  = le_i32(&data, 12);
-    out.server        = read_cstring(&data, 16, 260);
-    out.client_name   = read_cstring(&data, 276, 260);
-    out.map           = read_cstring(&data, 536, 260);
-    out.game_dir      = read_cstring(&data, 796, 260);
-    out.duration      = le_f32(&data, 1056);
-    out.ticks         = le_i32(&data, 1060);
-    // Header carries sign_on_length at offset 1068 - currently unused since
-    // we walk the signon section packet-by-packet (with splitscreen-aware
-    // preamble for proto-4) rather than fast-forwarding past it.
-    let _sign_on_length = le_i32(&data, 1068) as i64;
-
-    let extra: usize = if out.demo_protocol > 3 { 1 } else { 0 };
-    let pkt_hdr = 5 + extra;
-
-    let mut data_tables: Option<DataTables> = None;
-    let mut world: Option<EntityWorld> = None;
-    let mut last_pos: HashMap<u32, (f32, f32, f32)> = HashMap::new();
-    let mut origin_state: HashMap<u32, OriginTracker> = HashMap::new();
-    let mut last_life: HashMap<u32, u8> = HashMap::new();
-    let mut last_obs: HashMap<u32, u8> = HashMap::new();
-    let mut last_yaw: HashMap<u32, (f32, f32)> = HashMap::new();
-    let mut last_weapon: HashMap<u32, i32> = HashMap::new();
-    let mut userinfo_table_id: Option<usize> = None;
-
-    let mut offset = HEADER_SIZE;
-    // Proto-4 (L4D / L4D2 / Portal 2 / Stanley Parable / old CS:GO) replaced
-    // the single 76-byte `democmdinfo_t` in each SIGNON/PACKET preamble with
-    // an array of `Split_t[MAX_SPLITSCREEN_CLIENTS]`. The constant varies by
-    // game - Portal 2 / Stanley / CS:GO ship with 2 splitscreen slots; L4D1
-    // / L4D2 ship with 4. There's no field in the demo header that tells us
-    // which, so we detect it from the first packet by trying N = 1, 2, 4 and
-    // picking the one whose length-field reads as a plausible payload size.
-    // Confirmed against the Alien Swarm SDK 2009 `demoformat.h` reference.
-    // Portal 2-engine games (Portal 2, Aperture Tag, Stanley, etc.) always ship
-    // MAX_SPLITSCREEN_CLIENTS = 2; only L4D1/L4D2 use 4. Knowing the game pins
-    // the count exactly, which is far more reliable than the length-probe below
-    // - that heuristic can false-positive (a puzzlemaker-export demo probed as
-    // N=4 and desynced on the first packet). Fall back to probing only for
-    // proto-4 games we can't identify.
-    // Container quirks (message-ID remap + splitscreen=2) are Portal2-engine
-    // only - NOT keyed off the SendProp flag format, which L4D also uses.
-    let portal2_engine = datatable::is_portal2_engine(&out.game_dir);
-    // L4D1/L4D2 use the SAME renumbered net-message map as the Portal 2 engine
-    // (verified in L4D1 engine.dll: NET_Tick::GetType()=4, SVC_Print=16,
-    // SVC_UserMessage=23 - the NetSplitScreenUser-at-3 shift), so they need the
-    // same `scan_game_payload` remap. But they are NOT a "portal2 engine":
-    // splitscreen = 4 (handled above) and svc_UserMessage's length field is 11
-    // bits, not Portal 2's 12 (SVC_UserMessage::ReadFromBuffer reads `v & 0x7FF`).
-    // So the message-map remap and the 12-bit user-message width are passed as
-    // two independent flags below.
-    let l4d_msgmap = matches!(out.game_dir.as_str(), "left4dead" | "left4dead2");
-    let remap_msgs = portal2_engine || l4d_msgmap;
-    let mut splitscreen_count: usize = 1;
-    if out.demo_protocol > 3 {
-        if portal2_engine {
-            splitscreen_count = 2;
-        } else if data.len() > HEADER_SIZE + 5 {
-            let pkt_start = HEADER_SIZE + pkt_hdr;
-            for n in [4, 2, 1] {
-                let len_off = pkt_start + 76 * n + 8;
-                if len_off + 4 > data.len() { continue; }
-                let length = le_i32(&data, len_off);
-                if length <= 0 { continue; }
-                let payload_end = len_off.saturating_add(4).saturating_add(length as usize);
-                if (length as usize) < (data.len() - pkt_start) && payload_end < data.len() {
-                    splitscreen_count = n;
-                    break;
-                }
-            }
-        }
-    }
-    let democmdinfo_bytes = 76 * splitscreen_count;
-    // Proto-4 (L4D / Portal 2 / Stanley Parable, etc.) shifted the DEM_*
-    // command IDs upward by one starting at value 8: cmd=8 became a new
-    // DEM_CUSTOMDATA, and the slot that proto-3 used for DEM_STRINGTABLES is
-    // now at cmd=9. Map back to the proto-3 semantic codes here so the rest
-    // of the match arms don't have to care which protocol they're seeing.
-    let p4 = out.demo_protocol > 3;
-    // Portal 2 engine renumbers the net-message IDs (NetSplitScreenUser at 3,
-    // SvcSplitScreen at 22, SvcPrint moved 7→16, NetTick/StringCmd/SetConVar/
-    // SignonState each shift down one). scan_game_payload needs this flag to
-    // dispatch correctly. (`portal2_engine` computed above for splitscreen.)
-    //
-    // Debug aids for porting new proto-4 games (Stanley Parable, L4D2 …) - set
-    // the env var to trace where the demo-command walk desyncs. See README
-    // "Investigating Stanley Parable & L4D2". DUMP_SCAN=1 prints the per-packet
-    // walk + whether DEM_DATATABLES is reached and parses.
-    let dbg_scan = std::env::var("DUMP_SCAN").is_ok();
-    if dbg_scan {
-        eprintln!("[SCAN] proto={} net={} game={} portal2_engine={} splitscreen={}",
-            out.demo_protocol, out.net_protocol, out.game_dir, portal2_engine, splitscreen_count);
-    }
-    let mut dbg_pkts = 0u32;
-    while offset < data.len() {
-        if offset + 5 > data.len() { break; }
-        let raw_cmd = data[offset];
-        let tick = le_i32(&data, offset + 1);
-        offset += pkt_hdr;
-        let cmd = if p4 {
-            match raw_cmd {
-                9 => DEM_STRINGTABLES, // shifted from 8
-                8 => 99,               // DEM_CUSTOMDATA - we just want to skip it
-                v => v,
-            }
-        } else { raw_cmd };
-
-        match cmd {
-            DEM_STOP => break,
-            DEM_SYNCTICK => { /* no payload */ }
-            DEM_SIGNON | DEM_PACKET => {
-                if offset + democmdinfo_bytes + 12 > data.len() { break; }
-                let length = le_i32(&data, offset + democmdinfo_bytes + 8);
-                if length < 0 { break; }
-                let payload_start = offset + democmdinfo_bytes + 12;
-                let payload_end = payload_start.saturating_add(length as usize);
-                if payload_end > data.len() { break; }
-                // democmdinfo Split_t[0]: flags(4)+viewOrigin(12)+viewAngles(12).
-                // viewAngles = the recorder's per-frame camera direction; capture
-                // it as the dense FPS-camera angle source (game packets only).
-                if raw_cmd == 2 && offset + 24 <= data.len() {
-                    let pitch = le_f32(&data, offset + 16);
-                    let yaw = le_f32(&data, offset + 20);
-                    if pitch.is_finite() && yaw.is_finite() {
-                        out.view_angles.push((tick, pitch, yaw));
-                    }
-                }
-                dbg_pkts += 1;
-                scan_game_payload(
-                    &data[payload_start..payload_end],
-                    tick,
-                    out.demo_protocol,
-                    remap_msgs,
-                    portal2_engine,
-                    data_tables.as_ref(),
-                    world.as_mut(),
-                    &mut last_pos, &mut origin_state, &mut last_life, &mut last_obs, &mut last_yaw, &mut last_weapon,
-                    &mut out.tracks, &mut out.life_states, &mut out.observer_modes, &mut out.yaws, &mut out.weapons,
-                    &mut out.weapon_classes,
-                    userinfo_table_id,
-                    &mut out.names,
-                );
-                offset = payload_end;
-            }
-            DEM_CONSOLECMD => {
-                if offset + 4 > data.len() { break; }
-                let length = le_i32(&data, offset);
-                if length < 0 { break; }
-                offset = offset.saturating_add(4).saturating_add(length as usize);
-            }
-            DEM_USERCMD => {
-                if offset + 8 > data.len() { break; }
-                let length = le_i32(&data, offset + 4);
-                if length < 0 { break; }
-                offset = offset.saturating_add(8).saturating_add(length as usize);
-            }
-            DEM_DATATABLES => {
-                if offset + 4 > data.len() { break; }
-                let length = le_i32(&data, offset);
-                if length < 0 { break; }
-                let payload_start = offset + 4;
-                let payload_end = payload_start.saturating_add(length as usize).min(data.len());
-                let quirks = datatable::DataTableQuirks::for_game(&out.game_dir);
-                if let Some(dt) = datatable::parse(&data[payload_start..payload_end], out.demo_protocol, quirks) {
-                    // DUMP_FLAT=<class_id> dumps that server class's flattened
-                    // prop list (name / type / bits / priority / changes-often)
-                    // for diffing against an engine bit-trace. DUMP_FLAT=0 just
-                    // lists the server classes so you can find the player id.
-                    if let Ok(want) = std::env::var("DUMP_FLAT") {
-                        for c in &dt.server_classes {
-                            eprintln!("[CLASS] id={} name={} dt={}", c.id, c.name, c.data_table);
-                        }
-                        if let Ok(id) = want.parse::<u16>() {
-                            if let Some(flat) = dt.flat_props.get(&id) {
-                                eprintln!("[FLAT] class {} has {} props", id, flat.len());
-                                for (i, p) in flat.iter().enumerate() {
-                                    let co = if p.flags & super::sendprop::SPROP_CHANGES_OFTEN != 0 { "CO" } else { "" };
-                                    eprintln!("[FLAT] {:>3} {:?} nbits={} prio={} {} {}",
-                                        i, p.prop_type, p.bit_count, p.priority, co, p.name);
-                                }
-                            }
-                        }
-                    }
-                    if dbg_scan {
-                        eprintln!("[SCAN] DATATABLES parsed at pkt {}: {} classes, {} flat arrays",
-                            dbg_pkts, dt.server_classes.len(), dt.flat_props.len());
-                    }
-                    world = Some(EntityWorld::new(&dt));
-                    data_tables = Some(dt);
-                } else if dbg_scan {
-                    eprintln!("[SCAN] DATATABLES parse FAILED (returned None) at offset {:#x}", offset);
-                }
-                offset = payload_end;
-            }
-            99 => {
-                // DEM_CUSTOMDATA (proto-4 only) - length-prefixed payload we
-                // don't need to interpret. Skip past it cleanly so the rest
-                // of the packet stream remains aligned.
-                if offset + 8 > data.len() { break; }
-                let _id = le_i32(&data, offset);
-                let length = le_i32(&data, offset + 4);
-                if length < 0 { break; }
-                offset = offset.saturating_add(8).saturating_add(length as usize).min(data.len());
-            }
-            DEM_STRINGTABLES => {
-                if offset + 4 > data.len() { break; }
-                let length = le_i32(&data, offset);
-                if length < 0 { break; }
-                let payload_start = offset + 4;
-                let payload_end = payload_start.saturating_add(length as usize).min(data.len());
-                if let Some(parsed) = parse_userinfo(&data[payload_start..payload_end]) {
-                    out.names.extend(parsed.players);
-                    userinfo_table_id = parsed.table_names.iter()
-                        .position(|n| n == "userinfo");
-                }
-                offset = payload_end;
-            }
-            _ => {
-                if dbg_scan {
-                    eprintln!("[SCAN] abort at offset {:#x}: unknown cmd raw={} mapped={} after {} game pkts (data_tables={})",
-                        offset, raw_cmd, cmd, dbg_pkts, data_tables.is_some());
-                }
-                break;
-            }
-        }
-    }
-    if dbg_scan {
-        eprintln!("[SCAN] done: {} game packets, data_tables={}, entities={}",
-            dbg_pkts, data_tables.is_some(),
-            world.as_ref().map(|w| w.entities.len()).unwrap_or(0));
-    }
-
-    Ok(out)
-}
+use super::super::bitreader::BitReader;
+use super::super::csgo;
+use super::super::datatable::DataTables;
+use super::super::packetentities::{parse_entity_updates, EntityWorld};
+use super::super::stringtable::PlayerInfo;
+use super::{read_cstring, PlayerEcon, DEM_STRINGTABLES};
 
 // Scan the game-packet payload for svc_PacketEntities (type 26). Every other
 // known message type is skipped using its length field; unknown types abort
 // the scan since we can't advance the bit cursor past them.
-fn scan_game_payload(
+/// CS:GO game-packet payload: a sequence of protobuf-framed net messages. We
+/// decode `svc_PacketEntities` into the entity world, then scrape per-player
+/// position / angle / life tracks the same way the bit-packed path does. The
+/// recorder camera comes from the democmdinfo viewAngles (captured by the
+/// caller), not from a net message, so it isn't handled here. Player names start
+/// from the `DEM_STRINGTABLES` userinfo snapshot (shared with the bit-packed
+/// path) and are then kept live by decoding the protobuf svc_*StringTable
+/// messages here (see `csgo::stringtables`) — catching renames, late joiners,
+/// and reconnects that happen after the snapshot.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn scan_csgo_payload(
+    payload: &[u8],
+    tick: i32,
+    data: Option<&DataTables>,
+    world: Option<&mut EntityWorld>,
+    last_pos: &mut HashMap<u32, (f32, f32, f32)>,
+    origin_state: &mut HashMap<u32, OriginTracker>,
+    last_life: &mut HashMap<u32, u8>,
+    last_obs: &mut HashMap<u32, u8>,
+    last_yaw: &mut HashMap<u32, (f32, f32)>,
+    last_weapon: &mut HashMap<u32, i32>,
+    tracks: &mut HashMap<u32, Vec<(i32, f32, f32, f32)>>,
+    life_states: &mut HashMap<u32, Vec<(i32, u8)>>,
+    observer_modes: &mut HashMap<u32, Vec<(i32, u8)>>,
+    yaws: &mut HashMap<u32, Vec<(i32, f32, f32)>>,
+    weapons: &mut HashMap<u32, Vec<(i32, i32)>>,
+    weapon_classes: &mut HashMap<i32, String>,
+    econ: &mut HashMap<u32, PlayerEcon>,
+    // Persistent string-table registry: tracks created tables so mid-demo
+    // svc_UpdateStringTable diffs (renames, late joiners, reconnects) on the
+    // userinfo table merge into `names`.
+    string_tables: &mut csgo::stringtables::StringTables,
+    names: &mut HashMap<u32, PlayerInfo>,
+) {
+    // String-table messages ride in the signon packets (before DataTables) and
+    // throughout the game, so decode them regardless of whether the entity world
+    // is ready yet.
+    for m in csgo::scan_payload(payload) {
+        match m.kind {
+            csgo::MsgKind::SvcCreateStringTable => string_tables.handle_create(m.body, names),
+            csgo::MsgKind::SvcUpdateStringTable => string_tables.handle_update(m.body, names),
+            _ => {}
+        }
+    }
+    let (data, world) = match (data, world) {
+        (Some(d), Some(w)) => (d, w),
+        _ => return,
+    };
+    let mut updated = false;
+    for m in csgo::scan_payload(payload) {
+        if m.kind == csgo::MsgKind::SvcPacketEntities
+            && csgo::entities::decode_packet_entities(m.body, world, data).is_some()
+        {
+            updated = true;
+        }
+    }
+    if updated {
+        scrape_player_state(
+            tick, world, data,
+            last_pos, origin_state, last_life, last_obs, last_yaw, last_weapon,
+            tracks, life_states, observer_modes, yaws, weapons, weapon_classes, econ,
+            true, // CS:GO: gate Z on horizontal movement (non-local Z-drift guard)
+        );
+    }
+}
+
+pub(super) fn scan_game_payload(
     payload: &[u8],
     tick: i32,
     demo_protocol: i32,
@@ -342,6 +95,9 @@ fn scan_game_payload(
     // uses 11-bit lengths.
     remap_msgs: bool,
     user_msg_12bit: bool,
+    // MAX_EDICT_BITS: width of the entity-count fields in svc_PacketEntities and
+    // the removed-entities list. 11 for stock Source, 13 for GMod 13 (8192 edicts).
+    edict_bits: u32,
     data: Option<&DataTables>,
     mut world: Option<&mut EntityWorld>,
     last_pos: &mut HashMap<u32, (f32, f32, f32)>,
@@ -356,6 +112,7 @@ fn scan_game_payload(
     yaws: &mut HashMap<u32, Vec<(i32, f32, f32)>>,
     weapons: &mut HashMap<u32, Vec<(i32, i32)>>,
     weapon_classes: &mut HashMap<i32, String>,
+    econ: &mut HashMap<u32, PlayerEcon>,
     userinfo_table_id: Option<usize>,
     names: &mut HashMap<u32, PlayerInfo>,
 ) {
@@ -450,14 +207,56 @@ fn scan_game_payload(
                 }
             }
             11 => { if !br.skip(1) { return; } } // svc_SetPause
-            12 => { /* svc_CreateStringTable - bit format is fiddly; we don't
-                       rely on it for userinfo (DEM_STRINGTABLES gives us the
-                       table_id by position). Just consume bits via length. */
+            12 if edict_bits == 13 => { /* GMod 13 svc_CreateStringTable - a hybrid
+                       of the old and new Source layouts, verified bit-for-bit by
+                       walking all 22 signon string tables to clean names
+                       (downloadables, modelprecache, ..., instancebaseline,
+                       userinfo, GModGameInfo) across three demos:
+                         [peek 8: if ':' (0x3A) consume - a name-prefix marker]
+                         name(string)
+                         max_entries(16)  -> encode_bits = log2(max_entries)
+                         num_entries(encode_bits + 1)
+                         length = VARINT, in BITS   (NOT a 20-bit field)
+                         user_data_fixed_size(1) [+ user_data_size(12) + bits(4)]
+                         compressed(1)
+                         data[length bits]
+                       This matters only for GMod: its baseline svc_PacketEntities
+                       rides in the *same* signon packet behind these tables, so the
+                       walk must clear them exactly to reach the entity baseline.
+                       (Older Source ships baselines in separate packets, so its
+                       CreateStringTable never had to be right.) */
+                let save = br.bit_pos();
+                if tryread!(br.read_bits(8)) != 0x3A { br.set_bit_pos(save); }
                 if br.read_cstring(256).is_none() { return; }
-                if !br.skip(16) { return; }
-                let _ = tryread!(br.read_var_u32());
+                let max_entries = tryread!(br.read_bits(16));
+                let encode_bits = if max_entries <= 1 { 0 } else { 31 - max_entries.leading_zeros() };
+                let _num_entries = tryread!(br.read_bits(encode_bits + 1));
+                let length = tryread!(br.read_var_u32()) as usize;
+                let user_data_fixed = tryread!(br.read_bool());
+                if user_data_fixed {
+                    if !br.skip(12) { return; } // user_data_size
+                    if !br.skip(4) { return; }  // user_data_size_bits
+                }
+                let _compressed = tryread!(br.read_bool());
+                if !br.skip(length as u32) { return; }
+            }
+            12 => { /* svc_CreateStringTable (older Source: TF2 / CS:S / HL2 / etc).
+                       name(str) + max_entries(16) + num_entries(log2(max)+1)
+                       + length(20) + user_data_fixed_size(1)
+                         [+ user_data_size(12) + user_data_size_bits(4) if fixed]
+                       + data[length]. Older Source ships entity baselines in
+                       separate packets, so this never has to be exact for those
+                       games (player names come from DEM_STRINGTABLES instead). */
+                if br.read_cstring(256).is_none() { return; }
+                let max_entries = tryread!(br.read_bits(16));
+                let encode_bits = if max_entries <= 1 { 0 } else { 31 - max_entries.leading_zeros() };
+                let _num_entries = tryread!(br.read_bits(encode_bits + 1));
                 let length = tryread!(br.read_bits(20)) as usize;
-                if !br.skip(1) { return; }
+                let user_data_fixed = tryread!(br.read_bool());
+                if user_data_fixed {
+                    if !br.skip(12) { return; } // user_data_size
+                    if !br.skip(4) { return; }  // user_data_size_bits
+                }
                 if !br.skip(length as u32) { return; }
             }
             13 => { /* svc_UpdateStringTable: table_id(5) + has_changed(1)
@@ -531,12 +330,18 @@ fn scan_game_payload(
                 if !br.skip(length as u32) { return; }
             }
             26 => {
-                let _max_entries = tryread!(br.read_bits(11));
+                let _max_entries = tryread!(br.read_bits(edict_bits));
                 let has_delta = tryread!(br.read_bool());
                 if has_delta { if !br.skip(32) { return; } }
                 if !br.skip(1) { return; } // base_line
-                let num_changed = tryread!(br.read_bits(11));
-                let length_bits = tryread!(br.read_bits(20)) as usize;
+                let num_changed = tryread!(br.read_bits(edict_bits));
+                // svc_PacketEntities `length` (entity-data bit count): stock Source
+                // = 20 bits (DELTASIZE_BITS); GMod 13 widened it to 24 along with
+                // its edict limit (confirmed in engine.dll
+                // SVC_PacketEntities::ReadFromBuffer). Reading 20 on GMod leaves the
+                // cursor 4 bits short, desyncing every entity body.
+                let length_width = if edict_bits == 13 { 24 } else { 20 };
+                let length_bits = tryread!(br.read_bits(length_width)) as usize;
                 if !br.skip(1) { return; } // updated_base_line
                 let payload_start_bit = br.bit_pos();
                 if let (Some(dt), Some(w)) = (data, world.as_deref_mut()) {
@@ -544,6 +349,9 @@ fn scan_game_payload(
                         payload, payload_start_bit, length_bits,
                         num_changed, has_delta, w, dt,
                         demo_protocol >= 4,
+                        false, // interleaved index+value (bit-packed Source path)
+                        edict_bits,
+                        None, // prop-index follows the entity encoding (legacy here)
                     );
                     if std::env::var("DUMP_ENT").is_ok() {
                         use std::collections::BTreeMap;
@@ -561,7 +369,8 @@ fn scan_game_payload(
                     }
                     if !br.skip(length_bits as u32) { return; }
                     scrape_player_state(tick, w, dt, last_pos, origin_state, last_life, last_obs, last_yaw, last_weapon,
-                        tracks, life_states, observer_modes, yaws, weapons, weapon_classes);
+                        tracks, life_states, observer_modes, yaws, weapons, weapon_classes, econ,
+                        false); // bit-packed Source path: keep full Z updates
                 } else {
                     if !br.skip(length_bits as u32) { return; }
                 }
@@ -661,7 +470,7 @@ fn apply_userinfo_update(
                 let b = match br.read_bits(8) { Some(v) => v as u8, None => return };
                 bytes.push(b);
             }
-            if let Some(mut pi) = super::stringtable::parse_player_info_blob(&bytes) {
+            if let Some(mut pi) = super::super::stringtable::parse_player_info_blob(&bytes) {
                 let entity_id = (entry as u32) + 1;
                 // Preserve every prior alias for this slot, then add the new one.
                 if let Some(prev) = names.get(&entity_id) {
@@ -685,6 +494,7 @@ pub struct OriginTracker {
     changes: Vec<u32>,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn scrape_player_state(
     tick: i32,
     world: &EntityWorld,
@@ -701,6 +511,12 @@ fn scrape_player_state(
     yaws: &mut HashMap<u32, Vec<(i32, f32, f32)>>,
     weapons: &mut HashMap<u32, Vec<(i32, i32)>>,
     weapon_classes: &mut HashMap<i32, String>,
+    econ: &mut HashMap<u32, PlayerEcon>,
+    // CS:GO's non-local m_vecOrigin[2] (Z) ramps to garbage once an entity stops
+    // updating (the X/Y stay put while Z climbs ~4 units/tick into the sky). When
+    // set, only fold a new Z in alongside horizontal movement, so a stationary or
+    // out-of-PVS player's track freezes at its last real position instead.
+    gate_z_on_xy: bool,
 ) {
     for (&eid, state) in &world.entities {
         if eid == 0 || eid > 64 { continue; }
@@ -723,6 +539,11 @@ fn scrape_player_state(
         let mut yaw = None;
         let mut pitch = None;
         let mut wep_handle = None;
+        // Economy/scoreboard fields that live directly on the player entity
+        // (CCSPlayer): cash on hand and team. Kills/deaths/score come off the
+        // separate CCSPlayerResource entity, handled after this loop.
+        let mut money = None;
+        let mut team = None;
         // m_iObserverMode: 0 = not spectating; anything else = dead/spectating
         // (deathcam, chase, roaming, …). While observing, the engine streams
         // m_vecOrigin as the *spectated* target's position, so the value is
@@ -792,6 +613,16 @@ fn scrape_player_state(
                         }
                     }
                 }
+                "m_iAccount" => {
+                    if let Some(v) = state.props.get(&i) {
+                        if let Some(n) = v.as_i64() { money = Some(n as i32); }
+                    }
+                }
+                "m_iTeamNum" => {
+                    if let Some(v) = state.props.get(&i) {
+                        if let Some(n) = v.as_i64() { team = Some(n as i32); }
+                    }
+                }
                 _ => {}
             }
         }
@@ -814,8 +645,13 @@ fn scrape_player_state(
         for (s, c) in origin_cands.iter().enumerate() {
             if let (Some(cx), Some(cy)) = (c.0, c.1) {
                 let cz = c.2.unwrap_or(0.0);
-                let moved = tracker.last[s].map_or(false, |(lx, ly, lz): (f32, f32, f32)| {
-                    (lx - cx).abs() > 0.01 || (ly - cy).abs() > 0.01 || (lz - cz).abs() > 0.01
+                // Score a slot as "moved" only on horizontal (X/Y) change. Player
+                // locomotion is horizontal; the dormant origin copy can drift in
+                // Z alone (a stale/baseline m_vecOrigin[2] — seen on CS:GO's
+                // non-local players, whose Z ramps to garbage while X/Y stay put),
+                // and counting that as movement would lock onto the wrong copy.
+                let moved = tracker.last[s].map_or(false, |(lx, ly, _lz): (f32, f32, f32)| {
+                    (lx - cx).abs() > 0.01 || (ly - cy).abs() > 0.01
                 });
                 if moved { tracker.changes[s] += 1; }
                 tracker.last[s] = Some((cx, cy, cz));
@@ -831,10 +667,16 @@ fn scrape_player_state(
         };
 
         let pos = last_pos.entry(eid_u).or_insert((0.0, 0.0, 0.0));
-        let mut changed = false;
-        if let Some(vx) = x { if pos.0 != vx { pos.0 = vx; changed = true; } }
-        if let Some(vy) = y { if pos.1 != vy { pos.1 = vy; changed = true; } }
-        if let Some(vz) = z { if pos.2 != vz { pos.2 = vz; changed = true; } }
+        let mut xy_changed = false;
+        if let Some(vx) = x { if pos.0 != vx { pos.0 = vx; xy_changed = true; } }
+        if let Some(vy) = y { if pos.1 != vy { pos.1 = vy; xy_changed = true; } }
+        // Fold Z in unconditionally, except under `gate_z_on_xy` (CS:GO) where a
+        // lone Z change with frozen X/Y is the non-local Z-drift artifact — there
+        // we only accept Z while moving horizontally.
+        let mut changed = xy_changed;
+        if !(gate_z_on_xy && !xy_changed) {
+            if let Some(vz) = z { if pos.2 != vz { pos.2 = vz; changed = true; } }
+        }
 
         if changed {
             let mag2 = pos.0*pos.0 + pos.1*pos.1 + pos.2*pos.2;
@@ -893,6 +735,67 @@ fn scrape_player_state(
                         }
                     }
                 }
+            }
+        }
+
+        // Player-entity economy (cash + team). Latest value wins; only touch the
+        // econ map once we've actually seen one of these props, so non-CS player
+        // classes (and the CCSPlayerResource entity) never spawn empty entries.
+        if money.is_some() || team.is_some() {
+            let e = econ.entry(eid_u).or_default();
+            if let Some(m) = money { e.money = m; }
+            if let Some(t) = team { e.team = t; }
+        }
+    }
+
+    scrape_resource_scoreboard(world, data, econ);
+}
+
+/// Read the per-player scoreboard arrays off the singleton `CCSPlayerResource`
+/// entity into `econ`, keyed by player entity-index. On Source 1 these stats
+/// (score / kills / deaths / assists / MVPs) live on a resource entity as
+/// engine-generated `SendPropArray`s whose leaves flatten to bare slot indices
+/// ("000".."063") with the array name recovered via `array_parent`. CS:S ships
+/// only `m_iScore` (the frag count), so kills falls back to score there.
+fn scrape_resource_scoreboard(
+    world: &EntityWorld,
+    data: &DataTables,
+    econ: &mut HashMap<u32, PlayerEcon>,
+) {
+    let resource = world.entities.values().find(|s| {
+        data.server_classes.iter().any(|c| c.id == s.class_id && c.name == "CCSPlayerResource")
+    });
+    let Some(state) = resource else { return };
+    let Some(flat) = data.flat_props.get(&state.class_id) else { return };
+
+    let has_kills = flat.iter().any(|p| p.array_parent.as_deref() == Some("m_iKills"));
+    let mut touched: Vec<u32> = Vec::new();
+    for (i, p) in flat.iter().enumerate() {
+        let Some(parent) = p.array_parent.as_deref() else { continue };
+        // The leaf name is the per-player slot = player entity index (1..64).
+        let Ok(slot) = p.name.parse::<u32>() else { continue };
+        if slot == 0 || slot > 64 { continue; }
+        let Some(v) = state.props.get(&i).and_then(|v| v.as_i64()) else { continue };
+        let v = v as i32;
+        let e = econ.entry(slot).or_default();
+        match parent {
+            "m_iScore"   => { e.score = v; touched.push(slot); }
+            "m_iKills"   => e.kills = v,
+            "m_iDeaths"  => e.deaths = v,
+            "m_iAssists" => e.assists = v,
+            "m_iMVPs"    => e.mvps = v,
+            // m_iTeam mirrors the player entity's m_iTeamNum; only fill in if the
+            // player-entity pass hasn't (resource is always present, players may
+            // be out of PVS).
+            "m_iTeam"    => { if e.team == 0 { e.team = v; } }
+            _ => {}
+        }
+    }
+    // CS:S has no per-player kills array; its score IS the frag count.
+    if !has_kills {
+        for slot in touched {
+            if let Some(e) = econ.get_mut(&slot) {
+                if e.kills == 0 { e.kills = e.score; }
             }
         }
     }
