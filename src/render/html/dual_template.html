@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>demoscope · side-by-side</title>
+<style>
+  :root { --bg:#0d1117; --panel:#161b22; --border:#30363d; --text:#c9d1d9; --muted:#8b949e; --accent:#58a6ff; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; }
+  body { background:var(--bg); color:var(--text); font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+         height:100vh; display:flex; flex-direction:column; overflow:hidden; }
+  #bar { display:flex; align-items:center; gap:12px; padding:8px 14px; background:var(--panel);
+         border-bottom:1px solid var(--border); flex:0 0 auto; }
+  #bar .title { font-weight:700; color:var(--accent); letter-spacing:.3px; }
+  #bar button { padding:6px 14px; background:var(--accent); color:#0d1117; border:0; border-radius:6px;
+                font-weight:600; cursor:pointer; font-size:13px; }
+  #bar button.sec { background:#21262d; color:var(--text); border:1px solid var(--border); }
+  #scrub { flex:1; accent-color:var(--accent); }
+  #clock { font-variant-numeric:tabular-nums; color:var(--muted); min-width:120px; text-align:right; font-size:13px; }
+  #bar select { background:#21262d; color:var(--text); border:1px solid var(--border); border-radius:6px; padding:5px 8px; }
+  #panes { flex:1 1 auto; display:flex; min-height:0; }
+  .pane { flex:1 1 50%; display:flex; flex-direction:column; min-width:0; }
+  .pane + .pane { border-left:1px solid var(--border); }
+  .pane .label { padding:5px 10px; font-size:12px; background:var(--panel); border-bottom:1px solid var(--border);
+                 white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--muted); }
+  .pane .label b { color:var(--text); }
+  .pane .tag { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:6px; vertical-align:-1px; }
+  iframe { flex:1 1 auto; border:0; width:100%; background:var(--bg); }
+</style>
+</head>
+<body>
+  <div id="bar">
+    <span class="title">demoscope · diff</span>
+    <button id="play">&#9654; Play</button>
+    <button id="rew" class="sec" title="Rewind to start">&#9664;&#9664;</button>
+    <input type="range" id="scrub" min="0" max="1000" value="0">
+    <span id="clock">0.0s / 0.0s</span>
+    <select id="speed" title="Playback speed">
+      <option value="0.25">0.25&times;</option>
+      <option value="0.5">0.5&times;</option>
+      <option value="1" selected>1&times;</option>
+      <option value="2">2&times;</option>
+      <option value="4">4&times;</option>
+    </select>
+  </div>
+  <div id="panes">
+    <div class="pane">
+      <div class="label" id="lblA"><span class="tag" style="background:#58a6ff"></span><b>A</b></div>
+      <iframe id="a" allow="fullscreen"></iframe>
+    </div>
+    <div class="pane">
+      <div class="label" id="lblB"><span class="tag" style="background:#f0883e"></span><b>B</b></div>
+      <iframe id="b" allow="fullscreen"></iframe>
+    </div>
+  </div>
+<script>
+  // Each viewer is embedded as a base64 blob and loaded into an iframe with a
+  // '#sync' fragment, which puts it in follower mode (it surrenders its clock).
+  const A_B64 = "__VIEWER_A__";
+  const B_B64 = "__VIEWER_B__";
+  const NAME_A = "__NAME_A__";
+  const NAME_B = "__NAME_B__";
+
+  function blobUrl(b64) {
+    const bin = atob(b64);
+    const u = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+    return URL.createObjectURL(new Blob([u], { type: 'text/html' })) + '#sync';
+  }
+
+  const fa = document.getElementById('a');
+  const fb = document.getElementById('b');
+  const meta = { a: null, b: null };
+
+  document.getElementById('lblA').innerHTML =
+    '<span class="tag" style="background:#58a6ff"></span><b>A</b> &middot; ' + NAME_A;
+  document.getElementById('lblB').innerHTML =
+    '<span class="tag" style="background:#f0883e"></span><b>B</b> &middot; ' + NAME_B;
+
+  // Collect each follower's tick range / rate so the master clock can map a
+  // shared "race second" onto each demo's own ticks (different length/rate ok).
+  window.addEventListener('message', (e) => {
+    const m = e.data;
+    if (!m || m.type !== 'ds-ready') return;
+    if (e.source === fa.contentWindow) meta.a = m;
+    else if (e.source === fb.contentWindow) meta.b = m;
+    // Re-seek to the current position once a side reports in.
+    pushSeek();
+  });
+
+  fa.src = blobUrl(A_B64);
+  fb.src = blobUrl(B_B64);
+
+  // ── Master race-clock ───────────────────────────────────────────────────────
+  let raceSec = 0, playing = false, speed = 1, lastTs = 0;
+  const scrub = document.getElementById('scrub');
+  const clock = document.getElementById('clock');
+  const playBtn = document.getElementById('play');
+
+  function totalSec() {
+    return Math.max(meta.a ? meta.a.durationSec : 0, meta.b ? meta.b.durationSec : 0, 0.001);
+  }
+  function tickFor(m) {
+    if (!m) return 0;
+    let t = m.minTick + raceSec * m.tickRate;
+    if (t > m.maxTick) t = m.maxTick;
+    if (t < m.minTick) t = m.minTick;
+    return t;
+  }
+  function pushSeek() {
+    if (meta.a && fa.contentWindow) fa.contentWindow.postMessage({ type: 'ds-seek', tick: tickFor(meta.a) }, '*');
+    if (meta.b && fb.contentWindow) fb.contentWindow.postMessage({ type: 'ds-seek', tick: tickFor(meta.b) }, '*');
+  }
+  function updUi() {
+    const T = totalSec();
+    scrub.value = Math.round((raceSec / T) * 1000);
+    clock.textContent = raceSec.toFixed(1) + 's / ' + T.toFixed(1) + 's';
+  }
+  function updPlayBtn() { playBtn.innerHTML = playing ? '&#9646;&#9646; Pause' : '&#9654; Play'; }
+
+  function loop(ts) {
+    requestAnimationFrame(loop);
+    if (!playing) { lastTs = ts; return; }
+    const dt = (ts - lastTs) / 1000;
+    lastTs = ts;
+    raceSec += dt * speed;
+    const T = totalSec();
+    if (raceSec >= T) { raceSec = T; playing = false; updPlayBtn(); }
+    updUi();
+    pushSeek();
+  }
+  requestAnimationFrame(loop);
+
+  playBtn.onclick = () => {
+    if (raceSec >= totalSec()) raceSec = 0;
+    playing = !playing;
+    lastTs = performance.now();
+    updPlayBtn();
+  };
+  document.getElementById('rew').onclick = () => { raceSec = 0; updUi(); pushSeek(); };
+  scrub.oninput = (e) => { raceSec = (e.target.value / 1000) * totalSec(); updUi(); pushSeek(); };
+  document.getElementById('speed').onchange = (e) => { speed = parseFloat(e.target.value); };
+
+  // Keyboard: space toggles play, arrows nudge.
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'Space') { e.preventDefault(); playBtn.onclick(); }
+    else if (e.code === 'ArrowRight') { raceSec = Math.min(totalSec(), raceSec + 1); updUi(); pushSeek(); }
+    else if (e.code === 'ArrowLeft') { raceSec = Math.max(0, raceSec - 1); updUi(); pushSeek(); }
+  });
+</script>
+</body>
+</html>
