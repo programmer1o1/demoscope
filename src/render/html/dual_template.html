@@ -4,33 +4,56 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>demoscope · side-by-side</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiIgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByb2xlPSJpbWciIGFyaWEtbGFiZWw9ImRlbW9zY29wZSI+CiAgPHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iNyIgZmlsbD0iIzBlMGUxMiIvPgogIDxjaXJjbGUgY3g9IjE2IiBjeT0iMTYiIHI9IjEwLjUiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2VjZTllMiIgc3Ryb2tlLXdpZHRoPSIxLjciLz4KICA8Y2xpcFBhdGggaWQ9ImFmdiI+PGNpcmNsZSBjeD0iMTYiIGN5PSIxNiIgcj0iOS42Ii8+PC9jbGlwUGF0aD4KICA8ZyBjbGlwLXBhdGg9InVybCgjYWZ2KSI+CiAgICA8cG9seWxpbmUgcG9pbnRzPSIxMSwyMiAxMSwxMyAxOS41LDEzIiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmIwMDAiIHN0cm9rZS13aWR0aD0iMi40IiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICAgIDxwYXRoIGQ9Ik0yNCwxMyBMMTksMTAgTDIxLDEzIEwxOSwxNiBaIiBmaWxsPSIjZmZiMDAwIi8+CiAgPC9nPgo8L3N2Zz4K">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-  :root { --bg:#0d1117; --panel:#161b22; --border:#30363d; --text:#c9d1d9; --muted:#8b949e; --accent:#58a6ff; }
+  :root {
+    --bg:#0e0e12; --bg-deep:#08080b; --panel:#15151b; --grid:#1d1d25;
+    --border:#2a2a34; --text:#ece9e2; --muted:#9a968c; --accent:#ffb000;
+    --a:#ffb000; --b:#00e5cc;
+    --font-display:'Bricolage Grotesque','Segoe UI',system-ui,-apple-system,sans-serif;
+    --font-mono:'IBM Plex Mono','SF Mono',ui-monospace,Menlo,monospace;
+  }
   * { box-sizing:border-box; }
   html,body { margin:0; height:100%; }
-  body { background:var(--bg); color:var(--text); font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
-         height:100vh; display:flex; flex-direction:column; overflow:hidden; }
-  #bar { display:flex; align-items:center; gap:12px; padding:8px 14px; background:var(--panel);
+  body { background:var(--bg); color:var(--text); font-family:var(--font-display);
+         height:100vh; display:flex; flex-direction:column; overflow:hidden;
+         -webkit-font-smoothing:antialiased; }
+  #bar { display:flex; align-items:center; gap:12px; padding:9px 16px;
+         background:linear-gradient(180deg,var(--panel),rgba(21,21,27,0.55));
          border-bottom:1px solid var(--border); flex:0 0 auto; }
-  #bar .title { font-weight:700; color:var(--accent); letter-spacing:.3px; }
-  #bar button { padding:6px 14px; background:var(--accent); color:#0d1117; border:0; border-radius:6px;
-                font-weight:600; cursor:pointer; font-size:13px; }
-  #bar button.sec { background:#21262d; color:var(--text); border:1px solid var(--border); }
-  #scrub { flex:1; accent-color:var(--accent); }
-  #clock { font-variant-numeric:tabular-nums; color:var(--muted); min-width:120px; text-align:right; font-size:13px; }
-  #bar select { background:#21262d; color:var(--text); border:1px solid var(--border); border-radius:6px; padding:5px 8px; }
+  #bar .title { font-weight:800; letter-spacing:-0.02em; color:var(--text); font-size:15px; }
+  #bar .title::first-letter { color:var(--accent); }
+  #bar button { padding:6px 14px; background:var(--accent); color:var(--bg-deep); border:0; border-radius:3px;
+                font-family:var(--font-mono); font-weight:600; cursor:pointer; font-size:12.5px; transition:filter .15s; }
+  #bar button:hover { filter:brightness(1.08); }
+  #bar button.sec { background:var(--grid); color:var(--text); border:1px solid var(--border); }
+  #bar button.sec:hover { border-color:var(--accent); filter:none; }
+  #scrub { flex:1; accent-color:var(--accent); height:3px; }
+  #clock { font-family:var(--font-mono); font-variant-numeric:tabular-nums; color:var(--muted); min-width:120px; text-align:right; font-size:12.5px; }
+  #bar select { background:var(--grid); color:var(--text); border:1px solid var(--border); border-radius:3px; padding:5px 8px; font-family:var(--font-mono); font-size:12px; }
   #panes { flex:1 1 auto; display:flex; min-height:0; }
   .pane { flex:1 1 50%; display:flex; flex-direction:column; min-width:0; }
   .pane + .pane { border-left:1px solid var(--border); }
-  .pane .label { padding:5px 10px; font-size:12px; background:var(--panel); border-bottom:1px solid var(--border);
+  .pane .label { padding:6px 12px; font-family:var(--font-mono); font-size:11.5px; background:var(--panel); border-bottom:1px solid var(--border);
                  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--muted); }
-  .pane .label b { color:var(--text); }
-  .pane .tag { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:6px; vertical-align:-1px; }
+  .pane .label b { color:var(--text); font-weight:600; }
+  .pane .tag { display:inline-block; width:9px; height:9px; border-radius:2px; margin-right:7px; vertical-align:-1px; }
   iframe { flex:1 1 auto; border:0; width:100%; background:var(--bg); }
 </style>
 </head>
 <body>
   <div id="bar">
+    <svg width="18" height="18" viewBox="0 0 100 100" style="flex-shrink:0" aria-hidden="true">
+      <defs><clipPath id="bar-ap"><circle cx="50" cy="50" r="39.5"/></clipPath></defs>
+      <circle cx="50" cy="50" r="41" fill="none" stroke="#ece9e2" stroke-width="3.4"/>
+      <g clip-path="url(#bar-ap)">
+        <polyline points="38,62 38,42 64,42" fill="none" stroke="#ffb000" stroke-width="4.4" stroke-linejoin="round" stroke-linecap="round"/>
+        <path d="M74,42 L65,37.5 L67.3,42 L65,46.5 Z" fill="#ffb000"/>
+      </g>
+    </svg>
     <span class="title">demoscope · diff</span>
     <button id="play">&#9654; Play</button>
     <button id="rew" class="sec" title="Rewind to start">&#9664;&#9664;</button>
@@ -46,11 +69,11 @@
   </div>
   <div id="panes">
     <div class="pane">
-      <div class="label" id="lblA"><span class="tag" style="background:#58a6ff"></span><b>A</b></div>
+      <div class="label" id="lblA"><span class="tag" style="background:#ffb000"></span><b>A</b></div>
       <iframe id="a" allow="fullscreen"></iframe>
     </div>
     <div class="pane">
-      <div class="label" id="lblB"><span class="tag" style="background:#f0883e"></span><b>B</b></div>
+      <div class="label" id="lblB"><span class="tag" style="background:#00e5cc"></span><b>B</b></div>
       <iframe id="b" allow="fullscreen"></iframe>
     </div>
   </div>
@@ -74,9 +97,9 @@
   const meta = { a: null, b: null };
 
   document.getElementById('lblA').innerHTML =
-    '<span class="tag" style="background:#58a6ff"></span><b>A</b> &middot; ' + NAME_A;
+    '<span class="tag" style="background:#ffb000"></span><b>A</b> &middot; ' + NAME_A;
   document.getElementById('lblB').innerHTML =
-    '<span class="tag" style="background:#f0883e"></span><b>B</b> &middot; ' + NAME_B;
+    '<span class="tag" style="background:#00e5cc"></span><b>B</b> &middot; ' + NAME_B;
 
   // Collect each follower's tick range / rate so the master clock can map a
   // shared "race second" onto each demo's own ticks (different length/rate ok).

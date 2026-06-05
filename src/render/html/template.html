@@ -4,9 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>demoscope: __DEMO_NAME__</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiIgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByb2xlPSJpbWciIGFyaWEtbGFiZWw9ImRlbW9zY29wZSI+CiAgPHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iNyIgZmlsbD0iIzBlMGUxMiIvPgogIDxjaXJjbGUgY3g9IjE2IiBjeT0iMTYiIHI9IjEwLjUiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2VjZTllMiIgc3Ryb2tlLXdpZHRoPSIxLjciLz4KICA8Y2xpcFBhdGggaWQ9ImFmdiI+PGNpcmNsZSBjeD0iMTYiIGN5PSIxNiIgcj0iOS42Ii8+PC9jbGlwUGF0aD4KICA8ZyBjbGlwLXBhdGg9InVybCgjYWZ2KSI+CiAgICA8cG9seWxpbmUgcG9pbnRzPSIxMSwyMiAxMSwxMyAxOS41LDEzIiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmIwMDAiIHN0cm9rZS13aWR0aD0iMi40IiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICAgIDxwYXRoIGQ9Ik0yNCwxMyBMMTksMTAgTDIxLDEzIEwxOSwxNiBaIiBmaWxsPSIjZmZiMDAwIi8+CiAgPC9nPgo8L3N2Zz4K">
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html, body {
@@ -14,32 +18,41 @@ html, body {
   overflow: hidden;
 }
 :root {
-  --bg: #0d1117;
-  --panel: #161b22;
-  --grid: #21262d;
-  --border: #30363d;
-  --text: #e6edf3;
-  --muted: #8b949e;
-  --accent: #58a6ff;
+  /* Telemetry Editorial — warm ink + paper-bone type + one amber signal.
+     Semantic data colors (death/tele/round/uber) are unchanged; the canvas/JS
+     relies on them. Only the chrome neutrals + accent were retuned. */
+  --bg: #0e0e12;
+  --bg-deep: #08080b;
+  --panel: #15151b;
+  --grid: #1d1d25;
+  --border: #2a2a34;
+  --text: #ece9e2;
+  --muted: #9a968c;
+  --accent: #ffb000;
+  --accent-dim: #b87c12;
+  --accent-deep: #3a2c0a;
   --death: #ff4d4d;
   --tele: #00e5cc;
   --round: #ffd700;
   --uber: #cc44ff;
   --sidebar: 300px;
+  --font-display: 'Bricolage Grotesque', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-mono: 'IBM Plex Mono', 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
 }
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-family: var(--font-display);
   font-size: 13px;
+  -webkit-font-smoothing: antialiased;
   display: flex;
   flex-direction: column;
   height: 100vh;
 }
 header {
-  background: var(--panel);
+  background: linear-gradient(180deg, var(--panel), rgba(21,21,27,0.55));
   border-bottom: 1px solid var(--border);
-  padding: 10px 16px;
+  padding: 11px 18px;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -47,17 +60,22 @@ header {
   flex-shrink: 0;
 }
 header h1 {
-  font-size: 15px;
-  font-weight: 700;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
   color: var(--text);
   flex-shrink: 0;
+  font-optical-sizing: auto;
 }
+header h1::first-letter { color: var(--accent); }
 .meta-tag {
   background: var(--grid);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: 3px;
   padding: 2px 8px;
-  font-size: 11px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.01em;
   color: var(--muted);
   white-space: nowrap;
 }
@@ -92,12 +110,19 @@ header h1 {
 }
 .sidebar-section:last-child { border-bottom: none; }
 .section-title {
+  font-family: var(--font-mono);
   font-size: 10px;
   color: var(--muted);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-weight: 700;
+  letter-spacing: 0.16em;
+  font-weight: 600;
   margin-bottom: 8px;
+  padding-left: 9px;
+  position: relative;
+}
+.section-title::before {
+  content: ""; position: absolute; left: 0; top: 1px; bottom: 1px;
+  width: 2px; background: var(--accent); border-radius: 1px; opacity: 0.7;
 }
 /* Lives */
 .life-list { display: flex; flex-direction: column; gap: 4px; }
@@ -133,8 +158,8 @@ header h1 {
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s;
 }
-.cam-btn:hover { background: #2d333b; }
-.cam-btn.active { background: #1f3a5f; border-color: var(--accent); color: var(--accent); }
+.cam-btn:hover { background: var(--grid); }
+.cam-btn.active { background: var(--accent-deep); border-color: var(--accent); color: var(--accent); }
 #btn-gif.active { background: #5f1f1f; border-color: #f08080; color: #f08080; }
 /* Stats */
 .stat-row {
@@ -144,9 +169,9 @@ header h1 {
   font-size: 12px;
 }
 .stat-label { color: var(--muted); }
-.stat-val { color: var(--text); font-weight: 600; }
+.stat-val { color: var(--text); font-weight: 600; font-family: var(--font-mono); }
 /* Per-player stats leaderboard (multi-player demos) */
-#pstat-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+#pstat-table { width: 100%; border-collapse: collapse; font-size: 11px; font-family: var(--font-mono); }
 #pstat-table th {
   color: var(--muted); font-weight: 600; text-align: right;
   padding: 2px 4px; cursor: pointer; user-select: none; white-space: nowrap;
@@ -159,7 +184,7 @@ header h1 {
 #pstat-table td:first-child { text-align: left; }
 #pstat-table tr.prow { cursor: pointer; }
 #pstat-table tr.prow:hover td { background: var(--grid); }
-#pstat-table tr.prow.primary td { background: rgba(88,166,255,0.12); }
+#pstat-table tr.prow.primary td { background: rgba(255, 176, 0,0.12); }
 .pstat-name { display: flex; align-items: center; gap: 5px; max-width: 96px; overflow: hidden; text-overflow: ellipsis; }
 .pstat-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
 /* Event log */
@@ -188,7 +213,7 @@ td { padding: 2px 6px; border-bottom: 1px solid var(--grid); font-size: 11px; co
 td.ev-name { color: var(--text); font-weight: 600; }
 tr { cursor: pointer; transition: background 0.1s; }
 tr:hover td { background: var(--grid); color: var(--text); }
-tr.highlight-row td { background: #1f3a5f; color: var(--text); }
+tr.highlight-row td { background: var(--accent-deep); color: var(--text); }
 /* Canvas area */
 .canvas-area {
   flex: 1;
@@ -201,7 +226,7 @@ tr.highlight-row td { background: #1f3a5f; color: var(--text); }
   flex: 1;
   position: relative;
   overflow: hidden;
-  background: #0d1117;
+  background: #0e0e12;
   min-height: 0;
 }
 #threejs-container canvas {
@@ -215,6 +240,7 @@ tr.highlight-row td { background: #1f3a5f; color: var(--text); }
   padding: 6px 12px 4px 12px;
 }
 .timeline-label {
+  font-family: var(--font-mono);
   font-size: 10px;
   color: var(--muted);
   text-transform: uppercase;
@@ -254,6 +280,7 @@ tr.highlight-row td { background: #1f3a5f; color: var(--text); }
   padding: 6px 12px;
 }
 .bottom-events-header {
+  font-family: var(--font-mono);
   font-size: 10px;
   color: var(--muted);
   text-transform: uppercase;
@@ -280,7 +307,7 @@ tr.highlight-row td { background: #1f3a5f; color: var(--text); }
   user-select: none;
 }
 .ev-chip.active {
-  background: #1f3a5f;
+  background: var(--accent-deep);
   border-color: var(--accent);
   color: var(--accent);
 }
@@ -305,7 +332,7 @@ tr.highlight-row td { background: #1f3a5f; color: var(--text); }
   right: 10px;
   font-size: 10px;
   color: var(--muted);
-  background: rgba(13,17,23,0.7);
+  background: rgba(14, 14, 18,0.7);
   padding: 2px 6px;
   border-radius: 3px;
   pointer-events: none;
@@ -319,7 +346,7 @@ tr.highlight-row td { background: #1f3a5f; color: var(--text); }
   height: 160px;
   border: 1px solid var(--border);
   border-radius: 4px;
-  background: rgba(13,17,23,0.82);
+  background: rgba(14, 14, 18,0.82);
   pointer-events: none;
   z-index: 10;
 }
@@ -328,18 +355,19 @@ tr.highlight-row td { background: #1f3a5f; color: var(--text); }
   position: absolute;
   top: 8px;
   left: 10px;
-  background: rgba(13,17,23,0.78);
+  background: rgba(14, 14, 18,0.78);
   border: 1px solid var(--border);
   border-radius: 4px;
   padding: 4px 10px 5px 10px;
   pointer-events: none;
+  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   z-index: 5;
   min-width: 96px;
 }
 #speedometer .sp-now {
   font-size: 22px;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--text);
   line-height: 1;
 }
@@ -364,7 +392,7 @@ tr.highlight-row td { background: #1f3a5f; color: var(--text); }
   font-size: 10px;
   font-weight: 700;
   color: var(--accent);
-  background: rgba(13,17,23,0.8);
+  background: rgba(14, 14, 18,0.8);
   padding: 2px 7px;
   border-radius: 3px;
   pointer-events: none;
@@ -380,7 +408,7 @@ tr.highlight-row td { background: #1f3a5f; color: var(--text); }
   background: rgba(0, 30, 10, 0.78);
   border: 1px solid #00ff88;
   color: #88ffaa;
-  font-family: 'SF Mono', Menlo, monospace;
+  font-family: 'IBM Plex Mono','SF Mono',Menlo,monospace;
   font-size: 10px;
   font-weight: 600;
   padding: 2px 6px;
@@ -396,26 +424,26 @@ tr.highlight-row td { background: #1f3a5f; color: var(--text); }
   border-radius:4px;color:rgba(255,255,255,.35);font-size:11px;display:flex;align-items:center;
   justify-content:center;font-family:monospace;font-weight:bold;transition:background .06s,color .06s; }
 .ikey.on { background:rgba(255,255,255,.28);color:#fff;border-color:rgba(255,255,255,.75); }
-#chat-log { max-height:180px;overflow-y:auto;font-size:11px;font-family:'SF Mono',Menlo,Consolas,monospace; }
-#chat-log div { padding:3px 0;border-bottom:1px solid #1e2830;cursor:pointer;line-height:1.4; }
+#chat-log { max-height:180px;overflow-y:auto;font-size:11px;font-family:'IBM Plex Mono','SF Mono',Menlo,Consolas,monospace; }
+#chat-log div { padding:3px 0;border-bottom:1px solid var(--grid);cursor:pointer;line-height:1.4; }
 #chat-log div:hover { background:rgba(255,255,255,.04); }
-#chat-log div.is-current { background:rgba(88,166,255,.15);border-left:2px solid var(--accent);padding-left:4px; }
+#chat-log div.is-current { background:rgba(255, 176, 0,.15);border-left:2px solid var(--accent);padding-left:4px; }
 .con-chip { padding:1px 5px;border:1px solid var(--border);border-radius:9px;cursor:pointer;user-select:none;color:var(--muted); }
-.con-chip.on { background:var(--accent);color:#0d1117;border-color:var(--accent); }
+.con-chip.on { background:var(--accent);color:#0e0e12;border-color:var(--accent); }
 #console-overlay {
-  position:fixed;inset:0;background:rgba(13,17,23,0.93);z-index:50;display:none;
+  position:fixed;inset:0;background:rgba(14, 14, 18,0.93);z-index:50;display:none;
   flex-direction:column;padding:24px 32px;box-sizing:border-box;
 }
 #console-overlay.open { display:flex; }
 #console-overlay .con-head { display:flex;align-items:center;gap:12px;margin-bottom:10px;color:var(--fg);font-size:13px; }
 #console-overlay .con-title { font-weight:700;letter-spacing:.04em; }
 #console-overlay .con-body {
-  flex:1;overflow-y:auto;background:#0d1117;border:1px solid var(--border);border-radius:6px;
-  padding:10px 14px;font-family:'SF Mono',Menlo,Consolas,monospace;font-size:12px;line-height:1.5;
+  flex:1;overflow-y:auto;background:#0e0e12;border:1px solid var(--border);border-radius:6px;
+  padding:10px 14px;font-family:'IBM Plex Mono','SF Mono',Menlo,Consolas,monospace;font-size:12px;line-height:1.5;
 }
 #console-overlay .con-body div { padding:2px 0;cursor:pointer; }
 #console-overlay .con-body div:hover { background:rgba(255,255,255,.05); }
-#console-overlay .con-body div.is-current { background:rgba(88,166,255,.18);border-left:2px solid var(--accent);padding-left:6px; }
+#console-overlay .con-body div.is-current { background:rgba(255, 176, 0,.18);border-left:2px solid var(--accent);padding-left:6px; }
 
 /* ── Floating scoreboard window ─────────────────────────────────────────── */
 #scoreboard-overlay {
@@ -444,7 +472,7 @@ tr.highlight-row td { background: #1f3a5f; color: var(--text); }
 .sb-team-head:first-child { margin-top:0; }
 .sb-team-dot { width:9px;height:9px;border-radius:2px;display:inline-block; }
 .sb-team-meta { color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;font-size:11px; }
-.sb-table { width:100%;border-collapse:collapse;font-size:12px; }
+.sb-table { width:100%;border-collapse:collapse;font-size:12px;font-family:var(--font-mono); }
 .sb-table th {
   position:sticky;top:0;background:var(--panel);color:var(--muted);
   font-weight:600;text-align:right;padding:5px 8px;cursor:pointer;user-select:none;
@@ -456,7 +484,7 @@ tr.highlight-row td { background: #1f3a5f; color: var(--text); }
 .sb-table td:first-child { text-align:left; }
 .sb-table tr.prow { cursor:pointer; }
 .sb-table tr.prow:hover td { background:rgba(255,255,255,0.04); }
-.sb-table tr.primary td { background:rgba(88,166,255,0.12); }
+.sb-table tr.primary td { background:rgba(255, 176, 0,0.12); }
 .sb-name { display:inline-flex;align-items:center;gap:7px; }
 .sb-dot { width:9px;height:9px;border-radius:50%;flex:none; }
 .sb-empty { color:var(--muted);font-size:12px;font-style:italic;padding:8px 0; }
@@ -493,6 +521,14 @@ tr.highlight-row td { background: #1f3a5f; color: var(--text); }
 </div>
 
 <header>
+  <svg width="22" height="22" viewBox="0 0 100 100" style="flex-shrink:0;margin-right:-2px" aria-hidden="true">
+    <defs><clipPath id="hdr-ap"><circle cx="50" cy="50" r="39.5"/></clipPath></defs>
+    <circle cx="50" cy="50" r="41" fill="none" stroke="#ece9e2" stroke-width="3.2"/>
+    <g clip-path="url(#hdr-ap)">
+      <polyline points="38,62 38,42 64,42" fill="none" stroke="#ffb000" stroke-width="4.2" stroke-linejoin="round" stroke-linecap="round"/>
+      <path d="M74,42 L65,37.5 L67.3,42 L65,46.5 Z" fill="#ffb000"/>
+    </g>
+  </svg>
   <h1>demoscope &mdash; <span>__DEMO_NAME__</span></h1>
   <div class="meta-tag">Map: <span id="m-map">-</span></div>
   <div class="meta-tag">Game: <span id="m-game">-</span></div>
@@ -622,10 +658,10 @@ tr.highlight-row td { background: #1f3a5f; color: var(--text); }
       <div id="fire-labels"></div>
       <!-- Kill-arc color legend (shown only while the Kills layer is on) -->
       <div id="kill-legend" style="display:none;position:absolute;right:10px;top:34px;z-index:8;
-           background:rgba(13,17,23,0.82);border:1px solid #30363d;border-radius:6px;
-           padding:7px 10px;font-size:11px;line-height:1.7;color:#c9d1d9;pointer-events:none;
+           background:rgba(14, 14, 18,0.82);border:1px solid #2a2a34;border-radius:6px;
+           padding:7px 10px;font-size:11px;line-height:1.7;color:#ece9e2;pointer-events:none;
            box-shadow:0 2px 10px rgba(0,0,0,0.4)">
-        <div style="font-weight:600;margin-bottom:2px;color:#8b949e">Kill arcs - attacker→victim</div>
+        <div style="font-weight:600;margin-bottom:2px;color:#9a968c">Kill arcs - attacker→victim</div>
         <div><span style="display:inline-block;width:22px;height:3px;vertical-align:middle;background:#ffd11f;box-shadow:0 0 5px #ffd11f"></span> headshot</div>
         <div><span style="display:inline-block;width:22px;height:3px;vertical-align:middle;background:#ff5722;box-shadow:0 0 5px #ff5722"></span> body shot</div>
         <div><span style="display:inline-block;width:22px;height:3px;vertical-align:middle;background:#f28c40;opacity:0.7"></span> non-fatal hurt</div>
@@ -1204,7 +1240,7 @@ const container = document.getElementById('threejs-container');
 // genuine photosensitivity hazard. The log buffer all but eliminates it.
 const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, logarithmicDepthBuffer: true });
 renderer.setPixelRatio(window.devicePixelRatio);
-renderer.setClearColor(0x0d1117);
+renderer.setClearColor(0x0e0e12);
 container.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
@@ -1769,7 +1805,7 @@ const mpEntities = []; // [{ eid, name, color, samples, pathGroup, avatar, label
       const avatarGroup = new THREE.Group();
       // Use MeshBasicMaterial so the avatar is visible without scene lighting.
       const avatarMat = new THREE.MeshBasicMaterial({
-        color: isPrimaryInit ? 0x58a6ff : color,
+        color: isPrimaryInit ? 0xffb000 : color,
         transparent: true, opacity: ghost ? 0.3 : 0.95,
         wireframe: ghost,
       });
@@ -1784,7 +1820,7 @@ const mpEntities = []; // [{ eid, name, color, samples, pathGroup, avatar, label
       label.className = 'mp-name-label';
       label.style.cssText =
         'position:absolute;pointer-events:none;display:none;transform:translate(-50%,-100%);'
-        + `font-family:'SF Mono',Menlo,monospace;font-size:10px;font-weight:600;`
+        + `font-family:'IBM Plex Mono','SF Mono',Menlo,monospace;font-size:10px;font-weight:600;`
         + `padding:1px 5px;border-radius:3px;white-space:nowrap;letter-spacing:0.03em;`
         + `background:rgba(0,0,0,0.6);border:1px solid hsl(${hue},65%,55%);`
         + `color:hsl(${hue},80%,80%);text-shadow:0 0 4px rgba(0,0,0,0.9);z-index:7;`;
@@ -1826,7 +1862,7 @@ const mpEntities = []; // [{ eid, name, color, samples, pathGroup, avatar, label
       row.dataset.eid = eid;
       row.style.userSelect = 'none';
       if (isPrimary) {
-        row.style.background = 'rgba(88, 166, 255, 0.12)';
+        row.style.background = 'rgba(255, 176, 0, 0.12)';
         row.style.borderLeft = '3px solid var(--accent)';
         row.style.paddingLeft = '4px';
       }
@@ -1960,7 +1996,7 @@ function setPrimaryEntity(eid) {
   // Update primary highlight on sidebar rows
   document.querySelectorAll('#players-list [data-eid]').forEach(r => {
     if (r.dataset.eid === currentPrimaryEid) {
-      r.style.background = 'rgba(88, 166, 255, 0.12)';
+      r.style.background = 'rgba(255, 176, 0, 0.12)';
       r.style.borderLeft = '3px solid var(--accent)';
       r.style.paddingLeft = '4px';
     } else {
@@ -3013,7 +3049,7 @@ function composeHudFrame(compose) {
     const dw = Math.min(220, mw);
     const dh = mh * (dw / mw);
     // semi-transparent background panel
-    ctx.fillStyle = 'rgba(13,17,23,0.78)';
+    ctx.fillStyle = 'rgba(14, 14, 18,0.78)';
     ctx.fillRect(canvas.width - dw - margin - 6, canvas.height - dh - margin - 6, dw + 12, dh + 12);
     ctx.drawImage(mmCanvas, canvas.width - dw - margin, canvas.height - dh - margin, dw, dh);
   }
@@ -3025,13 +3061,13 @@ function composeHudFrame(compose) {
   const sec  = (tick / TICK_RATE).toFixed(1);
   const spd  = (typeof mpPrimarySpeedAt === 'function' ? mpPrimarySpeedAt(tick) : null)
             ?? REAL_SPEED[currentCmdIdx] ?? 0;
-  ctx.fillStyle = 'rgba(13,17,23,0.78)';
+  ctx.fillStyle = 'rgba(14, 14, 18,0.78)';
   ctx.fillRect(12, 12, 320, 56);
   ctx.font = 'bold 18px monospace';
-  ctx.fillStyle = '#58a6ff';
+  ctx.fillStyle = '#ffb000';
   ctx.fillText(name, 22, 36);
   ctx.font = '14px monospace';
-  ctx.fillStyle = '#c9d1d9';
+  ctx.fillStyle = '#ece9e2';
   ctx.fillText(`${sec}s   ${Math.round(spd)} u/s`, 22, 58);
   return canvas;
 }
@@ -3204,7 +3240,7 @@ async function startGifRecord(opts) {
   // Small floating progress badge.
   const overlay = document.createElement('div');
   overlay.id = 'gif-overlay';
-  overlay.style.cssText = 'position:fixed;top:14px;left:50%;transform:translateX(-50%);background:rgba(13,17,23,0.92);'
+  overlay.style.cssText = 'position:fixed;top:14px;left:50%;transform:translateX(-50%);background:rgba(14, 14, 18,0.92);'
     + 'border:1px solid var(--accent);border-radius:6px;padding:8px 14px;font-family:monospace;font-size:12px;'
     + 'color:var(--accent);z-index:60;display:flex;gap:10px;align-items:center';
   overlay.innerHTML = '<span id="gif-status">Recording 0 / ' + framesTarget + '</span>'
@@ -3324,7 +3360,7 @@ function toggleVideoRecord() {
   // Floating progress badge identical layout to the GIF one.
   const overlay = document.createElement('div');
   overlay.id = 'vid-overlay';
-  overlay.style.cssText = 'position:fixed;top:14px;left:50%;transform:translateX(-50%);background:rgba(13,17,23,0.92);'
+  overlay.style.cssText = 'position:fixed;top:14px;left:50%;transform:translateX(-50%);background:rgba(14, 14, 18,0.92);'
     + 'border:1px solid #f08080;border-radius:6px;padding:8px 14px;font-family:monospace;font-size:12px;'
     + 'color:#f08080;z-index:60;display:flex;gap:10px;align-items:center';
   overlay.innerHTML = '<span id="vid-status">Recording video…</span>'
@@ -4012,7 +4048,7 @@ function rebuildGrenadeMarkers() {
     const label = document.createElement('div');
     label.style.cssText =
       'position:absolute;pointer-events:none;display:none;transform:translate(-50%,-120%);'
-      + "font-family:'SF Mono',Menlo,monospace;font-size:10px;font-weight:600;padding:1px 5px;"
+      + "font-family:'IBM Plex Mono','SF Mono',Menlo,monospace;font-size:10px;font-weight:600;padding:1px 5px;"
       + 'border-radius:3px;white-space:nowrap;background:rgba(0,0,0,0.65);z-index:7;'
       + `border:1px solid ${cssHex(info.color)};color:${cssHex(info.color)};`;
     label.textContent = thrower ? `${info.label} — ${thrower}` : info.label;
@@ -4066,8 +4102,8 @@ function buildGrenadeLegend() {
   // Right side, just above the minimap — clear of the input-monitor (bottom-left),
   // the speedometer (top-left), the kill legend (top-right) and the minimap (below).
   el.style.cssText = 'position:absolute;right:12px;bottom:200px;z-index:8;display:none;'
-    + 'background:rgba(13,17,23,0.85);border:1px solid var(--border);border-radius:6px;'
-    + "padding:7px 9px;font-family:'SF Mono',Menlo,monospace;font-size:10px;color:#c9d1d9;";
+    + 'background:rgba(14, 14, 18,0.85);border:1px solid var(--border);border-radius:6px;'
+    + "padding:7px 9px;font-family:'IBM Plex Mono','SF Mono',Menlo,monospace;font-size:10px;color:#ece9e2;";
   let rows = '<div style="font-weight:600;margin-bottom:4px">Grenades</div>';
   const seen = new Set();
   for (const k in GRENADE_INFO) {
@@ -4104,12 +4140,12 @@ function toggleGrenades() {
 const csTeam = n => (n === 2 ? 'T' : n === 3 ? 'CT' : ('team ' + n));
 
 const CONSOLE_CATEGORIES = [
-  { key: 'chat',   label: 'Chat',   color: '#c9d1d9' },
+  { key: 'chat',   label: 'Chat',   color: '#ece9e2' },
   { key: 'kill',   label: 'Kills',  color: '#f08080' },
   { key: 'round',  label: 'Round',  color: '#e3b341' },
   { key: 'nade',   label: 'Nades',  color: '#8fd3ff' },
   { key: 'spawn',  label: 'Spawn',  color: '#7ee787' },
-  { key: 'other',  label: 'Other',  color: '#8b949e' },
+  { key: 'other',  label: 'Other',  color: '#9a968c' },
 ];
 const activeConsoleCategories = new Set(CONSOLE_CATEGORIES.map(c => c.key));
 
@@ -4154,7 +4190,7 @@ function entityForName(name) {
 }
 function nameSpan(name, fallbackColor) {
   const e = entityForName(name);
-  const color = e ? `hsl(${e.hue}, 70%, 68%)` : (fallbackColor || '#c9d1d9');
+  const color = e ? `hsl(${e.hue}, 70%, 68%)` : (fallbackColor || '#ece9e2');
   return `<b style="color:${color}">${esc(name || '?')}</b>`;
 }
 
@@ -4238,7 +4274,7 @@ function shortWeapon(w) {
       // Speaker name in the entity's hue if we can match them; team-chat green
       // for the team prefix is intentionally separate so the speaker keeps
       // their personal colour.
-      const speaker = nameSpan(ev.player, isTeam ? '#66cc77' : '#c9d1d9');
+      const speaker = nameSpan(ev.player, isTeam ? '#66cc77' : '#ece9e2');
       html = `${stamp} ${tag}${speaker}: ${esc(ev.text||'')}`;
     } else if (ev.event === 'player_death') {
       category = 'kill';
@@ -4291,14 +4327,14 @@ function shortWeapon(w) {
       html = `${stamp} ${nameSpan(who)} <span style="color:#8fd3ff">${GRENADE_INFO[ev.event].label}</span>`;
     } else if (ev.event === 'player_connect' || ev.event === 'player_connect_client') {
       category = 'other';
-      html = `${stamp} <span style="color:#8b949e">${esc(ev.name||ev.player||'?')} connected</span>`;
+      html = `${stamp} <span style="color:#9a968c">${esc(ev.name||ev.player||'?')} connected</span>`;
     } else if (ev.event === 'player_disconnect') {
       category = 'other';
       const r = ev.reason ? ` (${esc(ev.reason)})` : '';
-      html = `${stamp} <span style="color:#8b949e">${esc(ev.name||ev.player||'?')} disconnected${r}</span>`;
+      html = `${stamp} <span style="color:#9a968c">${esc(ev.name||ev.player||'?')} disconnected${r}</span>`;
     } else if (ev.event === 'player_changename') {
       category = 'other';
-      html = `${stamp} <span style="color:#8b949e">${esc(ev.oldname||'?')} → ${esc(ev.newname||'?')}</span>`;
+      html = `${stamp} <span style="color:#9a968c">${esc(ev.oldname||'?')} → ${esc(ev.newname||'?')}</span>`;
     }
     if (html) consoleEntries.push({ tick: ev.tick, sec, category, html });
   }
@@ -4434,7 +4470,7 @@ function formatEventDetails(ev) {
 EVENTS.forEach((ev, idx) => {
   const tr = document.createElement('tr');
   const sec = tickToSec(ev.tick).toFixed(1);
-  const color = EV_COLORS[ev.event] || '#8b949e';
+  const color = EV_COLORS[ev.event] || '#9a968c';
   // Reuse the Console's weapon-class SVG for death rows so the event-log
   // bottom panel reads the same as the Console top panel at a glance.
   const icon = (ev.event === 'player_death' && typeof killIconSvg === 'function')
@@ -4473,10 +4509,10 @@ function drawTimeline() {
   const pad = 10;
   const pw  = W - pad * 2;
 
-  ctx.fillStyle = '#161b22';
+  ctx.fillStyle = '#15151b';
   ctx.fillRect(0, 0, W, H);
 
-  ctx.fillStyle = '#21262d';
+  ctx.fillStyle = '#1d1d25';
   ctx.fillRect(pad, H * 0.28, pw, H * 0.44);
 
   if (N < 2) return;
@@ -4554,12 +4590,12 @@ function drawTimeline() {
   ctx.arc(knobX, H / 2, 6, 0, Math.PI * 2);
   ctx.fillStyle = 'white';
   ctx.fill();
-  ctx.strokeStyle = '#30363d';
+  ctx.strokeStyle = '#2a2a34';
   ctx.lineWidth = 1.5;
   ctx.stroke();
 
   // Labels
-  ctx.fillStyle = '#8b949e';
+  ctx.fillStyle = '#9a968c';
   ctx.font = '9px sans-serif';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'bottom';
@@ -5438,7 +5474,7 @@ function drawMinimap() {
       }
       if (px < mmMinX || px > mmMaxX || py < mmMinY || py > mmMaxY) continue;
       const isPrimary = (currentPrimaryEid != null && e.eid === currentPrimaryEid);
-      mmCtx.fillStyle = isPrimary ? '#58a6ff' : `hsl(${e.hue}, 70%, 55%)`;
+      mmCtx.fillStyle = isPrimary ? '#ffb000' : `hsl(${e.hue}, 70%, 55%)`;
       mmCtx.beginPath();
       mmCtx.arc(mmX(px), mmY(py), isPrimary ? 6 : 2.4, 0, Math.PI * 2);
       mmCtx.fill();
@@ -5447,7 +5483,7 @@ function drawMinimap() {
         mmCtx.lineWidth = 2;
         mmCtx.stroke();
         // Pulsing outer ring
-        mmCtx.strokeStyle = 'rgba(88,166,255,0.5)';
+        mmCtx.strokeStyle = 'rgba(255, 176, 0,0.5)';
         mmCtx.lineWidth = 1;
         mmCtx.beginPath();
         mmCtx.arc(mmX(px), mmY(py), 10, 0, Math.PI * 2);

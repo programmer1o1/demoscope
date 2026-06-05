@@ -1,4 +1,6 @@
-# demoscope
+<p align="center">
+  <img src="assets/logo/demoscope-banner.svg" alt="demoscope — pure-Rust parser and 3D visualiser for game demo files" width="100%">
+</p>
 
 Fast, pure-Rust parser and interactive 3D visualiser for game demo files (`.dem`) across four engine families — built with a handful of pure-Rust crates and no C toolchain.
 

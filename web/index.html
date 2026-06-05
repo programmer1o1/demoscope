@@ -2,92 +2,216 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>demoscope - in-browser</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>demoscope — in-browser demo scope</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiIgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByb2xlPSJpbWciIGFyaWEtbGFiZWw9ImRlbW9zY29wZSI+CiAgPHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iNyIgZmlsbD0iIzBlMGUxMiIvPgogIDxjaXJjbGUgY3g9IjE2IiBjeT0iMTYiIHI9IjEwLjUiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2VjZTllMiIgc3Ryb2tlLXdpZHRoPSIxLjciLz4KICA8Y2xpcFBhdGggaWQ9ImFmdiI+PGNpcmNsZSBjeD0iMTYiIGN5PSIxNiIgcj0iOS42Ii8+PC9jbGlwUGF0aD4KICA8ZyBjbGlwLXBhdGg9InVybCgjYWZ2KSI+CiAgICA8cG9seWxpbmUgcG9pbnRzPSIxMSwyMiAxMSwxMyAxOS41LDEzIiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmIwMDAiIHN0cm9rZS13aWR0aD0iMi40IiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICAgIDxwYXRoIGQ9Ik0yNCwxMyBMMTksMTAgTDIxLDEzIEwxOSwxNiBaIiBmaWxsPSIjZmZiMDAwIi8+CiAgPC9nPgo8L3N2Zz4K">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root {
-  --bg: #0d1117;
-  --panel: #161b22;
-  --border: #30363d;
-  --text: #e6edf3;
-  --muted: #8b949e;
-  --accent: #58a6ff;
-  --death: #ff4d4d;
+  --bg:#0e0e12; --bg-deep:#08080b; --panel:#15151b; --grid:#1d1d25;
+  --border:#2a2a34; --line:#20202a; --text:#ece9e2; --muted:#9a968c; --faint:#5d5a52;
+  --accent:#ffb000; --accent-dim:#b87c12; --ok:#9bd17a; --death:#ff5a52;
+  --font-display:'Bricolage Grotesque','Segoe UI',system-ui,-apple-system,sans-serif;
+  --font-mono:'IBM Plex Mono','SF Mono',ui-monospace,Menlo,monospace;
 }
-* { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
-  font-family: -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 14px; }
-#shell { display: flex; flex-direction: column; height: 100%; }
-header {
-  display: flex; align-items: center; gap: 14px;
-  padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--border);
+* { box-sizing:border-box; }
+html, body { margin:0; height:100%; }
+body {
+  background:var(--bg); color:var(--text); font-family:var(--font-display);
+  font-size:15px; line-height:1.5; overflow:hidden; -webkit-font-smoothing:antialiased;
 }
-header h1 { margin: 0; font-size: 16px; letter-spacing: 0.04em; font-weight: 700; color: var(--accent); }
-header .sub { color: var(--muted); font-size: 12px; }
-header .version { color: var(--muted); font-size: 11px; margin-left: auto; font-family: monospace; }
-main { flex: 1; display: flex; min-height: 0; }
+
+/* Quiet atmosphere — just a soft amber glow + grain */
+.bg-layer { position:fixed; inset:0; pointer-events:none; z-index:0; }
+.bg-glow {
+  background:radial-gradient(720px 520px at 50% 32%, rgba(255,176,0,0.07), transparent 70%);
+  animation:breathe 9s ease-in-out infinite;
+}
+@keyframes breathe { 0%,100%{opacity:.7} 50%{opacity:1} }
+.bg-grain {
+  opacity:.35; mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+}
+
+#shell { position:relative; z-index:1; display:flex; flex-direction:column; height:100%; }
+
+/* Slim top row */
+.topbar {
+  display:flex; align-items:center; gap:12px; padding:16px 24px; flex-shrink:0;
+  font-family:var(--font-mono); font-size:11px; letter-spacing:.04em; color:var(--faint);
+}
+.topbar .tag {
+  padding:3px 8px; border:1px solid var(--border); border-radius:100px;
+  text-transform:uppercase; letter-spacing:.18em; color:var(--muted);
+}
+.topbar .spacer { flex:1; }
+.topbar a { color:var(--muted); text-decoration:none; border-bottom:1px solid transparent; transition:.15s; }
+.topbar a:hover { color:var(--text); border-color:var(--accent); }
+.topbar .version b { color:var(--accent); font-weight:600; }
+
+/* Centered hero */
+main.hero {
+  flex:1; min-height:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:26px; padding:24px clamp(20px,5vw,40px); text-align:center;
+}
+.brand { display:flex; flex-direction:column; align-items:center; gap:16px; }
+.mark { width:60px; height:60px; }
+.wordmark {
+  font-weight:800; font-size:clamp(40px,7vw,64px); letter-spacing:-0.035em; line-height:1;
+  color:var(--text); font-optical-sizing:auto; margin:0;
+}
+.wordmark .dot { color:var(--accent); }
+.tagline { color:var(--muted); font-size:15.5px; max-width:54ch; margin:0; }
+.tagline b { color:var(--text); font-weight:600; }
+.tagline .fam { color:var(--accent-dim); font-family:var(--font-mono); font-size:13px; letter-spacing:.02em; }
+
+/* The intake — the one focal element */
 #drop {
-  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 14px; padding: 32px; cursor: pointer;
-  background: repeating-linear-gradient(45deg, var(--panel), var(--panel) 8px, #1c232b 8px, #1c232b 16px);
-  border: 2px dashed var(--border); border-radius: 12px; margin: 16px;
-  transition: border-color .15s, background .15s;
-  user-select: none;
+  position:relative; width:min(560px,92vw);
+  display:flex; flex-direction:column; align-items:center; gap:14px;
+  padding:34px 30px; cursor:pointer; user-select:none;
+  background:radial-gradient(140% 130% at 50% 0%, rgba(255,176,0,0.04), transparent 62%), var(--panel);
+  border:1px solid var(--border); border-radius:6px;
+  transition:border-color .18s, background .18s, box-shadow .18s, transform .18s;
+  box-shadow:0 30px 80px -46px rgba(0,0,0,0.85);
 }
-#drop.dragover { border-color: var(--accent); background: rgba(88, 166, 255, 0.06); }
-#drop .icon { font-size: 48px; opacity: 0.5; font-family: monospace; }
-#drop .msg { font-size: 16px; color: var(--text); text-align: center; max-width: 460px; line-height: 1.5; }
-#drop .hint { color: var(--muted); font-size: 12px; text-align: center; max-width: 520px; line-height: 1.4; }
-#drop button { padding: 8px 18px; background: var(--accent); color: #0d1117; border: 0;
-  border-radius: 6px; cursor: pointer; font-weight: 600; }
-#drop input[type=file] { display: none; }
+#drop:hover { border-color:#3a3a46; }
+#drop.dragover {
+  border-color:var(--accent);
+  background:radial-gradient(140% 130% at 50% 0%, rgba(255,176,0,0.12), transparent 66%), var(--panel);
+  box-shadow:0 0 0 1px var(--accent), 0 0 60px -12px rgba(255,176,0,0.4); transform:translateY(-1px);
+}
+#drop .tick { position:absolute; width:13px; height:13px; border:1.5px solid var(--accent); opacity:.5; transition:opacity .18s; }
+#drop.dragover .tick { opacity:1; }
+#drop .tick.tl { top:9px; left:9px; border-right:0; border-bottom:0; }
+#drop .tick.tr { top:9px; right:9px; border-left:0; border-bottom:0; }
+#drop .tick.bl { bottom:9px; left:9px; border-right:0; border-top:0; }
+#drop .tick.br { bottom:9px; right:9px; border-left:0; border-top:0; }
+#drop .msg { font-size:18px; font-weight:600; letter-spacing:-0.01em; color:var(--text); }
+#drop .msg b { color:var(--text); }
+#drop button#pick {
+  font-family:var(--font-mono); font-size:13px; font-weight:600;
+  padding:9px 20px; background:var(--accent); color:var(--bg-deep); border:0; border-radius:3px; cursor:pointer;
+  transition:filter .15s, transform .1s;
+}
+#drop button#pick:hover { filter:brightness(1.08); }
+#drop button#pick:active { transform:translateY(1px); }
+#drop .hint {
+  font-family:var(--font-mono); font-size:11px; line-height:1.7; color:var(--muted);
+  border-top:1px solid var(--line); padding-top:13px; width:100%;
+}
+#drop .hint b { color:var(--text); font-weight:500; }
+#drop .hint .kbd { background:var(--bg-deep); border:1px solid var(--border); border-radius:3px; padding:1px 6px; color:var(--text); }
+#drop input[type=file] { display:none; }
+
+.note {
+  display:flex; align-items:center; gap:9px; font-family:var(--font-mono); font-size:11px; color:var(--faint);
+}
+.note svg { width:13px; height:13px; opacity:.8; }
+.note .sep { opacity:.5; }
+
+/* Slim status console */
 #status {
-  padding: 10px 14px; background: var(--panel); border-top: 1px solid var(--border);
-  font-family: monospace; font-size: 11px; color: var(--muted);
-  white-space: pre-wrap; max-height: 180px; overflow-y: auto;
+  font-family:var(--font-mono); font-size:11.5px; line-height:1.6;
+  padding:10px 24px; background:var(--bg-deep); border-top:1px solid var(--border);
+  color:var(--muted); white-space:pre-wrap; max-height:108px; overflow-y:auto; flex-shrink:0;
+  scrollbar-width:thin; scrollbar-color:var(--border) transparent;
 }
-#status .ok { color: #7ee787; }
-#status .err { color: var(--death); }
-#viewer { flex: 1; display: none; border: 0; }
-#viewer.active { display: block; }
+#status div { padding-left:15px; position:relative; }
+#status div::before { content:"›"; position:absolute; left:0; color:var(--faint); }
+#status .ok { color:var(--ok); } #status .ok::before { content:"✓"; color:var(--ok); }
+#status .err { color:var(--death); } #status .err::before { content:"✕"; color:var(--death); }
+
+/* Viewer takeover */
+#viewer { position:fixed; inset:0; z-index:50; width:100%; height:100%; border:0; display:none; background:var(--bg); }
+#viewer.active { display:block; }
 #again {
-  position: fixed; top: 16px; right: 16px; padding: 6px 12px;
-  background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
-  color: var(--text); cursor: pointer; font-family: inherit; font-size: 12px;
-  display: none; z-index: 10;
+  position:fixed; top:16px; right:16px; z-index:60; display:none;
+  padding:8px 14px; background:var(--panel); border:1px solid var(--border); border-radius:3px;
+  color:var(--text); cursor:pointer; font-family:var(--font-mono); font-size:12px; transition:.15s;
 }
-#again.active { display: block; }
-.kbd { background: var(--bg); border: 1px solid var(--border); border-radius: 3px;
-  padding: 1px 5px; font-family: monospace; font-size: 11px; color: var(--text); }
+#again:hover { border-color:var(--accent); color:var(--accent); }
+#again.active { display:block; }
+
+/* One calm staggered reveal */
+@keyframes rise { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:none} }
+.reveal { opacity:0; animation:rise .7s cubic-bezier(.2,.7,.2,1) forwards; }
+.d1{animation-delay:.05s} .d2{animation-delay:.16s} .d3{animation-delay:.27s} .d4{animation-delay:.38s}
+@keyframes tracein { from{stroke-dashoffset:240} to{stroke-dashoffset:0} }
+.trace { stroke-dasharray:240; animation:tracein 1.3s ease-out .25s forwards; }
+@media (prefers-reduced-motion:reduce){ .reveal,.trace{animation:none;opacity:1;stroke-dashoffset:0} .bg-glow{animation:none} }
 </style>
 </head>
 <body>
+<div class="bg-layer bg-glow"></div>
+<div class="bg-layer bg-grain"></div>
+
 <div id="shell">
-  <header>
-    <h1>demoscope</h1>
-    <span class="sub">in-browser parser · drag a Source / Source 2 / GoldSrc <code>.dem</code> or Quake <code>.dem</code>/<code>.dm2</code>/<code>.dm_68</code> to begin</span>
+  <div class="topbar reveal d1">
+    <span class="tag">in-browser</span>
+    <span class="spacer"></span>
+    <a href="https://github.com/programmer1o1/demoscope" target="_blank" rel="noopener">github ↗</a>
     <span class="version" id="version-tag">loading…</span>
-  </header>
-  <main>
-    <label id="drop">
-      <div class="icon">⤓</div>
-      <div class="msg">
-        Drop a <b>.dem</b> file anywhere here, or
-        <button type="button" id="pick">browse…</button>
-      </div>
+  </div>
+
+  <main class="hero">
+    <div class="brand reveal d2">
+      <!-- Scope mark -->
+      <svg class="mark" viewBox="0 0 100 100" aria-label="demoscope">
+        <defs>
+          <clipPath id="ap"><circle cx="50" cy="50" r="39.5"/></clipPath>
+          <filter id="gl" x="-40%" y="-40%" width="180%" height="180%">
+            <feGaussianBlur stdDeviation="1.6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+        </defs>
+        <circle cx="50" cy="50" r="41" fill="none" stroke="#ece9e2" stroke-width="2.4"/>
+        <circle cx="50" cy="50" r="44.5" fill="none" stroke="#ece9e2" stroke-width="1" opacity="0.28"/>
+        <g stroke="#ece9e2" stroke-width="2" stroke-linecap="round" opacity="0.85">
+          <line x1="50" y1="1.5" x2="50" y2="6.5"/><line x1="50" y1="93.5" x2="50" y2="98.5"/>
+          <line x1="1.5" y1="50" x2="6.5" y2="50"/><line x1="93.5" y1="50" x2="98.5" y2="50"/>
+        </g>
+        <g clip-path="url(#ap)">
+          <polyline class="trace" points="34,60 50,60 50,40 62,40" fill="none" stroke="#ffb000"
+            stroke-width="3.2" stroke-linejoin="round" stroke-linecap="round" filter="url(#gl)"/>
+          <circle cx="50" cy="60" r="1.7" fill="#ffb000"/>
+          <circle cx="50" cy="40" r="1.7" fill="#ffb000"/>
+          <circle cx="34" cy="60" r="3.1" fill="#0e0e12" stroke="#ece9e2" stroke-width="1.8"/>
+          <path d="M70,40 L61,35.6 L63.3,40 L61,44.4 Z" fill="#ffb000" filter="url(#gl)"/>
+        </g>
+      </svg>
+      <h1 class="wordmark">demoscope<span class="dot">.</span></h1>
+    </div>
+
+    <p class="tagline reveal d3">
+      Read any game demo right in your browser — positions, inputs, kills and map geometry,
+      decoded into one viewer.<br><span class="fam">Source · Source 2 · GoldSrc · Quake</span>
+    </p>
+
+    <label id="drop" class="reveal d3">
+      <span class="tick tl"></span><span class="tick tr"></span><span class="tick bl"></span><span class="tick br"></span>
+      <div class="msg">Drop a <b>.dem</b> file</div>
+      <button type="button" id="pick">browse files…</button>
       <div class="hint">
-        Source 1 (TF2 / CS:S / CS:GO / HL2 / Portal / L4D / GMod), <b>Source 2 / CS2</b> (also Dota 2 / Deadlock), GoldSrc (HL1 / CS 1.6 / DoD), and Quake 1/2/3 demos are all supported.
-        Optionally also drop the matching map file to render the 3D world overlay: a <b>.bsp</b> for Source 1 / GoldSrc / Quake, or the map's <b>.vpk</b> for <b>CS2</b> (its world geometry is decoded from the pak's collision mesh). Quake 3 maps live inside a <code>.pk3</code>, so drop the extracted <code>maps/&lt;name&gt;.bsp</code>. Drop a <b>second Source <code>.dem</code></b> of the same map to overlay it as a ghost (side-by-side diff).
-        Files never leave your machine. Everything runs in this page.
-        <br><br>
-        Keyboard: <span class="kbd">Esc</span> to start over once a demo is loaded.
+        Optional: add a <b>.bsp</b> / <b>.vpk</b> for the 3D map · drop a <b>second demo</b> to diff · <span class="kbd">Esc</span> to reset.
+        <input type="file" id="file" accept=".dem,.dm2,.dm_68,.dm_67,.dm_66,.mvd,.qwd,.bsp,.vpk" multiple>
       </div>
-      <input type="file" id="file" accept=".dem,.dm2,.dm_68,.dm_67,.dm_66,.mvd,.qwd,.bsp,.vpk" multiple>
     </label>
-    <iframe id="viewer"></iframe>
-    <button id="again" type="button">← back</button>
+
+    <div class="note reveal d4">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="1.5"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+      100% local — files never leave your machine
+      <span class="sep">·</span> pure-Rust + WebAssembly
+    </div>
   </main>
+
   <div id="status"></div>
 </div>
+
+<iframe id="viewer"></iframe>
+<button id="again" type="button">← back</button>
+
 <script type="module">
 import init, { parse_demo_to_html, version } from './demoscope.js';
 
