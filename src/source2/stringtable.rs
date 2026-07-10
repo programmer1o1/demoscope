@@ -1,4 +1,4 @@
-// String tables — only what's needed for entity baselines.
+// String tables: only what's needed for entity baselines.
 //
 // Ported from dotabuff/manta `string_table.go`. We track tables by id/name and
 // parse their bit-packed entry lists. The one table that matters for positions

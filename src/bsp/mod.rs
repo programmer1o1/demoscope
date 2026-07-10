@@ -13,7 +13,7 @@ use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use base64::{engine::general_purpose::STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 
 use super::util::bytes::le_i32;
 
@@ -21,9 +21,37 @@ mod goldsrc;
 mod quake;
 mod source;
 
-pub(crate) use goldsrc::extract_goldsrc_bsp_from_bytes;
+pub(crate) use goldsrc::{
+    GoldSrcMapInfo, extract_goldsrc_bsp_from_bytes, goldsrc_alignment_offsets, goldsrc_map_info,
+};
 pub(crate) use quake::{extract_q2_bsp_from_bytes, extract_q3_bsp_from_bytes};
 pub(crate) use source::extract_bsp_from_bytes;
+
+const MAP_BUNDLE_MAGIC: &[u8; 8] = b"DMAPBSP\0";
+
+/// Decode the tiny browser-side container used when several map files are
+/// dropped together. A plain BSP/VPK is returned as one layer unchanged.
+pub(crate) fn map_layers(data: &[u8]) -> Vec<&[u8]> {
+    if data.len() < 12 || &data[..8] != MAP_BUNDLE_MAGIC {
+        return vec![data];
+    }
+    let count = u32::from_le_bytes(data[8..12].try_into().unwrap()) as usize;
+    let mut layers = Vec::with_capacity(count.min(64));
+    let mut offset = 12usize;
+    for _ in 0..count.min(64) {
+        if offset + 4 > data.len() {
+            return Vec::new();
+        }
+        let len = u32::from_le_bytes(data[offset..offset + 4].try_into().unwrap()) as usize;
+        offset += 4;
+        let Some(end) = offset.checked_add(len).filter(|end| *end <= data.len()) else {
+            return Vec::new();
+        };
+        layers.push(&data[offset..end]);
+        offset = end;
+    }
+    layers
+}
 
 pub(crate) fn find_bsp_file(dem_path: &Path, map_name: &str) -> Option<PathBuf> {
     let map_lower = map_name.to_lowercase();
@@ -53,7 +81,7 @@ pub(crate) fn find_bsp_file(dem_path: &Path, map_name: &str) -> Option<PathBuf> 
 }
 
 /// Locate a CS2 map pak (`<map>.vpk`) beside the demo (or next to the
-/// executable). CS2 maps aren't VBSP — they're VPK-packed Source 2 resources —
+/// executable). CS2 maps aren't VBSP: they're VPK-packed Source 2 resources :
 /// so the Source 2 render path resolves them through here instead of a `.bsp`.
 pub(crate) fn find_vpk_file(dem_path: &Path, map_name: &str) -> Option<PathBuf> {
     // The map name can arrive as `de_nuke` or `maps/de_nuke`; use just the stem.
@@ -115,10 +143,13 @@ fn find_spawn_in_entities(entities: &str) -> Option<[f32; 3]> {
         let mut block = String::new();
         let mut depth = 1;
         for c in chars.by_ref() {
-            if c == '{' { depth += 1; }
-            else if c == '}' {
+            if c == '{' {
+                depth += 1;
+            } else if c == '}' {
                 depth -= 1;
-                if depth == 0 { break; }
+                if depth == 0 {
+                    break;
+                }
             }
             block.push(c);
         }
@@ -134,26 +165,46 @@ fn find_spawn_in_entities(entities: &str) -> Option<[f32; 3]> {
             while i < b.len() && (b[i] == b' ' || b[i] == b'\n' || b[i] == b'\r' || b[i] == b'\t') {
                 i += 1;
             }
-            if i >= b.len() { break; }
+            if i >= b.len() {
+                break;
+            }
             // Read quoted key
-            if b[i] != b'"' { i += 1; continue; }
+            if b[i] != b'"' {
+                i += 1;
+                continue;
+            }
             i += 1;
             let key_start = i;
-            while i < b.len() && b[i] != b'"' { i += 1; }
-            let key = std::str::from_utf8(&b[key_start..i]).unwrap_or("").trim().to_string();
-            if i < b.len() { i += 1; } // skip closing quote
+            while i < b.len() && b[i] != b'"' {
+                i += 1;
+            }
+            let key = std::str::from_utf8(&b[key_start..i])
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            if i < b.len() {
+                i += 1;
+            } // skip closing quote
 
             // Skip whitespace
             while i < b.len() && (b[i] == b' ' || b[i] == b'\n' || b[i] == b'\r' || b[i] == b'\t') {
                 i += 1;
             }
             // Read quoted value
-            if i >= b.len() || b[i] != b'"' { continue; }
+            if i >= b.len() || b[i] != b'"' {
+                continue;
+            }
             i += 1;
             let val_start = i;
-            while i < b.len() && b[i] != b'"' { i += 1; }
-            let val = std::str::from_utf8(&b[val_start..i]).unwrap_or("").to_string();
-            if i < b.len() { i += 1; }
+            while i < b.len() && b[i] != b'"' {
+                i += 1;
+            }
+            let val = std::str::from_utf8(&b[val_start..i])
+                .unwrap_or("")
+                .to_string();
+            if i < b.len() {
+                i += 1;
+            }
 
             match key.as_str() {
                 "classname" => classname = val,
@@ -208,7 +259,13 @@ fn finish_bsp(
     }
     let compact_v: Vec<[f32; 3]> = used
         .iter()
-        .map(|&i| if (i as usize) < verts_xyz.len() { verts_xyz[i as usize] } else { [0.0; 3] })
+        .map(|&i| {
+            if (i as usize) < verts_xyz.len() {
+                verts_xyz[i as usize]
+            } else {
+                [0.0; 3]
+            }
+        })
         .collect();
     let compact_t: Vec<(u32, u32, u32)> = tris
         .iter()
@@ -227,7 +284,13 @@ fn finish_bsp(
         i_buf.extend_from_slice(&c.to_le_bytes());
     }
     let spawn = find_spawn_in_entities(entities).unwrap_or([0.0; 3]);
-    Some((STANDARD.encode(&v_buf), STANDARD.encode(&i_buf), compact_v.len(), compact_t.len(), spawn))
+    Some((
+        STANDARD.encode(&v_buf),
+        STANDARD.encode(&i_buf),
+        compact_v.len(),
+        compact_t.len(),
+        spawn,
+    ))
 }
 
 /// Dispatch a `.bsp` to the right decoder by magic + version. Covers Source
@@ -257,6 +320,19 @@ pub(crate) fn extract_any_bsp(data: &[u8]) -> Option<(String, String, usize, usi
 mod tests {
     use super::*;
 
+    #[test]
+    fn browser_map_bundle_preserves_each_layer() {
+        let a = b"first bsp";
+        let b = b"second bsp";
+        let mut bundle = MAP_BUNDLE_MAGIC.to_vec();
+        bundle.extend_from_slice(&2u32.to_le_bytes());
+        bundle.extend_from_slice(&(a.len() as u32).to_le_bytes());
+        bundle.extend_from_slice(a);
+        bundle.extend_from_slice(&(b.len() as u32).to_le_bytes());
+        bundle.extend_from_slice(b);
+        assert_eq!(map_layers(&bundle), vec![a.as_slice(), b.as_slice()]);
+    }
+
     // Decode a vertex buffer's X/Y/Z bounds from the base64 the extractor emits.
     fn bounds(v_b64: &str) -> ([f32; 3], [f32; 3]) {
         let buf = STANDARD.decode(v_b64).unwrap();
@@ -265,7 +341,8 @@ mod tests {
         let mut hi = [f32::MIN; 3];
         for i in 0..n {
             for k in 0..3 {
-                let c = f32::from_le_bytes(buf[i * 12 + k * 4..i * 12 + k * 4 + 4].try_into().unwrap());
+                let c =
+                    f32::from_le_bytes(buf[i * 12 + k * 4..i * 12 + k * 4 + 4].try_into().unwrap());
                 lo[k] = lo[k].min(c);
                 hi[k] = hi[k].max(c);
             }
@@ -295,19 +372,23 @@ mod tests {
             let out = extract_any_bsp(&data)
                 .unwrap_or_else(|| panic!("{label}: extract_any_bsp returned None"));
             let (vb64, _ib64, nv, nt, _spawn) = out;
-            assert!(nv > 100 && nt > 100, "{label}: too few verts/tris ({nv}/{nt})");
+            assert!(
+                nv > 100 && nt > 100,
+                "{label}: too few verts/tris ({nv}/{nt})"
+            );
             let (lo, hi) = bounds(&vb64);
             // A real map spans a meaningful, finite volume.
             for k in 0..3 {
                 let span = hi[k] - lo[k];
-                assert!(span > 50.0 && span < 100_000.0 && span.is_finite(),
-                    "{label}: axis {k} span {span} implausible");
+                assert!(
+                    span > 50.0 && span < 100_000.0 && span.is_finite(),
+                    "{label}: axis {k} span {span} implausible"
+                );
             }
-            eprintln!("{label}: {nv} verts, {nt} tris, bounds X[{:.0},{:.0}] Y[{:.0},{:.0}] Z[{:.0},{:.0}]",
-                lo[0], hi[0], lo[1], hi[1], lo[2], hi[2]);
+            eprintln!(
+                "{label}: {nv} verts, {nt} tris, bounds X[{:.0},{:.0}] Y[{:.0},{:.0}] Z[{:.0},{:.0}]",
+                lo[0], hi[0], lo[1], hi[1], lo[2], hi[2]
+            );
         }
     }
 }
-
-
-

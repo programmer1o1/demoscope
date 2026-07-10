@@ -4,11 +4,11 @@
 //
 // Pipeline: VPK directory → `maps/<map>/world_physics.vmdl_c` → its PHYS block
 // (KV3 v5) → decoded value tree → collision triangle mesh (`vphys`). The result
-// is the world *collision* hull — chosen over the render meshes because it lives
+// is the world *collision* hull: chosen over the render meshes because it lives
 // in one file as plain vertex/triangle arrays, sidestepping the meshopt codec
 // and the per-instance scene-graph aggregation the render path would require.
 
-use base64::{engine::general_purpose::STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 
 use super::kv3::Kv3;
 use super::resource::Resource;
@@ -39,5 +39,10 @@ pub fn extract_map_geometry(vpk_bytes: &[u8]) -> Option<(String, String, usize, 
     for &i in &indices {
         i_buf.extend_from_slice(&i.to_le_bytes());
     }
-    Some((STANDARD.encode(&v_buf), STANDARD.encode(&i_buf), verts.len(), indices.len() / 3))
+    Some((
+        STANDARD.encode(&v_buf),
+        STANDARD.encode(&i_buf),
+        verts.len(),
+        indices.len() / 3,
+    ))
 }

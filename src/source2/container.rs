@@ -1,7 +1,7 @@
 // PBDEMS2 outer container walk.
 //
-// After the 8-byte `PBDEMS2\0` magic come two little-endian i32s — the byte
-// offset of the trailing `CDemoFileInfo` frame and of the spawn-groups frame —
+// After the 8-byte `PBDEMS2\0` magic come two little-endian i32s: the byte
+// offset of the trailing `CDemoFileInfo` frame and of the spawn-groups frame :
 // so the fixed header is 16 bytes. The body is then a flat sequence of frames:
 //   varint(command)  varint(tick)  varint(size)  <size bytes of body>
 // The command's high bit (`DEM_IsCompressed`, value 64) means the body is
@@ -16,7 +16,7 @@
 //   DEM_Packet       (7)  -> embedded net messages incl. PacketEntities      [todo]
 //   DEM_FullPacket  (13)  -> periodic keyframe, also carries a Packet        [todo]
 //
-// Bodies are protobuf `CDemo*` messages — decoded with `crate::protobuf::Reader`.
+// Bodies are protobuf `CDemo*` messages: decoded with `crate::protobuf::Reader`.
 
 use super::super::protobuf::Reader;
 use super::snappy;
@@ -50,8 +50,7 @@ pub fn parse_meta(data: &[u8]) -> Option<Source2Meta> {
     if !super::is_source2(data) || data.len() < 16 {
         return None;
     }
-    let fileinfo_offset =
-        i32::from_le_bytes(data.get(8..12)?.try_into().ok()?) as usize;
+    let fileinfo_offset = i32::from_le_bytes(data.get(8..12)?.try_into().ok()?) as usize;
 
     let mut meta = Source2Meta::default();
 
@@ -84,7 +83,11 @@ fn read_frame_at(data: &[u8], offset: usize) -> Option<(u32, Vec<u8>)> {
     let raw = r.read_bytes(size).ok()?;
     let compressed = cmd & DEM_IS_COMPRESSED != 0;
     let kind = cmd & !DEM_IS_COMPRESSED;
-    let body = if compressed { snappy::decompress(raw)? } else { raw.to_vec() };
+    let body = if compressed {
+        snappy::decompress(raw)?
+    } else {
+        raw.to_vec()
+    };
     Some((kind, body))
 }
 
@@ -99,7 +102,10 @@ fn decode_file_header(body: &[u8], meta: &mut Source2Meta) {
             4 => meta.client_name = f.value.as_str().map(|s| s.into_owned()).unwrap_or_default(),
             5 => meta.map_name = f.value.as_str().map(|s| s.into_owned()).unwrap_or_default(),
             6 => meta.game_directory = f.value.as_str().map(|s| s.into_owned()).unwrap_or_default(),
-            11 => meta.demo_version_name = f.value.as_str().map(|s| s.into_owned()).unwrap_or_default(),
+            11 => {
+                meta.demo_version_name =
+                    f.value.as_str().map(|s| s.into_owned()).unwrap_or_default()
+            }
             13 => meta.build_num = f.value.as_i32().unwrap_or(0),
             _ => {}
         }
@@ -120,12 +126,12 @@ fn decode_file_info(body: &[u8], meta: &mut Source2Meta) {
 }
 
 // ---------------------------------------------------------------------------
-// Entity-decode walk (positions) — not yet implemented. These are the frames
+// Entity-decode walk (positions), not yet implemented. These are the frames
 // that feed serializer/fieldpath/entities once those stages land.
 // ---------------------------------------------------------------------------
 
 /// Walk every frame, dispatching DEM_SendTables/ClassInfo/StringTables/Packet
-/// to the entity pipeline. Currently a stub — `parse_meta` covers the
+/// to the entity pipeline. Currently a stub: `parse_meta` covers the
 /// metadata-only path that the HTML viewer uses today.
 pub fn walk(_data: &[u8]) {
     todo!("PBDEMS2 entity-decode frame walk")

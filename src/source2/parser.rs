@@ -1,4 +1,4 @@
-// Source 2 positions parser — ties the stages together.
+// Source 2 positions parser: ties the stages together.
 //
 // Walks the PBDEMS2 frames, dispatches the handful of messages needed for
 // player tracks (FlattenedSerializer, ClassInfo, string tables, PacketEntities),
@@ -7,13 +7,13 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use super::bitreader::BitReader;
-use super::entities::{get_by_name, read_fields, Entity, FieldState};
-use super::serializer::{parse_flattened, Class, Tables};
-use super::snappy;
-use super::stringtable::{maybe_decompress, parse_entries, StringTable};
 use super::super::protobuf::Reader;
 use super::super::source::events::{EventField, EventValue, GameEvent};
+use super::bitreader::BitReader;
+use super::entities::{Entity, FieldState, get_by_name, read_fields};
+use super::serializer::{Class, Tables, parse_flattened};
+use super::snappy;
+use super::stringtable::{StringTable, maybe_decompress, parse_entries};
 
 // EDemoCommands
 const DEM_SEND_TABLES: u32 = 4;
@@ -35,15 +35,44 @@ const GE_GAME_EVENT: i32 = 207; // CMsgSource1LegacyGameEvent (an instance)
 /// Gameplay-significant events we keep (the stream also carries high-spam events
 /// like weapon_fire / player_footstep that would bloat the timeline).
 const KEEP_EVENTS: &[&str] = &[
-    "player_death", "player_hurt", "player_blind", "player_spawn", "player_team",
-    "player_connect", "player_connect_full", "player_disconnect",
-    "bomb_planted", "bomb_defused", "bomb_exploded", "bomb_beginplant", "bomb_begindefuse",
-    "bomb_dropped", "bomb_pickup", "bomb_abortplant", "bomb_abortdefuse",
-    "round_start", "round_end", "round_mvp", "round_freeze_end", "round_officially_ended",
-    "round_prestart", "round_poststart", "round_announce_match_start", "cs_win_panel_round",
-    "hostage_rescued", "hostage_killed", "hostage_hurt", "hostage_follows",
-    "smokegrenade_detonate", "flashbang_detonate", "hegrenade_detonate", "molotov_detonate",
-    "inferno_startburn", "decoy_started", "item_pickup", "weapon_zoom",
+    "player_death",
+    "player_hurt",
+    "player_blind",
+    "player_spawn",
+    "player_team",
+    "player_connect",
+    "player_connect_full",
+    "player_disconnect",
+    "bomb_planted",
+    "bomb_defused",
+    "bomb_exploded",
+    "bomb_beginplant",
+    "bomb_begindefuse",
+    "bomb_dropped",
+    "bomb_pickup",
+    "bomb_abortplant",
+    "bomb_abortdefuse",
+    "round_start",
+    "round_end",
+    "round_mvp",
+    "round_freeze_end",
+    "round_officially_ended",
+    "round_prestart",
+    "round_poststart",
+    "round_announce_match_start",
+    "cs_win_panel_round",
+    "hostage_rescued",
+    "hostage_killed",
+    "hostage_hurt",
+    "hostage_follows",
+    "smokegrenade_detonate",
+    "flashbang_detonate",
+    "hegrenade_detonate",
+    "molotov_detonate",
+    "inferno_startburn",
+    "decoy_started",
+    "item_pickup",
+    "weapon_zoom",
 ];
 
 const MAX_COORD: f32 = 16384.0;
@@ -59,16 +88,16 @@ fn cell_coord(cell: u64, offset: f32, cell_width: f32) -> f32 {
 #[allow(private_interfaces)] // GameEvent is a crate-internal type (source::events)
 pub struct Source2Tracks {
     pub tracks: BTreeMap<i32, Vec<(i32, f32, f32, f32)>>, // pawn idx -> (tick,x,y,z)
-    pub yaws: BTreeMap<i32, Vec<(i32, f32, f32)>>,         // pawn idx -> (tick,yaw,pitch)
-    pub names: BTreeMap<i32, String>,                      // pawn idx -> player name
-    pub life_states: BTreeMap<i32, Vec<(i32, u8)>>,        // pawn idx -> (tick, m_lifeState) transitions
-    pub weapons: BTreeMap<i32, Vec<(i32, i32)>>,           // pawn idx -> (tick, weapon class_id) on change
-    pub weapon_names: HashMap<i32, String>,               // weapon class_id -> short display name
-    pub buttons: BTreeMap<i32, Vec<(i32, u32)>>,          // pawn idx -> (tick, normalized button mask) on change
-    pub rounds: Vec<(i32, i32)>,                           // (tick, total rounds played) transitions
-    pub events: Vec<GameEvent>,                            // decoded gameplay events (kills, bomb, rounds…)
-    pub econ: BTreeMap<i32, PlayerEcon>,                   // controller idx -> latest economy/score
-    pub econ_by_pawn: BTreeMap<i32, PlayerEcon>,           // pawn idx -> economy (for the track sidebar)
+    pub yaws: BTreeMap<i32, Vec<(i32, f32, f32)>>,        // pawn idx -> (tick,yaw,pitch)
+    pub names: BTreeMap<i32, String>,                     // pawn idx -> player name
+    pub life_states: BTreeMap<i32, Vec<(i32, u8)>>, // pawn idx -> (tick, m_lifeState) transitions
+    pub weapons: BTreeMap<i32, Vec<(i32, i32)>>,    // pawn idx -> (tick, weapon class_id) on change
+    pub weapon_names: HashMap<i32, String>,         // weapon class_id -> short display name
+    pub buttons: BTreeMap<i32, Vec<(i32, u32)>>, // pawn idx -> (tick, normalized button mask) on change
+    pub rounds: Vec<(i32, i32)>,                 // (tick, total rounds played) transitions
+    pub events: Vec<GameEvent>,                  // decoded gameplay events (kills, bomb, rounds…)
+    pub econ: BTreeMap<i32, PlayerEcon>,         // controller idx -> latest economy/score
+    pub econ_by_pawn: BTreeMap<i32, PlayerEcon>, // pawn idx -> economy (for the track sidebar)
     pub map_name: String,
     pub pe_ok: usize,
     pub pe_fail: usize,
@@ -206,7 +235,7 @@ impl Parser {
     /// CDemoStringTables (periodic full snapshot of the string tables, and the
     /// `string_table` half of a FullPacket). This is where CS2 actually delivers
     /// `instancebaseline` (per-class entity baselines) and `userinfo` (player
-    /// names) — the in-packet Create/Update messages are empty.
+    /// names): the in-packet Create/Update messages are empty.
     fn on_demo_string_tables(&mut self, body: &[u8]) {
         let mut r = Reader::new(body);
         while let Ok(Some(f)) = r.next_field() {
@@ -233,8 +262,16 @@ impl Parser {
                         let mut ir = Reader::new(ib);
                         while let Ok(Some(ff)) = ir.next_field() {
                             match ff.number {
-                                1 => s = ff.value.as_str().map(|x| x.into_owned()).unwrap_or_default(),
-                                2 => d = ff.value.as_bytes().map(|x| x.to_vec()).unwrap_or_default(),
+                                1 => {
+                                    s = ff
+                                        .value
+                                        .as_str()
+                                        .map(|x| x.into_owned())
+                                        .unwrap_or_default()
+                                }
+                                2 => {
+                                    d = ff.value.as_bytes().map(|x| x.to_vec()).unwrap_or_default()
+                                }
                                 _ => {}
                             }
                         }
@@ -315,7 +352,11 @@ impl Parser {
                     let ser_idx = tables.by_name.get(&network_name).copied();
                     tables.classes_by_id.insert(
                         class_id,
-                        Class { class_id, name: network_name, serializer_idx: ser_idx },
+                        Class {
+                            class_id,
+                            name: network_name,
+                            serializer_idx: ser_idx,
+                        },
                     );
                     count += 1;
                 }
@@ -391,7 +432,7 @@ impl Parser {
         }
     }
 
-    /// CMsgSource1LegacyGameEventList — descriptors mapping eventid -> name + the
+    /// CMsgSource1LegacyGameEventList: descriptors mapping eventid -> name + the
     /// ordered key names. Game events themselves carry only values, in this order.
     fn on_game_event_list(&mut self, body: &[u8]) {
         let mut r = Reader::new(body);
@@ -405,7 +446,13 @@ impl Parser {
                     while let Ok(Some(ff)) = dr.next_field() {
                         match ff.number {
                             1 => eventid = ff.value.as_i32().unwrap_or(0),
-                            2 => name = ff.value.as_str().map(|s| s.into_owned()).unwrap_or_default(),
+                            2 => {
+                                name = ff
+                                    .value
+                                    .as_str()
+                                    .map(|s| s.into_owned())
+                                    .unwrap_or_default()
+                            }
                             3 => {
                                 // key_t { type=1, name=2 }
                                 if let Some(kb) = ff.value.as_bytes() {
@@ -413,7 +460,11 @@ impl Parser {
                                     let mut kn = String::new();
                                     while let Ok(Some(kf)) = kr.next_field() {
                                         if kf.number == 2 {
-                                            kn = kf.value.as_str().map(|s| s.into_owned()).unwrap_or_default();
+                                            kn = kf
+                                                .value
+                                                .as_str()
+                                                .map(|s| s.into_owned())
+                                                .unwrap_or_default();
                                         }
                                     }
                                     keys.push(kn);
@@ -428,7 +479,7 @@ impl Parser {
         }
     }
 
-    /// CMsgSource1LegacyGameEvent — one event; values are zipped against the
+    /// CMsgSource1LegacyGameEvent: one event; values are zipped against the
     /// descriptor's key names. Kept only if gameplay-significant (KEEP_EVENTS).
     fn on_game_event(&mut self, body: &[u8]) {
         let mut eventid = 0i32;
@@ -469,7 +520,8 @@ impl Parser {
         // ENTITY_NAMES / ENTITY_TRACKS are keyed by. An invalid handle (world /
         // suicide / no assister) maps to 0 so the viewer treats it as no attacker.
         for base in ["userid", "attacker", "assister"] {
-            let pawn_handle = fields.iter()
+            let pawn_handle = fields
+                .iter()
                 .find(|f| f.name == format!("{}_pawn", base))
                 .and_then(|f| match &f.value {
                     EventValue::Int(v) => Some(*v as u32),
@@ -484,11 +536,18 @@ impl Parser {
                 // resolve to nobody unless we add the field from the handle.
                 match fields.iter_mut().find(|f| f.name == base) {
                     Some(f) => f.value = EventValue::Int(resolved),
-                    None => fields.push(EventField { name: base.to_string(), value: EventValue::Int(resolved) }),
+                    None => fields.push(EventField {
+                        name: base.to_string(),
+                        value: EventValue::Int(resolved),
+                    }),
                 }
             }
         }
-        self.out.events.push(GameEvent { event: name, tick: self.tick, fields });
+        self.out.events.push(GameEvent {
+            event: name,
+            tick: self.tick,
+            fields,
+        });
     }
 
     fn on_server_info(&mut self, body: &[u8]) {
@@ -543,7 +602,14 @@ impl Parser {
             Some(b) => b,
             None => return,
         };
-        let items = parse_entries(&buf, num_entries, user_data_fixed, user_data_size_bits, flags, varint_bitcounts);
+        let items = parse_entries(
+            &buf,
+            num_entries,
+            user_data_fixed,
+            user_data_size_bits,
+            flags,
+            varint_bitcounts,
+        );
 
         let idx = self.string_tables.len();
         let mut table = StringTable {
@@ -579,13 +645,22 @@ impl Parser {
         }
         let idx = table_id as usize;
         let (fixed, bits, flags, varint, name) = match self.string_tables.get(idx) {
-            Some(t) => (t.user_data_fixed_size, t.user_data_size_bits, t.flags, t.varint_bitcounts, t.name.clone()),
+            Some(t) => (
+                t.user_data_fixed_size,
+                t.user_data_size_bits,
+                t.flags,
+                t.varint_bitcounts,
+                t.name.clone(),
+            ),
             None => return,
         };
         let items = parse_entries(&string_data, num_changed, fixed, bits, flags, varint);
         if let Some(t) = self.string_tables.get_mut(idx) {
             for it in items {
-                let entry = t.items.entry(it.index).or_insert_with(|| (String::new(), Vec::new()));
+                let entry = t
+                    .items
+                    .entry(it.index)
+                    .or_insert_with(|| (String::new(), Vec::new()));
                 if !it.key.is_empty() {
                     entry.0 = it.key;
                 }
@@ -651,9 +726,16 @@ impl Parser {
                     let serial = br.read_bits(17) as i32;
                     let _ = br.read_var_u32();
 
-                    let ser_idx = match tables.classes_by_id.get(&class_id).and_then(|c| c.serializer_idx) {
+                    let ser_idx = match tables
+                        .classes_by_id
+                        .get(&class_id)
+                        .and_then(|c| c.serializer_idx)
+                    {
                         Some(s) => s,
-                        None => { ok = false; break; }
+                        None => {
+                            ok = false;
+                            break;
+                        }
                     };
                     let mut state = FieldState::new();
                     if let Some(baseline) = self.class_baselines.get(&class_id) {
@@ -664,14 +746,17 @@ impl Parser {
                         ok = false;
                         break;
                     }
-                    self.entities.insert(index, Entity {
+                    self.entities.insert(
                         index,
-                        serial,
-                        class_id,
-                        serializer_idx: ser_idx,
-                        state,
-                        active: true,
-                    });
+                        Entity {
+                            index,
+                            serial,
+                            class_id,
+                            serializer_idx: ser_idx,
+                            state,
+                            active: true,
+                        },
+                    );
                 } else {
                     // update
                     if has_pvs_vis_bits != 0 {
@@ -682,7 +767,10 @@ impl Parser {
                     }
                     let ser_idx = match self.entities.get(&index) {
                         Some(e) => e.serializer_idx,
-                        None => { ok = false; break; }
+                        None => {
+                            ok = false;
+                            break;
+                        }
                     };
                     let mut state = std::mem::replace(
                         &mut self.entities.get_mut(&index).unwrap().state,
@@ -712,7 +800,7 @@ impl Parser {
         // break already holds correct this-tick state. Player pawns/heroes are
         // low-index and decode before the high-index transient entity that
         // occasionally can't be resolved (an un-created entity referenced by a
-        // delta — a PVS/baseline edge case), so this recovers their positions for
+        // delta: a PVS/baseline edge case), so this recovers their positions for
         // the ~5% of ticks that would otherwise be dropped. A read-fields desync
         // only corrupts the single failing (non-player) entity, never the players
         // already updated earlier in the loop.
@@ -746,12 +834,17 @@ impl Parser {
             if is_avatar {
                 // Cell width is a per-serializer constant; derive once (high/2).
                 let cw = *self.cell_width.entry(e.serializer_idx).or_insert_with(|| {
-                    tables.field_high(e.serializer_idx, "CBodyComponent.m_vecX")
+                    tables
+                        .field_high(e.serializer_idx, "CBodyComponent.m_vecX")
                         .map(|h| h / 2.0)
                         .unwrap_or(DEFAULT_CELL_WIDTH)
                 });
                 if let Some(pos) = pawn_world_pos(tables, e, cw) {
-                    self.out.tracks.entry(idx).or_default().push((tick, pos[0], pos[1], pos[2]));
+                    self.out
+                        .tracks
+                        .entry(idx)
+                        .or_default()
+                        .push((tick, pos[0], pos[1], pos[2]));
                     // Eye angles for remote players; fall back to the client camera
                     // angles for the local (recording) player, whose eye angles the
                     // server doesn't echo back to them (so they'd otherwise have none).
@@ -759,20 +852,30 @@ impl Parser {
                         .or_else(|| get_by_name(tables, e, "m_angClientCamera"))
                         .and_then(|v| v.as_vec3())
                     {
-                        self.out.yaws.entry(idx).or_default().push((tick, ang[1], ang[0]));
+                        self.out
+                            .yaws
+                            .entry(idx)
+                            .or_default()
+                            .push((tick, ang[1], ang[0]));
                     }
                 }
                 // Fallback name link: a stale pawn keeps its own m_hController.
                 if let Some(h) = get_by_name(tables, e, "m_hController").and_then(|v| v.as_u64()) {
                     let c = (h & 0x3FFF) as i32;
-                    if c != 0 { self.pawn_ctrl_self.insert(idx, c); }
+                    if c != 0 {
+                        self.pawn_ctrl_self.insert(idx, c);
+                    }
                 }
                 // Death tracking: record m_lifeState transitions (0=alive, 2=dead).
                 if let Some(ls) = get_by_name(tables, e, "m_lifeState").and_then(|v| v.as_u64()) {
                     let ls = ls as u8;
                     if self.last_life.get(&idx) != Some(&ls) {
                         self.last_life.insert(idx, ls);
-                        self.out.life_states.entry(idx).or_default().push((tick, ls));
+                        self.out
+                            .life_states
+                            .entry(idx)
+                            .or_default()
+                            .push((tick, ls));
                     }
                 }
                 // Active-weapon tracking. m_pWeaponServices.m_hActiveWeapon is a
@@ -780,12 +883,12 @@ impl Parser {
                 // entity, whose network class is the weapon's identity. We key the
                 // stream on the weapon's class_id (stable for the whole demo,
                 // distinct per weapon) rather than the recycled entity index, and
-                // emit only on change — matching the Source 1 weapon stream the
+                // emit only on change: matching the Source 1 weapon stream the
                 // viewer already renders.
                 //
                 // This resolves for CS2 (CCSPlayerPawn). Deadlock's CCitadelPlayerPawn
-                // and Dota's hero units have no held weapon — they network an ability
-                // system (m_vecAbilities / m_hSelectedAbility) instead — so the lookup
+                // and Dota's hero units have no held weapon: they network an ability
+                // system (m_vecAbilities / m_hSelectedAbility) instead, so the lookup
                 // simply finds nothing there, by design. The bare m_hActiveWeapon
                 // fallback covers any other Source 2 pawn that networks it directly.
                 if let Some(h) = get_by_name(tables, e, "m_pWeaponServices.m_hActiveWeapon")
@@ -804,7 +907,11 @@ impl Parser {
                             self.last_weapon.insert(idx, cid);
                             self.out.weapons.entry(idx).or_default().push((tick, cid));
                             self.out.weapon_names.entry(cid).or_insert_with(|| {
-                                let cn = tables.classes_by_id.get(&cid).map(|c| c.name.as_str()).unwrap_or("");
+                                let cn = tables
+                                    .classes_by_id
+                                    .get(&cid)
+                                    .map(|c| c.name.as_str())
+                                    .unwrap_or("");
                                 weapon_display_name(cn)
                             });
                         }
@@ -813,7 +920,7 @@ impl Parser {
 
                 // Real input state. CS2 has no usercmd stream in the demo, but the
                 // pawn's movement services networks the held-button mask
-                // (m_nButtonDownMaskPrev) plus explicit jump/duck booleans — so we
+                // (m_nButtonDownMaskPrev) plus explicit jump/duck booleans, so we
                 // can surface ACTUAL W/A/S/D/attack/jump/duck, not motion guesses.
                 //
                 // CS2's directional + attack bits sit at the same positions as the
@@ -823,10 +930,11 @@ impl Parser {
                 // viewer's existing mask layout. Jump/duck are NOT reliable in the
                 // mask on CS2 (those bits barely toggled in testing), so we take
                 // them from the dedicated booleans the movement services expose.
-                if let Some(raw) = get_by_name(tables, e, "m_pMovementServices.m_nButtonDownMaskPrev")
-                    .and_then(|v| v.as_u64())
+                if let Some(raw) =
+                    get_by_name(tables, e, "m_pMovementServices.m_nButtonDownMaskPrev")
+                        .and_then(|v| v.as_u64())
                 {
-                    // CS2's mask uses the classic engine IN_ bit layout — verified
+                    // CS2's mask uses the classic engine IN_ bit layout: verified
                     // two ways: directional bits by velocity correlation (bit3
                     // forward, bit4 back, 512/1024 strafes), and jump/duck by
                     // matching the mask bits against the movement services'
@@ -842,33 +950,56 @@ impl Parser {
                 }
             }
             if class_name.contains("PlayerController") {
-                if let Some(name) = get_by_name(tables, e, "m_iszPlayerName").and_then(|v| v.as_str().map(|s| s.to_string())) {
+                if let Some(name) = get_by_name(tables, e, "m_iszPlayerName")
+                    .and_then(|v| v.as_str().map(|s| s.to_string()))
+                {
                     if !name.is_empty() {
                         self.controller_names.insert(idx, name);
                     }
                 }
                 // Economy + scoreboard snapshot (latest wins).
-                let geti = |n: &str| get_by_name(tables, e, n).and_then(|v| v.as_u64()).map(|x| x as i32);
+                let geti = |n: &str| {
+                    get_by_name(tables, e, n)
+                        .and_then(|v| v.as_u64())
+                        .map(|x| x as i32)
+                };
                 let econ = self.out.econ.entry(idx).or_default();
-                if let Some(m) = geti("m_pInGameMoneyServices.m_iAccount") { econ.money = m; }
-                if let Some(k) = geti("m_pActionTrackingServices.m_iKills") { econ.kills = k; }
-                if let Some(d) = geti("m_pActionTrackingServices.m_iDeaths") { econ.deaths = d; }
-                if let Some(a) = geti("m_pActionTrackingServices.m_iAssists") { econ.assists = a; }
-                if let Some(s) = geti("m_iScore") { econ.score = s; }
-                if let Some(t) = geti("m_iTeamNum") { econ.team = t; }
+                if let Some(m) = geti("m_pInGameMoneyServices.m_iAccount") {
+                    econ.money = m;
+                }
+                if let Some(k) = geti("m_pActionTrackingServices.m_iKills") {
+                    econ.kills = k;
+                }
+                if let Some(d) = geti("m_pActionTrackingServices.m_iDeaths") {
+                    econ.deaths = d;
+                }
+                if let Some(a) = geti("m_pActionTrackingServices.m_iAssists") {
+                    econ.assists = a;
+                }
+                if let Some(s) = geti("m_iScore") {
+                    econ.score = s;
+                }
+                if let Some(t) = geti("m_iTeamNum") {
+                    econ.team = t;
+                }
                 // Primary name link: controller's current pawn.
                 if let Some(h) = get_by_name(tables, e, "m_hPlayerPawn")
                     .or_else(|| get_by_name(tables, e, "m_hPawn"))
                     .and_then(|v| v.as_u64())
                 {
                     let p = (h & 0x3FFF) as i32;
-                    if p != 0 { self.pawn_ctrl_via_pawn.insert(p, idx); }
+                    if p != 0 {
+                        self.pawn_ctrl_via_pawn.insert(p, idx);
+                    }
                 }
                 // Dota: the controller's assigned hero is the unit we actually
                 // position-track. Handle low 14 bits = entity index; 0x3FFF = null.
-                if let Some(h) = get_by_name(tables, e, "m_hAssignedHero").and_then(|v| v.as_u64()) {
+                if let Some(h) = get_by_name(tables, e, "m_hAssignedHero").and_then(|v| v.as_u64())
+                {
                     let hero = (h & 0x3FFF) as i32;
-                    if hero != 0 && hero != 0x3FFF { self.hero_ctrl.insert(hero, idx); }
+                    if hero != 0 && hero != 0x3FFF {
+                        self.hero_ctrl.insert(hero, idx);
+                    }
                 }
             } else if class_name.contains("GameRulesProxy") {
                 // Round tracking: m_totalRoundsPlayed lives on the embedded rules.
@@ -903,20 +1034,30 @@ impl Parser {
             if ev.event != "inferno_startburn" {
                 continue;
             }
-            let entityid = ev.fields.iter()
+            let entityid = ev
+                .fields
+                .iter()
                 .find(|f| f.name == "entityid")
-                .and_then(|f| match &f.value { EventValue::Int(n) => Some(*n), _ => None });
+                .and_then(|f| match &f.value {
+                    EventValue::Int(n) => Some(*n),
+                    _ => None,
+                });
             if let Some(owner) = entityid.and_then(|id| self.inferno_owners.get(&id).copied()) {
                 match ev.fields.iter_mut().find(|f| f.name == "userid") {
                     Some(f) => f.value = EventValue::Int(owner),
-                    None => ev.fields.push(EventField { name: "userid".to_string(), value: EventValue::Int(owner) }),
+                    None => ev.fields.push(EventField {
+                        name: "userid".to_string(),
+                        value: EventValue::Int(owner),
+                    }),
                 }
             }
         }
         // Resolve each tracked pawn's name: prefer the controller's current-pawn
         // link, fall back to the pawn's own m_hController for stale pawns.
         for &pawn in self.out.tracks.keys() {
-            let ctrl = self.pawn_ctrl_via_pawn.get(&pawn)
+            let ctrl = self
+                .pawn_ctrl_via_pawn
+                .get(&pawn)
                 .or_else(|| self.pawn_ctrl_self.get(&pawn))
                 .or_else(|| self.hero_ctrl.get(&pawn));
             if let Some(name) = ctrl.and_then(|c| self.controller_names.get(c)) {
@@ -932,7 +1073,9 @@ impl Parser {
         self.out.econ.retain(|_, e| !e.name.is_empty());
         // Map each tracked pawn to its controller's economy snapshot.
         for &pawn in self.out.tracks.keys() {
-            let ctrl = self.pawn_ctrl_via_pawn.get(&pawn)
+            let ctrl = self
+                .pawn_ctrl_via_pawn
+                .get(&pawn)
                 .or_else(|| self.pawn_ctrl_self.get(&pawn))
                 .or_else(|| self.hero_ctrl.get(&pawn));
             if let Some(econ) = ctrl.and_then(|c| self.out.econ.get(c)) {
@@ -954,9 +1097,16 @@ fn weapon_display_name(class: &str) -> String {
         return String::new();
     }
     let s = class.strip_prefix('C').unwrap_or(class);
-    let s = s.strip_prefix("Weapon").or_else(|| s.strip_prefix("Citadel")).unwrap_or(s);
+    let s = s
+        .strip_prefix("Weapon")
+        .or_else(|| s.strip_prefix("Citadel"))
+        .unwrap_or(s);
     let s = s.trim_start_matches('_');
-    if s.is_empty() { class.to_lowercase() } else { s.to_lowercase() }
+    if s.is_empty() {
+        class.to_lowercase()
+    } else {
+        s.to_lowercase()
+    }
 }
 
 fn pawn_world_pos(tables: &Tables, e: &Entity, cell_width: f32) -> Option<[f32; 3]> {
@@ -966,7 +1116,11 @@ fn pawn_world_pos(tables: &Tables, e: &Entity, cell_width: f32) -> Option<[f32; 
     let vx = get_by_name(tables, e, "CBodyComponent.m_vecX")?.as_f32()?;
     let vy = get_by_name(tables, e, "CBodyComponent.m_vecY")?.as_f32()?;
     let vz = get_by_name(tables, e, "CBodyComponent.m_vecZ")?.as_f32()?;
-    Some([cell_coord(cx, vx, cell_width), cell_coord(cy, vy, cell_width), cell_coord(cz, vz, cell_width)])
+    Some([
+        cell_coord(cx, vx, cell_width),
+        cell_coord(cy, vy, cell_width),
+        cell_coord(cz, vz, cell_width),
+    ])
 }
 
 fn msg_priority(t: i32) -> i32 {

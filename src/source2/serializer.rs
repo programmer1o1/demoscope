@@ -8,10 +8,10 @@
 
 use std::collections::HashMap;
 
+use super::super::protobuf::{Reader, Value};
 use super::bitreader::BitReader;
 use super::fieldpath::FieldPath;
 use super::quantizedfloat::QuantizedFloatDecoder;
-use super::super::protobuf::{Reader, Value};
 
 /// A decoded networked value. Only the variants used for tracks carry meaning;
 /// the rest exist so the stream stays in sync as every field is read.
@@ -84,9 +84,9 @@ pub enum Decoder {
     Vector(usize, Box<Decoder>),
     VectorNormal,
     QanglePitchYaw(u32), // encoder "qangle_pitch_yaw": pitch + yaw only (2 × n bits), roll = 0
-    Qangle3(u32),   // 3 × n-bit quantized angle (or noscale when n == 32)
-    QangleVar,      // bool x/y/z then read_coord each
-    QanglePres,     // bool x/y/z then 20-bit coord each
+    Qangle3(u32),        // 3 × n-bit quantized angle (or noscale when n == 32)
+    QangleVar,           // bool x/y/z then read_coord each
+    QanglePres,          // bool x/y/z then 20-bit coord each
 }
 
 /// One component of a fixed-bit-count QAngle. 32 bits is a raw noscale float;
@@ -193,12 +193,21 @@ fn parse_field_type(name: &str) -> FieldType {
             count = match inner {
                 "MAX_ITEM_STOCKS" => 8,
                 "MAX_ABILITY_DRAFT_ABILITIES" => 48,
-                _ => inner.parse::<i32>().ok().filter(|n| *n > 0).unwrap_or(if inner.is_empty() { 0 } else { 1024 }),
+                _ => inner
+                    .parse::<i32>()
+                    .ok()
+                    .filter(|n| *n > 0)
+                    .unwrap_or(if inner.is_empty() { 0 } else { 1024 }),
             };
         }
     }
 
-    FieldType { base_type, generic, pointer, count }
+    FieldType {
+        base_type,
+        generic,
+        pointer,
+        count,
+    }
 }
 
 /// Resolved field shape (mirrors demoparser's Field enum). Array/Vector wrap an
@@ -252,7 +261,10 @@ pub struct Tables {
 fn is_pointer_type(base: &str) -> bool {
     matches!(
         base,
-        "CBodyComponent" | "CLightComponent" | "CPhysicsComponent" | "CRenderComponent"
+        "CBodyComponent"
+            | "CLightComponent"
+            | "CPhysicsComponent"
+            | "CRenderComponent"
             | "CPlayerLocalData"
     )
 }
@@ -269,9 +281,12 @@ fn float_decoder(f: &Field) -> Decoder {
         _ => {}
     }
     match f.bit_count {
-        Some(b) if b > 0 && b < 32 => {
-            Decoder::Quantized(QuantizedFloatDecoder::new(f.bit_count, f.encode_flags, f.low, f.high))
-        }
+        Some(b) if b > 0 && b < 32 => Decoder::Quantized(QuantizedFloatDecoder::new(
+            f.bit_count,
+            f.encode_flags,
+            f.low,
+            f.high,
+        )),
         _ => Decoder::Noscale,
     }
 }
@@ -288,14 +303,18 @@ fn vector_decoder(f: &Field, n: usize) -> Decoder {
 }
 
 fn uint_decoder(f: &Field) -> Decoder {
-    if f.encoder == "fixed64" { Decoder::Fixed64 } else { Decoder::Unsigned64 }
+    if f.encoder == "fixed64" {
+        Decoder::Fixed64
+    } else {
+        Decoder::Unsigned64
+    }
 }
 
 fn qangle_decoder(f: &Field) -> Decoder {
     // Drive purely off bit_count/encoder, matching manta/demoparser. (The old
     // by-name `m_angEyeAngles => QanglePitchYaw` case forced a 96-bit read; it
-    // never fired for CS2 — whose eye angles use `qangle_precise`, overridden
-    // below — but desynced Deadlock, where they use `qangle` with bit_count=11.)
+    // never fired for CS2: whose eye angles use `qangle_precise`, overridden
+    // below, but desynced Deadlock, where they use `qangle` with bit_count=11.)
     let bits = f.bit_count.unwrap_or(0);
     if f.encoder == "qangle_pitch_yaw" {
         // pitch + yaw only (roll = 0); 2 × bit_count bits, not 3.
@@ -363,18 +382,45 @@ fn base_type_decoder(base: &str) -> Option<Decoder> {
         "char" | "CUtlString" | "CUtlSymbolLarge" | "CGlobalSymbol" => Decoder::String,
         "CUtlBinaryBlock" => Decoder::BinaryBlock,
         "int8" | "int16" | "int32" | "int64" => Decoder::Signed,
-        "uint8" | "uint16" | "uint32" | "color32" | "Color" | "CGameSceneNodeHandle"
+        "uint8"
+        | "uint16"
+        | "uint32"
+        | "color32"
+        | "Color"
+        | "CGameSceneNodeHandle"
         | "CUtlStringToken" => Decoder::Unsigned,
         "GameTime_t" | "Quaternion" | "CTransform" => Decoder::Noscale,
         "CBodyComponent" | "CPhysicsComponent" | "CRenderComponent" => Decoder::Component,
-        "HSequence" | "AttachmentHandle_t" | "CEntityIndex" | "MoveCollide_t" | "MoveType_t"
-        | "RenderMode_t" | "RenderFx_t" | "SolidType_t" | "SurroundingBoundsType_t"
-        | "ModelConfigHandle_t" | "NPC_STATE" | "StanceType_t" | "AbilityPathType_t"
-        | "WeaponState_t" | "DoorState_t" | "RagdollBlendDirection" | "BeamType_t"
-        | "BeamClipStyle_t" | "EntityDisolveType_t" | "tablet_skin_state_t" | "CStrongHandle"
-        | "CSWeaponMode" | "ESurvivalSpawnTileState" | "SpawnStage_t"
-        | "ESurvivalGameRuleDecision_t" | "RelativeDamagedDirection_t" | "CSPlayerState"
-        | "MedalRank_t" | "CSPlayerBlockingUseAction_t" | "MoveMountingAmount_t"
+        "HSequence"
+        | "AttachmentHandle_t"
+        | "CEntityIndex"
+        | "MoveCollide_t"
+        | "MoveType_t"
+        | "RenderMode_t"
+        | "RenderFx_t"
+        | "SolidType_t"
+        | "SurroundingBoundsType_t"
+        | "ModelConfigHandle_t"
+        | "NPC_STATE"
+        | "StanceType_t"
+        | "AbilityPathType_t"
+        | "WeaponState_t"
+        | "DoorState_t"
+        | "RagdollBlendDirection"
+        | "BeamType_t"
+        | "BeamClipStyle_t"
+        | "EntityDisolveType_t"
+        | "tablet_skin_state_t"
+        | "CStrongHandle"
+        | "CSWeaponMode"
+        | "ESurvivalSpawnTileState"
+        | "SpawnStage_t"
+        | "ESurvivalGameRuleDecision_t"
+        | "RelativeDamagedDirection_t"
+        | "CSPlayerState"
+        | "MedalRank_t"
+        | "CSPlayerBlockingUseAction_t"
+        | "MoveMountingAmount_t"
         | "QuestProgress::Reason" => Decoder::Unsigned64,
         _ => return None,
     })
@@ -391,7 +437,11 @@ fn build_kind(f: &Field, ser_idx: Option<usize>) -> Kind {
     let is_array = ft.count > 0 && ft.base_type != "char";
 
     let element = if let Some(sidx) = ser_idx {
-        if is_pointer { Kind::Pointer(sidx) } else { Kind::Serializer(sidx) }
+        if is_pointer {
+            Kind::Pointer(sidx)
+        } else {
+            Kind::Serializer(sidx)
+        }
     } else {
         Kind::Value(find_decoder(f))
     };
@@ -409,7 +459,12 @@ fn build_kind(f: &Field, ser_idx: Option<usize>) -> Kind {
 
 impl Tables {
     /// Resolve a field path to the decoder that reads its value.
-    pub fn decoder_for_path<'a>(&'a self, ser_idx: usize, fp: &FieldPath, _pos: usize) -> Option<&'a Decoder> {
+    pub fn decoder_for_path<'a>(
+        &'a self,
+        ser_idx: usize,
+        fp: &FieldPath,
+        _pos: usize,
+    ) -> Option<&'a Decoder> {
         // Base decoders for paths that terminate on a container/struct rather
         // than a leaf, matching demoparser's get_decoder_from_field:
         //   Pointer -> boolean (1 bit; or GameModeRules for CCSGameModeRules)
@@ -465,7 +520,12 @@ impl Tables {
 
     /// Build a field path for a dotted name like "CBodyComponent.m_cellX".
     pub fn path_for_name(&self, ser_idx: usize, name: &str) -> Option<FieldPath> {
-        let mut fp = FieldPath { path: [0; 7], last: 0, done: false, overflow: false };
+        let mut fp = FieldPath {
+            path: [0; 7],
+            last: 0,
+            done: false,
+            overflow: false,
+        };
         if self.ser_path_for_name(ser_idx, &mut fp, name) {
             Some(fp)
         } else {
@@ -559,7 +619,7 @@ pub fn parse_flattened(body: &[u8]) -> Option<Tables> {
         });
     }
 
-    // Pass 1: create all serializers; index by (name, version) — unique — and by
+    // Pass 1: create all serializers; index by (name, version): unique, and by
     // name (last wins) for class lookups.
     let mut serializers: Vec<Serializer> = Vec::with_capacity(raw_serializers.len());
     let mut by_name: HashMap<String, usize> = HashMap::new();
@@ -569,10 +629,15 @@ pub fn parse_flattened(body: &[u8]) -> Option<Tables> {
         let idx = serializers.len();
         by_id.insert((name.clone(), *version), idx);
         by_name.insert(name.clone(), idx);
-        serializers.push(Serializer { name, version: *version, fields: field_idxs.clone(), kinds: Vec::new() });
+        serializers.push(Serializer {
+            name,
+            version: *version,
+            fields: field_idxs.clone(),
+            kinds: Vec::new(),
+        });
     }
 
-    // Pass 2: resolve each field's link by (serializer_name, field version) — the
+    // Pass 2: resolve each field's link by (serializer_name, field version): the
     // exact version the field references (versions differ in field count, so a
     // name-only link picks the wrong one and desyncs deep paths).
     for si in 0..serializers.len() {
@@ -593,7 +658,13 @@ pub fn parse_flattened(body: &[u8]) -> Option<Tables> {
         serializers[si].kinds = kinds;
     }
 
-    Some(Tables { fields, serializers, by_name, classes_by_id: HashMap::new(), class_id_size: 0 })
+    Some(Tables {
+        fields,
+        serializers,
+        by_name,
+        classes_by_id: HashMap::new(),
+        class_id_size: 0,
+    })
 }
 
 struct RawField {
@@ -648,7 +719,7 @@ fn parse_serializer(body: &[u8]) -> Option<(i32, i32, Vec<usize>)> {
             1 => name_sym = f.value.as_i32()?,
             2 => version = f.value.as_i32()?,
             3 => match f.value {
-                // fields_index is `repeated int32` — packed (one Len blob of
+                // fields_index is `repeated int32`: packed (one Len blob of
                 // varints) or, rarely, one varint per field.
                 Value::Len(b) => {
                     let mut rr = Reader::new(b);

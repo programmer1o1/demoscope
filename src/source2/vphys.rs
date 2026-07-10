@@ -3,9 +3,9 @@
 //
 // The shape data hangs off `m_parts[].m_rnShape`, which carries two geometry
 // kinds, both already in world space for `world_physics.vmdl_c`:
-//   • m_meshes[] — `RnMesh_t`: a plain vertex array (Vec3 f32) + triangle array
+//   • m_meshes[]: `RnMesh_t`: a plain vertex array (Vec3 f32) + triangle array
 //     (3 × int32 indices). The bulk of the map surface.
-//   • m_hulls[]  — `RnHull_t`: a convex hull as vertex positions (Vec3 f32) plus
+//   • m_hulls[] : `RnHull_t`: a convex hull as vertex positions (Vec3 f32) plus
 //     a half-edge face structure we fan-triangulate. Brushwork / props.
 //
 // Output matches what the BSP path hands the viewer: a flat vertex list plus a
@@ -15,13 +15,22 @@ use std::collections::HashMap;
 
 use super::kv3::Value;
 
-// Interact-as tags that mark a collision shape as an *invisible* volume — clip
+// Interact-as tags that mark a collision shape as an *invisible* volume: clip
 // brushes, tool brushes, skybox, sound/light blockers. A shape whose only tags
 // are these has no visible surface, so it's skipped (CS2 maps are dense with
 // player/grenade clips that would otherwise clutter the overlay).
 const INVISIBLE_TAGS: &[&str] = &[
-    "playerclip", "npcclip", "grenadeclip", "csgo_grenadeclip", "clip",
-    "sky", "blocksound", "blocklight", "blocklos", "ladder", "trigger",
+    "playerclip",
+    "npcclip",
+    "grenadeclip",
+    "csgo_grenadeclip",
+    "clip",
+    "sky",
+    "blocksound",
+    "blocklight",
+    "blocklos",
+    "ladder",
+    "trigger",
 ];
 
 /// Does a collision attribute describe a *visible* world surface? An empty
@@ -49,8 +58,13 @@ fn shape_visible(wrapper: &Value, attrs: Option<&[Value]>) -> bool {
         Some(a) => a,
         None => return true, // no table → don't filter
     };
-    let idx = wrapper.get("m_nCollisionAttributeIndex").and_then(|v| v.as_i64());
-    match idx.and_then(|i| usize::try_from(i).ok()).and_then(|i| attrs.get(i)) {
+    let idx = wrapper
+        .get("m_nCollisionAttributeIndex")
+        .and_then(|v| v.as_i64());
+    match idx
+        .and_then(|i| usize::try_from(i).ok())
+        .and_then(|i| attrs.get(i))
+    {
         Some(attr) => attr_is_visible(attr),
         None => true,
     }
@@ -107,7 +121,9 @@ fn inset_toward_centroid(pos: &mut [[f32; 3]]) {
     }
     let mut c = [0.0f32; 3];
     for p in pos.iter() {
-        c[0] += p[0]; c[1] += p[1]; c[2] += p[2];
+        c[0] += p[0];
+        c[1] += p[1];
+        c[2] += p[2];
     }
     c = [c[0] / n, c[1] / n, c[2] / n];
     const FRAC: f32 = 0.01;
@@ -144,7 +160,7 @@ fn add_hull(hull: &Value, verts: &mut Vec<[f32; 3]>, indices: &mut Vec<u32>) {
     };
     // Shrink the hull a hair toward its own centroid. The world solid is a union
     // of overlapping convex brush hulls, so adjacent hulls have near-coplanar
-    // faces at almost-identical depth — opaque, same material, so nothing
+    // faces at almost-identical depth: opaque, same material, so nothing
     // (polygon offset, log-depth) separates them and they GPU-z-fight (the
     // water-like flicker). Pulling each hull's surface in by a tiny, distance-
     // proportional amount (capped so large floor/wall brushes barely move)
@@ -156,7 +172,7 @@ fn add_hull(hull: &Value, verts: &mut Vec<[f32; 3]>, indices: &mut Vec<u32>) {
     verts.extend_from_slice(&pos);
 
     let edge_count = edges.len() / 4;
-    let next = |e: usize| edges[e * 4] as usize;       // m_nNext
+    let next = |e: usize| edges[e * 4] as usize; // m_nNext
     let origin = |e: usize| edges[e * 4 + 2] as usize; // m_nOrigin
 
     // Each face starts at one half-edge (RnFace_t = { u8 m_nEdge }).
@@ -204,7 +220,9 @@ pub fn extract_collision_mesh(root: &Value) -> Option<(Vec<[f32; 3]>, Vec<u32>)>
         };
         if let Some(meshes) = shape.get("m_meshes").and_then(|v| v.as_array()) {
             for m in meshes {
-                if !shape_visible(m, attrs) { continue; }
+                if !shape_visible(m, attrs) {
+                    continue;
+                }
                 if let Some(inner) = m.get("m_Mesh") {
                     add_mesh(inner, &mut verts, &mut indices);
                 }
@@ -212,7 +230,9 @@ pub fn extract_collision_mesh(root: &Value) -> Option<(Vec<[f32; 3]>, Vec<u32>)>
         }
         if let Some(hulls) = shape.get("m_hulls").and_then(|v| v.as_array()) {
             for h in hulls {
-                if !shape_visible(h, attrs) { continue; }
+                if !shape_visible(h, attrs) {
+                    continue;
+                }
                 if let Some(inner) = h.get("m_Hull") {
                     add_hull(inner, &mut verts, &mut indices);
                 }
@@ -232,7 +252,7 @@ pub fn extract_collision_mesh(root: &Value) -> Option<(Vec<[f32; 3]>, Vec<u32>)>
 /// Remove faces shared by abutting/overlapping convex hulls. The world solid is
 /// a union of brush hulls, so any face on the *interface* between two solids is
 /// emitted twice (once per hull, opposite winding) at the exact same place. Those
-/// interior faces are invisible in-game and, being coincident, z-fight forever —
+/// interior faces are invisible in-game and, being coincident, z-fight forever :
 /// no depth-buffer trick can separate them. Keying each triangle by its sorted,
 /// lightly-quantized corner positions (winding-independent) lets us drop every
 /// face that appears more than once, leaving just the exterior shell. Also drops
@@ -241,10 +261,18 @@ fn drop_interior_faces(verts: &[[f32; 3]], indices: &[u32]) -> Vec<u32> {
     // ~0.25-unit grid: brush vertices snap to integers in Hammer so shared faces
     // match exactly; the quantum only absorbs convex-hull float noise.
     let q = |v: [f32; 3]| -> (i64, i64, i64) {
-        ((v[0] * 4.0).round() as i64, (v[1] * 4.0).round() as i64, (v[2] * 4.0).round() as i64)
+        (
+            (v[0] * 4.0).round() as i64,
+            (v[1] * 4.0).round() as i64,
+            (v[2] * 4.0).round() as i64,
+        )
     };
     let key_of = |t: &[u32]| -> [(i64, i64, i64); 3] {
-        let mut k = [q(verts[t[0] as usize]), q(verts[t[1] as usize]), q(verts[t[2] as usize])];
+        let mut k = [
+            q(verts[t[0] as usize]),
+            q(verts[t[1] as usize]),
+            q(verts[t[2] as usize]),
+        ];
         k.sort_unstable();
         k
     };

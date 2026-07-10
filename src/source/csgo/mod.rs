@@ -1,7 +1,7 @@
 // CS:GO (Source 1, demo_protocol 4, net_protocol ~13xxx) message routing.
 //
 // CS:GO keeps the same *demo container* as the rest of the proto-4 family
-// (HL2DEMO header, DEM_* commands, 2-slot splitscreen democmdinfo) — that part
+// (HL2DEMO header, DEM_* commands, 2-slot splitscreen democmdinfo): that part
 // is already handled in `player_tracks.rs`. What changed is the *net-message*
 // framing *inside* DEM_PACKET / DEM_DATATABLES: older engines bit-pack a 6-bit
 // message id + a hand-rolled struct; CS:GO replaced that with **protobuf**.
@@ -24,4 +24,4 @@ pub mod message;
 pub mod sendtable;
 pub mod stringtables;
 
-pub use message::{scan_payload, MsgKind, NetMessage};
+pub use message::{MsgKind, NetMessage, scan_payload};

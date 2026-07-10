@@ -154,11 +154,24 @@ pub(crate) fn extract_events_from_payload(
         // (Verified against L4D1 engine.dll; see docs/PROTO4.md.)
         if remap_msgs {
             match msg_type_raw {
-                3 => { if !br.skip(1) { break; } continue; } // NetSplitScreenUser
-                22 => { // SvcSplitScreen: 1 bit + 11-bit length + data
-                    if !br.skip(1) { break; }
-                    let len = match br.read_bits(11) { Some(v) => v, None => break };
-                    if !br.skip(len) { break; }
+                3 => {
+                    if !br.skip(1) {
+                        break;
+                    }
+                    continue;
+                } // NetSplitScreenUser
+                22 => {
+                    // SvcSplitScreen: 1 bit + 11-bit length + data
+                    if !br.skip(1) {
+                        break;
+                    }
+                    let len = match br.read_bits(11) {
+                        Some(v) => v,
+                        None => break,
+                    };
+                    if !br.skip(len) {
+                        break;
+                    }
                     continue;
                 }
                 _ => {}
@@ -166,11 +179,11 @@ pub(crate) fn extract_events_from_payload(
         }
         let msg_type = if remap_msgs {
             match msg_type_raw {
-                4 => 3,   // NetTick
-                5 => 4,   // NetStringCmd
-                6 => 5,   // NetSetConVar
-                7 => 6,   // NetSignonState
-                16 => 7,  // SvcPrint
+                4 => 3,  // NetTick
+                5 => 4,  // NetStringCmd
+                6 => 5,  // NetSetConVar
+                7 => 6,  // NetSignonState
+                16 => 7, // SvcPrint
                 v => v,
             }
         } else {
@@ -182,36 +195,50 @@ pub(crate) fn extract_events_from_payload(
 
             3 => {
                 // net_Tick: tick(32) + host_frametime(16) + frametime_stddev(16) = 64 bits
-                if !br.skip(64) { break; }
+                if !br.skip(64) {
+                    break;
+                }
             }
 
             4 => {
                 // net_StringCmd: null-terminated string
-                if br.read_cstring_any(512).is_none() { break; }
+                if br.read_cstring_any(512).is_none() {
+                    break;
+                }
             }
 
             5 => {
                 // net_SetConVar: count(8) + count×(key_str + val_str)
-                let count = match br.read_bits(8) { Some(v) => v as usize, None => break };
+                let count = match br.read_bits(8) {
+                    Some(v) => v as usize,
+                    None => break,
+                };
                 let mut ok = true;
                 for _ in 0..count {
                     if br.read_cstring_any(256).is_none() || br.read_cstring_any(256).is_none() {
-                        ok = false; break;
+                        ok = false;
+                        break;
                     }
                 }
-                if !ok { break; }
+                if !ok {
+                    break;
+                }
             }
 
             6 => {
                 // net_SignonState: state(8) + spawn_count(32) = 40 bits
-                if !br.skip(40) { break; }
+                if !br.skip(40) {
+                    break;
+                }
             }
 
             7 => {
                 // svc_Print: null-terminated string. On proto-4 this is the
                 // remapped SvcPrint (raw id 16); without an arm here the scan
                 // would bail at every Print and miss the events after it.
-                if br.read_cstring_any(2048).is_none() { break; }
+                if br.read_cstring_any(2048).is_none() {
+                    break;
+                }
             }
 
             8 => {
@@ -219,17 +246,31 @@ pub(crate) fn extract_events_from_payload(
                 // + game/map/skybox/server_name cstrings + 1 bit. Framing copied
                 // from player_tracks::scan_game_payload. Normally signon-only.
                 let fixed = if demo_protocol >= 4 { 218 } else { 282 };
-                if !br.skip(fixed) { break; }
-                if br.read_cstring_any(260).is_none() { break; }
-                if br.read_cstring_any(260).is_none() { break; }
-                if br.read_cstring_any(260).is_none() { break; }
-                if br.read_cstring_any(260).is_none() { break; }
-                if !br.skip(1) { break; }
+                if !br.skip(fixed) {
+                    break;
+                }
+                if br.read_cstring_any(260).is_none() {
+                    break;
+                }
+                if br.read_cstring_any(260).is_none() {
+                    break;
+                }
+                if br.read_cstring_any(260).is_none() {
+                    break;
+                }
+                if br.read_cstring_any(260).is_none() {
+                    break;
+                }
+                if !br.skip(1) {
+                    break;
+                }
             }
 
             11 => {
                 // svc_SetPause: paused(1)
-                if !br.skip(1) { break; }
+                if !br.skip(1) {
+                    break;
+                }
             }
 
             13 => {
@@ -238,24 +279,49 @@ pub(crate) fn extract_events_from_payload(
                 // Appears in proto-4 game packets ahead of svc_GameEvent, so the
                 // walker must skip it cleanly rather than bail. Framing matches
                 // player_tracks::scan_game_payload.
-                if !br.skip(5) { break; }
-                let has_changed = match br.read_bits(1) { Some(v) => v != 0, None => break };
-                if has_changed { if !br.skip(16) { break; } }
-                let length = match br.read_bits(20) { Some(v) => v as usize, None => break };
-                if !br.skip(length as u32) { break; }
+                if !br.skip(5) {
+                    break;
+                }
+                let has_changed = match br.read_bits(1) {
+                    Some(v) => v != 0,
+                    None => break,
+                };
+                if has_changed {
+                    if !br.skip(16) {
+                        break;
+                    }
+                }
+                let length = match br.read_bits(20) {
+                    Some(v) => v as usize,
+                    None => break,
+                };
+                if !br.skip(length as u32) {
+                    break;
+                }
             }
 
             14 => {
                 // svc_VoiceInit: codec string + quality(8)
-                if br.read_cstring_any(256).is_none() { break; }
-                if !br.skip(8) { break; }
+                if br.read_cstring_any(256).is_none() {
+                    break;
+                }
+                if !br.skip(8) {
+                    break;
+                }
             }
 
             15 => {
                 // svc_VoiceData: client(8) + proximity(8) + length_bits(16) + data[length]
-                if !br.skip(16) { break; }
-                let length = match br.read_bits(16) { Some(v) => v as usize, None => break };
-                if !br.skip(length as u32) { break; }
+                if !br.skip(16) {
+                    break;
+                }
+                let length = match br.read_bits(16) {
+                    Some(v) => v as usize,
+                    None => break,
+                };
+                if !br.skip(length as u32) {
+                    break;
+                }
             }
 
             17 => {
@@ -263,29 +329,48 @@ pub(crate) fn extract_events_from_payload(
                 // + data[length bits]. This leads most proto-4 game packets, so
                 // breaking here (the old behaviour) dropped every later message -
                 // including svc_GameEvent. Framing matches player_tracks.
-                let reliable = match br.read_bits(1) { Some(v) => v != 0, None => break };
-                let length = if reliable {
-                    match br.read_bits(8) { Some(v) => v as usize, None => break }
-                } else {
-                    if !br.skip(8) { break; }
-                    match br.read_bits(16) { Some(v) => v as usize, None => break }
+                let reliable = match br.read_bits(1) {
+                    Some(v) => v != 0,
+                    None => break,
                 };
-                if !br.skip(length as u32) { break; }
+                let length = if reliable {
+                    match br.read_bits(8) {
+                        Some(v) => v as usize,
+                        None => break,
+                    }
+                } else {
+                    if !br.skip(8) {
+                        break;
+                    }
+                    match br.read_bits(16) {
+                        Some(v) => v as usize,
+                        None => break,
+                    }
+                };
+                if !br.skip(length as u32) {
+                    break;
+                }
             }
 
             18 => {
                 // svc_SetView: entity_index(11)
-                if !br.skip(11) { break; }
+                if !br.skip(11) {
+                    break;
+                }
             }
 
             19 => {
                 // svc_FixAngle: relative(1) + angle_x(16) + angle_y(16) + angle_z(16) = 49
-                if !br.skip(49) { break; }
+                if !br.skip(49) {
+                    break;
+                }
             }
 
             20 => {
                 // svc_CrosshairAngle: angle_x(16) + angle_y(16) + angle_z(16) = 48
-                if !br.skip(48) { break; }
+                if !br.skip(48) {
+                    break;
+                }
             }
 
             21 => {
@@ -295,9 +380,16 @@ pub(crate) fn extract_events_from_payload(
 
             22 => {
                 // svc_SplitScreen: type(1) + length(11) + data[length]
-                if !br.skip(1) { break; }
-                let length = match br.read_bits(11) { Some(v) => v as usize, None => break };
-                if !br.skip(length as u32) { break; }
+                if !br.skip(1) {
+                    break;
+                }
+                let length = match br.read_bits(11) {
+                    Some(v) => v as usize,
+                    None => break,
+                };
+                if !br.skip(length as u32) {
+                    break;
+                }
             }
 
             23 => {
@@ -306,9 +398,15 @@ pub(crate) fn extract_events_from_payload(
                 // (engine.dll SVC_UserMessage::ReadFromBuffer reads `v & 0xFFF`);
                 // older Source (TF2 / CS:S) and L4D use 11. Matches the
                 // `user_msg_12bit` handling in player_tracks::scan_game_payload.
-                let msg_type = match br.read_bits(8) { Some(v) => v, None => break };
+                let msg_type = match br.read_bits(8) {
+                    Some(v) => v,
+                    None => break,
+                };
                 let len_bits = if user_msg_12bit { 12 } else { 11 };
-                let length   = match br.read_bits(len_bits) { Some(v) => v as usize, None => break };
+                let length = match br.read_bits(len_bits) {
+                    Some(v) => v as usize,
+                    None => break,
+                };
                 let save = br.bit_pos;
                 if (msg_type == 3 || msg_type == 4) && length >= 16 {
                     if let Some(ev) = try_parse_say_text2(&mut br, tick) {
@@ -322,14 +420,23 @@ pub(crate) fn extract_events_from_payload(
 
             24 => {
                 // svc_EntityMessage: entity_index(11) + class_id(9) + length(11) + data[length]
-                if !br.skip(20) { break; }
-                let length = match br.read_bits(11) { Some(v) => v as usize, None => break };
-                if !br.skip(length as u32) { break; }
+                if !br.skip(20) {
+                    break;
+                }
+                let length = match br.read_bits(11) {
+                    Some(v) => v as usize,
+                    None => break,
+                };
+                if !br.skip(length as u32) {
+                    break;
+                }
             }
 
             25 => {
                 // svc_GameEvent
-                if br.bit_pos + 11 + 9 > total_bits { break; }
+                if br.bit_pos + 11 + 9 > total_bits {
+                    break;
+                }
                 let length = match br.read_bits(11) {
                     Some(v) => v as usize,
                     None => break,
@@ -361,66 +468,120 @@ pub(crate) fn extract_events_from_payload(
                 // svc_PacketEntities (OB/TF2 format)
                 // max_entries(11) + is_delta(1) + [delta_from(32)] +
                 // update_baseline(1) + num_changed(11) + length(20) + has_multi_origins(1) + data[length]
-                if br.read_bits(11).is_none() { break; }  // max_entries
-                let is_delta = match br.read_bits(1) { Some(v) => v != 0, None => break };
+                if br.read_bits(11).is_none() {
+                    break;
+                } // max_entries
+                let is_delta = match br.read_bits(1) {
+                    Some(v) => v != 0,
+                    None => break,
+                };
                 if is_delta {
-                    if !br.skip(32) { break; }  // delta_from tick
+                    if !br.skip(32) {
+                        break;
+                    } // delta_from tick
                 }
-                if !br.skip(1)  { break; }  // update_baseline
-                if !br.skip(11) { break; }  // num_changed_entities
-                let length = match br.read_bits(20) { Some(v) => v as usize, None => break };
-                if !br.skip(1) { break; }   // has_multiple_origins
-                if br.bit_pos + length > total_bits { break; }
+                if !br.skip(1) {
+                    break;
+                } // update_baseline
+                if !br.skip(11) {
+                    break;
+                } // num_changed_entities
+                let length = match br.read_bits(20) {
+                    Some(v) => v as usize,
+                    None => break,
+                };
+                if !br.skip(1) {
+                    break;
+                } // has_multiple_origins
+                if br.bit_pos + length > total_bits {
+                    break;
+                }
                 br.bit_pos += length;
             }
 
             27 => {
                 // svc_TempEntities: reliable(1) + count(8) + length(17) + data[length]
-                if !br.skip(9) { break; }
-                let length = match br.read_bits(17) { Some(v) => v as usize, None => break };
-                if !br.skip(length as u32) { break; }
+                if !br.skip(9) {
+                    break;
+                }
+                let length = match br.read_bits(17) {
+                    Some(v) => v as usize,
+                    None => break,
+                };
+                if !br.skip(length as u32) {
+                    break;
+                }
             }
 
             28 => {
                 // svc_Prefetch: type(1) + sound_index(13) = 14 bits
-                if !br.skip(14) { break; }
+                if !br.skip(14) {
+                    break;
+                }
             }
 
             29 => {
                 // svc_Menu: dialog_type(16) + data_length_bytes(16) + data
-                if !br.skip(16) { break; }
-                let length = match br.read_bits(16) { Some(v) => v as usize, None => break };
-                if !br.skip(length as u32 * 8) { break; }
+                if !br.skip(16) {
+                    break;
+                }
+                let length = match br.read_bits(16) {
+                    Some(v) => v as usize,
+                    None => break,
+                };
+                if !br.skip(length as u32 * 8) {
+                    break;
+                }
             }
 
             30 => {
                 // svc_GameEventList - skip
-                if br.bit_pos + 29 > total_bits { break; }
-                if br.read_bits(9).is_none() { break; }
+                if br.bit_pos + 29 > total_bits {
+                    break;
+                }
+                if br.read_bits(9).is_none() {
+                    break;
+                }
                 let total_length = match br.read_bits(20) {
                     Some(v) => v as usize,
                     None => break,
                 };
-                if br.bit_pos + total_length > total_bits { break; }
+                if br.bit_pos + total_length > total_bits {
+                    break;
+                }
                 br.bit_pos += total_length;
             }
 
             31 => {
                 // svc_GetCvarValue: cookie(32) + cvar_name(string)
-                if !br.skip(32) { break; }
-                if br.read_cstring_any(256).is_none() { break; }
+                if !br.skip(32) {
+                    break;
+                }
+                if br.read_cstring_any(256).is_none() {
+                    break;
+                }
             }
 
             32 => {
                 // svc_CmdKeyValues (Portal 2 family): length(32) + data[length bytes]
-                let length = match br.read_bits(32) { Some(v) => v, None => break };
-                if !br.skip(length.wrapping_mul(8)) { break; }
+                let length = match br.read_bits(32) {
+                    Some(v) => v,
+                    None => break,
+                };
+                if !br.skip(length.wrapping_mul(8)) {
+                    break;
+                }
             }
 
             33 => {
                 // svc_PaintMapData (Portal 2 family): length(32) bits of paint data
-                let length = match br.read_bits(32) { Some(v) => v, None => break };
-                if !br.skip(length) { break; }
+                let length = match br.read_bits(32) {
+                    Some(v) => v,
+                    None => break,
+                };
+                if !br.skip(length) {
+                    break;
+                }
             }
 
             _ => break,
@@ -432,29 +593,41 @@ pub(crate) fn extract_events_from_payload(
 
 fn try_parse_say_text2(br: &mut BitReader, tick: i32) -> Option<GameEvent> {
     let _client = br.read_bits(8)?;
-    let _raw    = br.read_bits(8)?;
-    let msg_name    = br.read_cstring_any(64)?;
+    let _raw = br.read_bits(8)?;
+    let msg_name = br.read_cstring_any(64)?;
     let player_name = br.read_cstring_any(64)?;
-    let message     = br.read_cstring_any(256)?;
-    if msg_name.is_empty() { return None; }
-    if !msg_name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == ':') { return None; }
-    if player_name.is_empty() && message.is_empty() { return None; }
+    let message = br.read_cstring_any(256)?;
+    if msg_name.is_empty() {
+        return None;
+    }
+    if !msg_name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == ':')
+    {
+        return None;
+    }
+    if player_name.is_empty() && message.is_empty() {
+        return None;
+    }
     let is_team = msg_name.contains("Team") || msg_name.contains("team");
     let ev_name = if is_team { "say_team" } else { "say" };
     Some(GameEvent {
         event: ev_name.to_string(),
         tick,
         fields: vec![
-            EventField { name: "player".to_string(), value: EventValue::Str(player_name) },
-            EventField { name: "text".to_string(),   value: EventValue::Str(message) },
+            EventField {
+                name: "player".to_string(),
+                value: EventValue::Str(player_name),
+            },
+            EventField {
+                name: "text".to_string(),
+                value: EventValue::Str(message),
+            },
         ],
     })
 }
 
-fn parse_event_fields_bits(
-    br: &mut BitReader,
-    fields: &[(String, u8)],
-) -> Option<Vec<EventField>> {
+fn parse_event_fields_bits(br: &mut BitReader, fields: &[(String, u8)]) -> Option<Vec<EventField>> {
     let mut result = Vec::new();
     for (fname, ftype) in fields {
         let value = match ftype {
@@ -494,7 +667,10 @@ fn parse_event_fields_bits(
             }
             _ => EventValue::Null,
         };
-        result.push(EventField { name: fname.clone(), value });
+        result.push(EventField {
+            name: fname.clone(),
+            value,
+        });
     }
     Some(result)
 }
@@ -502,7 +678,9 @@ fn parse_event_fields_bits(
 // ── Life/teleport break computation ──────────────────────────────────────────
 
 fn get_int_field(event: &GameEvent, name: &str) -> Option<i32> {
-    event.fields.iter()
+    event
+        .fields
+        .iter()
         .find(|f| f.name == name)
         .and_then(|f| match &f.value {
             EventValue::Int(v) => Some(*v),
@@ -551,19 +729,22 @@ pub(crate) fn compute_life_breaks(
         }
     };
 
-    let mut spawn_events: Vec<i32> = events.iter()
+    let mut spawn_events: Vec<i32> = events
+        .iter()
         .filter(|e| e.event == "player_spawn" && uid_matches(e))
         .map(|e| e.tick)
         .collect();
     spawn_events.sort_unstable();
 
-    let mut death_events: Vec<i32> = events.iter()
+    let mut death_events: Vec<i32> = events
+        .iter()
         .filter(|e| e.event == "player_death" && uid_matches(e))
         .map(|e| e.tick)
         .collect();
     death_events.sort_unstable();
 
-    let mut tele_events: Vec<i32> = events.iter()
+    let mut tele_events: Vec<i32> = events
+        .iter()
         .filter(|e| e.event == "player_teleported")
         .map(|e| e.tick)
         .collect();
@@ -588,8 +769,12 @@ pub(crate) fn compute_life_breaks(
     let teleport_idxs: Vec<usize> = tele_events.iter().map(|&t| find_idx(t)).collect();
 
     let mut all_set: HashSet<usize> = HashSet::new();
-    for &i in &respawn_idxs { all_set.insert(i); }
-    for &i in &teleport_idxs { all_set.insert(i); }
+    for &i in &respawn_idxs {
+        all_set.insert(i);
+    }
+    for &i in &teleport_idxs {
+        all_set.insert(i);
+    }
 
     let mut all_breaks: Vec<usize> = all_set.into_iter().collect();
     all_breaks.sort_unstable();
@@ -650,7 +835,7 @@ pub(crate) fn display_events_for_game(game_dir: &str) -> HashSet<&'static str> {
             s.insert("player_falldamage");
             s.insert("hostage_rescued");
             s.insert("cs_win_panel_match");
-            // Grenade detonations — carry the detonation x/y/z + thrower, so the
+            // Grenade detonations: carry the detonation x/y/z + thrower, so the
             // viewer can mark where each landed (same overlay as CS2/CS:GO).
             s.insert("hegrenade_detonate");
             s.insert("flashbang_detonate");

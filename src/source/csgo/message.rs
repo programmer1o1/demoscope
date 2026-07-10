@@ -84,7 +84,7 @@ pub struct NetMessage<'a> {
 /// Frame a CS:GO DEM_PACKET payload into its constituent protobuf messages.
 ///
 /// Layout: `varint(type) varint(size) <size bytes>` repeated to end of buffer.
-/// A truncated or malformed prefix stops the walk cleanly — we return what we
+/// A truncated or malformed prefix stops the walk cleanly: we return what we
 /// framed so far rather than erroring the whole demo (matching the project's
 /// "skip the bad blob, keep going" posture).
 pub fn scan_payload(payload: &[u8]) -> Vec<NetMessage<'_>> {
@@ -182,7 +182,8 @@ mod tests {
         let le_i32 = |o: usize| i32::from_le_bytes(data[o..o + 4].try_into().unwrap());
 
         let mut offset = HEADER;
-        let mut hist: std::collections::HashMap<u32, (usize, usize)> = std::collections::HashMap::new();
+        let mut hist: std::collections::HashMap<u32, (usize, usize)> =
+            std::collections::HashMap::new();
         let mut total_msgs = 0usize;
         let mut bad_bodies = 0usize;
         let mut packets = 0usize;
@@ -191,12 +192,17 @@ mod tests {
             let raw_cmd = data[offset];
             offset += pkt_hdr;
             match raw_cmd {
-                7 => break,                       // DEM_STOP
-                3 => {}                           // DEM_SYNCTICK, no payload
-                1 | 2 => {                        // DEM_SIGNON | DEM_PACKET
-                    if offset + democmdinfo + 12 > data.len() { break; }
+                7 => break, // DEM_STOP
+                3 => {}     // DEM_SYNCTICK, no payload
+                1 | 2 => {
+                    // DEM_SIGNON | DEM_PACKET
+                    if offset + democmdinfo + 12 > data.len() {
+                        break;
+                    }
                     let length = le_i32(offset + democmdinfo + 8);
-                    if length < 0 { break; }
+                    if length < 0 {
+                        break;
+                    }
                     let start = offset + democmdinfo + 12;
                     let end = (start + length as usize).min(data.len());
                     packets += 1;
@@ -212,30 +218,48 @@ mod tests {
                             match r.next_field() {
                                 Ok(Some(_)) => {}
                                 Ok(None) => break,
-                                Err(_) => { bad_bodies += 1; break; }
+                                Err(_) => {
+                                    bad_bodies += 1;
+                                    break;
+                                }
                             }
                         }
                     }
                     offset = end;
                 }
-                4 => {                            // DEM_CONSOLECMD
-                    if offset + 4 > data.len() { break; }
+                4 => {
+                    // DEM_CONSOLECMD
+                    if offset + 4 > data.len() {
+                        break;
+                    }
                     offset += 4 + le_i32(offset).max(0) as usize;
                 }
-                5 => {                            // DEM_USERCMD
-                    if offset + 8 > data.len() { break; }
+                5 => {
+                    // DEM_USERCMD
+                    if offset + 8 > data.len() {
+                        break;
+                    }
                     offset += 8 + le_i32(offset + 4).max(0) as usize;
                 }
-                6 => {                            // DEM_DATATABLES
-                    if offset + 4 > data.len() { break; }
+                6 => {
+                    // DEM_DATATABLES
+                    if offset + 4 > data.len() {
+                        break;
+                    }
                     offset += 4 + le_i32(offset).max(0) as usize;
                 }
-                8 => {                            // DEM_CUSTOMDATA (proto-4)
-                    if offset + 8 > data.len() { break; }
+                8 => {
+                    // DEM_CUSTOMDATA (proto-4)
+                    if offset + 8 > data.len() {
+                        break;
+                    }
                     offset += 8 + le_i32(offset + 4).max(0) as usize;
                 }
-                9 => {                            // DEM_STRINGTABLES (proto-4)
-                    if offset + 4 > data.len() { break; }
+                9 => {
+                    // DEM_STRINGTABLES (proto-4)
+                    if offset + 4 > data.len() {
+                        break;
+                    }
                     offset += 4 + le_i32(offset).max(0) as usize;
                 }
                 _ => break,
@@ -246,15 +270,24 @@ mod tests {
         rows.sort_by_key(|(id, _)| **id);
         eprintln!("\n=== CS:GO framing: {packets} packets, {total_msgs} messages ===");
         for (id, (count, bytes)) in rows {
-            eprintln!("  {:>3} {:<24} x{:<6} {} bytes", id, MsgKind::from_id(*id).name(), count, bytes);
+            eprintln!(
+                "  {:>3} {:<24} x{:<6} {} bytes",
+                id,
+                MsgKind::from_id(*id).name(),
+                count,
+                bytes
+            );
         }
         eprintln!("  malformed bodies: {bad_bodies}/{total_msgs}");
 
         // Assertions: we framed a real workload, svc_PacketEntities is present
         // (the message that carries positions), and every framed body parsed as
-        // clean protobuf — i.e. the framing never desynced.
+        // clean protobuf: i.e. the framing never desynced.
         assert!(total_msgs > 1000, "suspiciously few messages: {total_msgs}");
         assert!(hist.contains_key(&26), "no svc_PacketEntities (26) framed");
-        assert_eq!(bad_bodies, 0, "{bad_bodies} framed bodies failed protobuf parse → framing desynced");
+        assert_eq!(
+            bad_bodies, 0,
+            "{bad_bodies} framed bodies failed protobuf parse → framing desynced"
+        );
     }
 }

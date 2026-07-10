@@ -23,7 +23,12 @@ pub struct QuantizedFloatDecoder {
 }
 
 impl QuantizedFloatDecoder {
-    pub fn new(bit_count: Option<i32>, flags: Option<i32>, low: Option<f32>, high: Option<f32>) -> Self {
+    pub fn new(
+        bit_count: Option<i32>,
+        flags: Option<i32>,
+        low: Option<f32>,
+        high: Option<f32>,
+    ) -> Self {
         let mut q = QuantizedFloatDecoder {
             low: 0.0,
             high: 1.0,
@@ -127,7 +132,11 @@ impl QuantizedFloatDecoder {
     fn assign_multipliers(&mut self, steps: u32) {
         self.high_low_mul = 0.0;
         let range = self.high - self.low;
-        let high: u32 = if self.bit_count == 32 { 0xFFFF_FFFE } else { (1u32 << self.bit_count) - 1 };
+        let high: u32 = if self.bit_count == 32 {
+            0xFFFF_FFFE
+        } else {
+            (1u32 << self.bit_count) - 1
+        };
 
         let mut high_mul: f32 = if range.abs() <= 0.0 {
             high as f32
@@ -138,7 +147,8 @@ impl QuantizedFloatDecoder {
         if high_mul * range > high as f32 || (high_mul as f64 * range as f64) > high as f64 {
             for &mult in &[0.9999f32, 0.99, 0.9, 0.8, 0.7] {
                 high_mul = high as f32 / range * mult;
-                if high_mul * range > high as f32 || (high_mul as f64 * range as f64) > high as f64 {
+                if high_mul * range > high as f32 || (high_mul as f64 * range as f64) > high as f64
+                {
                     continue;
                 }
                 break;

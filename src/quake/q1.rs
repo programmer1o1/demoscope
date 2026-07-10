@@ -154,8 +154,12 @@ pub fn parse_netquake(data: &[u8]) -> Result<QuakeDemo, Box<dyn Error>> {
                 }
                 SVC_SOUND => {
                     let mask = m.read_u8() as u32;
-                    if mask & 0x01 != 0 { m.read_u8(); } // volume
-                    if mask & 0x02 != 0 { m.read_u8(); } // attenuation
+                    if mask & 0x01 != 0 {
+                        m.read_u8();
+                    } // volume
+                    if mask & 0x02 != 0 {
+                        m.read_u8();
+                    } // attenuation
                     m.read_i16(); // channel/ent
                     m.read_u8(); // sound num
                     m.skip(6); // position (3 coords)
@@ -181,11 +185,15 @@ pub fn parse_netquake(data: &[u8]) -> Result<QuakeDemo, Box<dyn Error>> {
                     // model precache (until empty), then sound precache (until empty)
                     loop {
                         let s = m.read_string();
-                        if s.is_empty() || m.overflow { break; }
+                        if s.is_empty() || m.overflow {
+                            break;
+                        }
                     }
                     loop {
                         let s = m.read_string();
-                        if s.is_empty() || m.overflow { break; }
+                        if s.is_empty() || m.overflow {
+                            break;
+                        }
                     }
                 }
                 SVC_LIGHTSTYLE => {
@@ -226,7 +234,11 @@ pub fn parse_netquake(data: &[u8]) -> Result<QuakeDemo, Box<dyn Error>> {
                 SVC_SPAWNBASELINE => {
                     let num = m.read_i16() as u16;
                     let (origin, angles) = read_baseline_body(&mut m);
-                    let st = Ent { origin, angles, seen: true };
+                    let st = Ent {
+                        origin,
+                        angles,
+                        seen: true,
+                    };
                     ents.insert(num, st);
                 }
                 SVC_TEMP_ENTITY => parse_temp_entity(&mut m),
@@ -282,7 +294,10 @@ pub fn parse_netquake(data: &[u8]) -> Result<QuakeDemo, Box<dyn Error>> {
     let meta = QuakeMeta {
         map: map.clone(),
         server: String::new(),
-        client: tb.primary.and_then(|p| tb.names.get(&p).cloned()).unwrap_or_default(),
+        client: tb
+            .primary
+            .and_then(|p| tb.names.get(&p).cloned())
+            .unwrap_or_default(),
         game: "quake1".to_string(),
         protocol: 15,
         duration,
@@ -312,19 +327,41 @@ fn parse_update(
     };
     let mut st = ents.get(&num).copied().unwrap_or_default();
 
-    if bits & U_MODEL != 0 { m.read_u8(); }
-    if bits & U_FRAME != 0 { m.read_u8(); }
-    if bits & U_COLORMAP != 0 { m.read_u8(); }
-    if bits & U_SKIN != 0 { m.read_u8(); }
-    if bits & U_EFFECTS != 0 { m.read_u8(); }
+    if bits & U_MODEL != 0 {
+        m.read_u8();
+    }
+    if bits & U_FRAME != 0 {
+        m.read_u8();
+    }
+    if bits & U_COLORMAP != 0 {
+        m.read_u8();
+    }
+    if bits & U_SKIN != 0 {
+        m.read_u8();
+    }
+    if bits & U_EFFECTS != 0 {
+        m.read_u8();
+    }
 
     let had_origin = bits & (U_ORIGIN1 | U_ORIGIN2 | U_ORIGIN3) != 0;
-    if bits & U_ORIGIN1 != 0 { st.origin[0] = m.read_coord_q2(); }
-    if bits & U_ANGLE1 != 0 { st.angles[0] = read_angle_i8(m); }
-    if bits & U_ORIGIN2 != 0 { st.origin[1] = m.read_coord_q2(); }
-    if bits & U_ANGLE2 != 0 { st.angles[1] = read_angle_i8(m); }
-    if bits & U_ORIGIN3 != 0 { st.origin[2] = m.read_coord_q2(); }
-    if bits & U_ANGLE3 != 0 { st.angles[2] = read_angle_i8(m); }
+    if bits & U_ORIGIN1 != 0 {
+        st.origin[0] = m.read_coord_q2();
+    }
+    if bits & U_ANGLE1 != 0 {
+        st.angles[0] = read_angle_i8(m);
+    }
+    if bits & U_ORIGIN2 != 0 {
+        st.origin[1] = m.read_coord_q2();
+    }
+    if bits & U_ANGLE2 != 0 {
+        st.angles[1] = read_angle_i8(m);
+    }
+    if bits & U_ORIGIN3 != 0 {
+        st.origin[2] = m.read_coord_q2();
+    }
+    if bits & U_ANGLE3 != 0 {
+        st.angles[2] = read_angle_i8(m);
+    }
 
     let first = !st.seen;
     st.seen = true;
@@ -358,17 +395,33 @@ fn read_baseline_body(m: &mut ByteReader) -> ([f32; 3], [f32; 3]) {
 /// exactly to stay aligned.
 fn parse_clientdata(m: &mut ByteReader) {
     let bits = m.read_u16() as u32;
-    if bits & SU_VIEWHEIGHT != 0 { m.read_i8(); }
-    if bits & SU_IDEALPITCH != 0 { m.read_i8(); }
-    for i in 0..3 {
-        if bits & (SU_PUNCH1 << i) != 0 { m.read_i8(); }
-        if bits & (SU_VELOCITY1 << i) != 0 { m.read_i8(); }
+    if bits & SU_VIEWHEIGHT != 0 {
+        m.read_i8();
     }
-    if bits & SU_ITEMS != 0 { m.read_i32(); }
+    if bits & SU_IDEALPITCH != 0 {
+        m.read_i8();
+    }
+    for i in 0..3 {
+        if bits & (SU_PUNCH1 << i) != 0 {
+            m.read_i8();
+        }
+        if bits & (SU_VELOCITY1 << i) != 0 {
+            m.read_i8();
+        }
+    }
+    if bits & SU_ITEMS != 0 {
+        m.read_i32();
+    }
     // SU_ONGROUND / SU_INWATER carry no data.
-    if bits & SU_WEAPONFRAME != 0 { m.read_u8(); }
-    if bits & SU_ARMOR != 0 { m.read_u8(); }
-    if bits & SU_WEAPON != 0 { m.read_u8(); }
+    if bits & SU_WEAPONFRAME != 0 {
+        m.read_u8();
+    }
+    if bits & SU_ARMOR != 0 {
+        m.read_u8();
+    }
+    if bits & SU_WEAPON != 0 {
+        m.read_u8();
+    }
     m.read_i16(); // health
     m.read_u8(); // ammo
     m.read_u8(); // shells
@@ -399,8 +452,10 @@ fn parse_temp_entity(m: &mut ByteReader) {
 }
 
 pub fn parse_qw_mvd(_data: &[u8]) -> Result<QuakeDemo, Box<dyn Error>> {
-    Err("QuakeWorld .qwd/.mvd demos use an extension-negotiated protocol (the \
+    Err(
+        "QuakeWorld .qwd/.mvd demos use an extension-negotiated protocol (the \
          sample carries FTE extensions) distinct from NetQuake; not yet supported. \
          Vanilla NetQuake .dem files decode via the Q1 path."
-        .into())
+            .into(),
+    )
 }

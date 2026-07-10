@@ -13,12 +13,20 @@ pub(crate) struct BitReader<'a> {
 impl<'a> BitReader<'a> {
     pub(crate) fn new(data: &'a [u8]) -> Self {
         let max = data.len() * 8;
-        BitReader { data, bit_pos: 0, max_bit: max }
+        BitReader {
+            data,
+            bit_pos: 0,
+            max_bit: max,
+        }
     }
 
     pub(crate) fn new_at(data: &'a [u8], pos: usize) -> Self {
         let max = data.len() * 8;
-        BitReader { data, bit_pos: pos, max_bit: max }
+        BitReader {
+            data,
+            bit_pos: pos,
+            max_bit: max,
+        }
     }
 
     pub(crate) fn read_bits(&mut self, n: u32) -> Option<u32> {
@@ -63,7 +71,11 @@ impl<'a> BitReader<'a> {
 
     pub(crate) fn bits_remaining(&self) -> usize {
         let total = self.data.len() * 8;
-        if total > self.bit_pos { total - self.bit_pos } else { 0 }
+        if total > self.bit_pos {
+            total - self.bit_pos
+        } else {
+            0
+        }
     }
 
     pub(crate) fn try_read_cstring(&mut self, max: usize) -> Option<String> {

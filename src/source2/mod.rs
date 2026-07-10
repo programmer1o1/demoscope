@@ -1,22 +1,22 @@
-// Source 2 (`PBDEMS2`) demo decoder — positions-only slice.
+// Source 2 (`PBDEMS2`) demo decoder: positions-only slice.
 //
 // CS2 / Dota 2 / Deadlock ship the Source 2 demo container (`PBDEMS2\0\0`),
 // which shares NOTHING with the HL2DEMO entity pipeline beyond the protobuf
 // wire format. This module decodes the *minimum* needed to emit per-player
-// position/angle tracks for the viewer — it is deliberately NOT a general
+// position/angle tracks for the viewer: it is deliberately NOT a general
 // Source 2 parser. Full prop decode (weapons, life state, etc.) and Source 2
 // map overlays are out of scope (see ROADMAP.md).
 //
 // Pipeline (each stage is a sibling module):
-//   container  — PBDEMS2 magic + outer frame walk (varint cmd/tick/size,
+//   container : PBDEMS2 magic + outer frame walk (varint cmd/tick/size,
 //                snappy bit on the command). Routes CDemo* messages.
-//   snappy     — zero-dependency snappy block decompressor for frame bodies.
-//   serializer — CSVCMsg_FlattenedSerializer, TRIMMED to the few fields we
+//   snappy    : zero-dependency snappy block decompressor for frame bodies.
+//   serializer: CSVCMsg_FlattenedSerializer, TRIMMED to the few fields we
 //                need (cell coords + origin + angles); everything else dropped.
-//   fieldpath  — the ~40-op field-path Huffman tree used to walk entity deltas.
-//   decoders   — the three float decoders players use (quantized / coord /
+//   fieldpath : the ~40-op field-path Huffman tree used to walk entity deltas.
+//   decoders  : the three float decoders players use (quantized / coord /
 //                normal) plus the cell→world coordinate reconstruction.
-//   entities   — instancebaseline bootstrap + CSVCMsg_PacketEntities delta walk,
+//   entities  : instancebaseline bootstrap + CSVCMsg_PacketEntities delta walk,
 //                accumulating per-entity origin[*]/angles[*].
 //
 // What is REUSED from the Source 1 path: the protobuf wire reader
@@ -49,5 +49,5 @@ pub fn is_source2(data: &[u8]) -> bool {
     data.len() >= PBDEMS2_MAGIC.len() && &data[..PBDEMS2_MAGIC.len()] == PBDEMS2_MAGIC
 }
 
-pub use container::{parse_meta, Source2Meta};
-pub use parser::{parse, Source2Tracks};
+pub use container::{Source2Meta, parse_meta};
+pub use parser::{Source2Tracks, parse};

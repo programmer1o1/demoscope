@@ -12,11 +12,10 @@ use std::collections::{HashMap, HashSet};
 
 use super::bitreader::BitReader;
 use super::sendprop::{
+    SPROP_CELL_COORD, SPROP_CELL_COORD_INTEGRAL, SPROP_CELL_COORD_LOW_PRECISION,
+    SPROP_CHANGES_OFTEN, SPROP_COLLAPSIBLE, SPROP_COORD_MP, SPROP_COORD_MP_INTEGRAL,
+    SPROP_COORD_MP_LOW_PRECISION, SPROP_EXCLUDE, SPROP_INSIDEARRAY, SPROP_IS_VECTOR_ELEM,
     SendPropDef, SendPropType,
-    SPROP_CHANGES_OFTEN, SPROP_COLLAPSIBLE, SPROP_EXCLUDE, SPROP_INSIDEARRAY,
-    SPROP_COORD_MP, SPROP_COORD_MP_LOW_PRECISION, SPROP_COORD_MP_INTEGRAL,
-    SPROP_CELL_COORD, SPROP_CELL_COORD_LOW_PRECISION, SPROP_CELL_COORD_INTEGRAL,
-    SPROP_IS_VECTOR_ELEM,
 };
 
 // Portal 2 / Alien Swarm SDK use 19-bit networked SendProp flags whose bit
@@ -39,15 +38,33 @@ use super::sendprop::{
 pub(crate) fn normalize_portal2_flags(raw: u32) -> u32 {
     let mut out = raw & 0x3FF; // bits 0-9 are identical
     let bit = |b: u32| (raw >> b) & 1 != 0;
-    if bit(10) { out |= SPROP_IS_VECTOR_ELEM; }
-    if bit(11) { out |= SPROP_COLLAPSIBLE; }
-    if bit(12) { out |= SPROP_COORD_MP; }
-    if bit(13) { out |= SPROP_COORD_MP_LOW_PRECISION; }
-    if bit(14) { out |= SPROP_COORD_MP_INTEGRAL; }
-    if bit(15) { out |= SPROP_CELL_COORD; }
-    if bit(16) { out |= SPROP_CELL_COORD_LOW_PRECISION; }
-    if bit(17) { out |= SPROP_CELL_COORD_INTEGRAL; }
-    if bit(18) { out |= SPROP_CHANGES_OFTEN; }
+    if bit(10) {
+        out |= SPROP_IS_VECTOR_ELEM;
+    }
+    if bit(11) {
+        out |= SPROP_COLLAPSIBLE;
+    }
+    if bit(12) {
+        out |= SPROP_COORD_MP;
+    }
+    if bit(13) {
+        out |= SPROP_COORD_MP_LOW_PRECISION;
+    }
+    if bit(14) {
+        out |= SPROP_COORD_MP_INTEGRAL;
+    }
+    if bit(15) {
+        out |= SPROP_CELL_COORD;
+    }
+    if bit(16) {
+        out |= SPROP_CELL_COORD_LOW_PRECISION;
+    }
+    if bit(17) {
+        out |= SPROP_CELL_COORD_INTEGRAL;
+    }
+    if bit(18) {
+        out |= SPROP_CHANGES_OFTEN;
+    }
     out
 }
 
@@ -143,8 +160,12 @@ impl DataTableQuirks {
         // priority encoding (Portal 2 / Alien Swarm lineage). L4D2 also uses it;
         // L4D1 does NOT (it keeps the older 16-bit TF2 flag layout).
         const EXTRA_FLAG_BITS: &[&str] = &[
-            "portal2", "aperturetag", "TWTM",
-            "portal_stories", "portalreloaded", "Portal 2 Speedrun Mod",
+            "portal2",
+            "aperturetag",
+            "TWTM",
+            "portal_stories",
+            "portalreloaded",
+            "Portal 2 Speedrun Mod",
             "thestanleyparable",
             "left4dead2",
         ];
@@ -164,11 +185,245 @@ impl DataTableQuirks {
 /// canonical message map and splitscreen = 4, so it is NOT a portal2 engine.
 pub fn is_portal2_engine(game_dir: &str) -> bool {
     const PORTAL2_ENGINE: &[&str] = &[
-        "portal2", "aperturetag", "TWTM",
-        "portal_stories", "portalreloaded", "Portal 2 Speedrun Mod",
+        "portal2",
+        "aperturetag",
+        "TWTM",
+        "portal_stories",
+        "portalreloaded",
+        "Portal 2 Speedrun Mod",
         "thestanleyparable",
     ];
-    PORTAL2_ENGINE.iter().any(|g| g.eq_ignore_ascii_case(game_dir))
+    PORTAL2_ENGINE
+        .iter()
+        .any(|g| g.eq_ignore_ascii_case(game_dir))
+}
+
+// ── Old engine (net_protocol <= 7: HL2 2004 retail, GMod 9/10 classic) ──────
+//
+// Two distinct DEM_DATATABLES serialisations predate the Orange Box bit
+// format, both cracked empirically against gmancheapledemo.dem (hl2, demo
+// proto 2) and zombieslayer.dem (garrysmod10classic, demo proto 3):
+//
+//   demo proto 2: fully BYTE-ALIGNED - int32 type/flags/nprops/nbits fields,
+//     f32 low/high, u8 has-table/needs-decoder, 16-bit class count/ids.
+//     (209 tables / 173 classes / 0 bytes leftover on gmancheapledemo.)
+//   demo proto 3 + net 7: bit-packed like Orange Box but with the
+//     pre-OB field widths: 9-bit prop count, 13-bit flags
+//     (SPROP_NUMFLAGBITS_NETWORKED = 13 - no COORD_MP yet), 6-bit m_nBits.
+//     (256 tables / 211 classes / 7 leftover bits on zombieslayer.)
+//
+// Both use the OLD SendPropType enum without VectorXY/Int64:
+//   0=Int 1=Float 2=Vector 3=String 4=Array 5=DataTable
+// The old 13-bit flag space matches the canonical TF2 bit positions 0..12,
+// so no flag remap is needed.
+fn old_prop_type(v: u8) -> Option<SendPropType> {
+    match v {
+        0 => Some(SendPropType::Int),
+        1 => Some(SendPropType::Float),
+        2 => Some(SendPropType::Vector),
+        3 => Some(SendPropType::String),
+        4 => Some(SendPropType::Array),
+        5 => Some(SendPropType::DataTable),
+        _ => None,
+    }
+}
+
+/// Parse an old-engine (net_protocol <= 7) DEM_DATATABLES payload. Dispatches
+/// on demo protocol: 2 = byte-aligned struct dump, 3 = pre-OB bit format.
+pub fn parse_old(payload: &[u8], demo_protocol: i32) -> Option<DataTables> {
+    let (tables, server_classes) = if demo_protocol <= 2 {
+        parse_old_bytes(payload)?
+    } else {
+        parse_old_bits(payload)?
+    };
+    Some(build_data_tables_mode(
+        tables,
+        server_classes,
+        FlattenMode::OldEngine,
+    ))
+}
+
+fn parse_old_bytes(payload: &[u8]) -> Option<(Vec<RawSendTable>, Vec<ServerClass>)> {
+    let mut off = 0usize;
+    let u8_at = |off: &mut usize| -> Option<u8> {
+        let v = *payload.get(*off)?;
+        *off += 1;
+        Some(v)
+    };
+    let i32_at = |off: &mut usize| -> Option<i32> {
+        let v = i32::from_le_bytes(payload.get(*off..*off + 4)?.try_into().ok()?);
+        *off += 4;
+        Some(v)
+    };
+    let f32_at = |off: &mut usize| -> Option<f32> {
+        let v = f32::from_le_bytes(payload.get(*off..*off + 4)?.try_into().ok()?);
+        *off += 4;
+        Some(v)
+    };
+    let cstr_at = |off: &mut usize| -> Option<String> {
+        let end = payload[*off..].iter().position(|&b| b == 0)? + *off;
+        let s = String::from_utf8_lossy(&payload[*off..end]).into_owned();
+        *off = end + 1;
+        Some(s)
+    };
+
+    let mut tables = Vec::new();
+    loop {
+        if u8_at(&mut off)? == 0 {
+            break;
+        }
+        let needs_decoder = u8_at(&mut off)? != 0;
+        let name = cstr_at(&mut off)?;
+        let num_props = i32_at(&mut off)?;
+        if !(0..=4096).contains(&num_props) {
+            return None;
+        }
+        let mut props: Vec<RawSendPropDef> = Vec::with_capacity(num_props as usize);
+        let mut array_element: Option<RawSendPropDef> = None;
+        for _ in 0..num_props {
+            let prop_type = old_prop_type(i32_at(&mut off)? as u8)?;
+            let pname = cstr_at(&mut off)?;
+            let flags = i32_at(&mut off)? as u32;
+            let mut prop = RawSendPropDef {
+                prop_type,
+                name: pname,
+                flags,
+                priority: 0,
+                exclude_dt_name: None,
+                data_table_name: None,
+                low_value: 0.0,
+                high_value: 0.0,
+                bit_count: 0,
+                element_count: 0,
+                array_element: None,
+            };
+            if flags & SPROP_EXCLUDE != 0 || prop_type == SendPropType::DataTable {
+                let s = cstr_at(&mut off)?;
+                if flags & SPROP_EXCLUDE != 0 {
+                    prop.exclude_dt_name = Some(s);
+                } else {
+                    prop.data_table_name = Some(s);
+                }
+            } else if prop_type == SendPropType::Array {
+                prop.element_count = i32_at(&mut off)? as u16;
+            } else {
+                prop.low_value = f32_at(&mut off)?;
+                prop.high_value = f32_at(&mut off)?;
+                prop.bit_count = i32_at(&mut off)? as u32;
+            }
+            if prop.flags & SPROP_INSIDEARRAY != 0 {
+                array_element = Some(prop);
+            } else if prop.prop_type == SendPropType::Array {
+                let elem = array_element.take()?;
+                prop.array_element = Some(Box::new(elem));
+                props.push(prop);
+            } else {
+                props.push(prop);
+            }
+        }
+        tables.push(RawSendTable {
+            needs_decoder,
+            name,
+            props,
+        });
+    }
+
+    // 16-bit class count + (16-bit id, name, dt) entries.
+    let num_classes = u16::from_le_bytes(payload.get(off..off + 2)?.try_into().ok()?) as usize;
+    off += 2;
+    if num_classes == 0 || num_classes > 2048 {
+        return None;
+    }
+    let mut server_classes = Vec::with_capacity(num_classes);
+    for _ in 0..num_classes {
+        let id = u16::from_le_bytes(payload.get(off..off + 2)?.try_into().ok()?);
+        off += 2;
+        let name = cstr_at(&mut off)?;
+        let dt = cstr_at(&mut off)?;
+        server_classes.push(ServerClass {
+            id,
+            name,
+            data_table: dt,
+        });
+    }
+    Some((tables, server_classes))
+}
+
+fn parse_old_bits(payload: &[u8]) -> Option<(Vec<RawSendTable>, Vec<ServerClass>)> {
+    let mut br = BitReader::new(payload);
+    let mut tables = Vec::new();
+    loop {
+        if !br.read_bool()? {
+            break;
+        }
+        let needs_decoder = br.read_bool()?;
+        let name = br.read_cstring(256)?;
+        let num_props = br.read_bits(9)? as usize; // pre-OB PROPINFOBITS_NUMPROPS = 9
+        let mut props: Vec<RawSendPropDef> = Vec::with_capacity(num_props);
+        let mut array_element: Option<RawSendPropDef> = None;
+        for _ in 0..num_props {
+            let prop_type = old_prop_type(br.read_bits(5)? as u8)?;
+            let pname = br.read_cstring(256)?;
+            let flags = br.read_bits(13)?; // SPROP_NUMFLAGBITS_NETWORKED = 13
+            let mut prop = RawSendPropDef {
+                prop_type,
+                name: pname,
+                flags,
+                priority: 0,
+                exclude_dt_name: None,
+                data_table_name: None,
+                low_value: 0.0,
+                high_value: 0.0,
+                bit_count: 0,
+                element_count: 0,
+                array_element: None,
+            };
+            if flags & SPROP_EXCLUDE != 0 || prop_type == SendPropType::DataTable {
+                let s = br.read_cstring(256)?;
+                if flags & SPROP_EXCLUDE != 0 {
+                    prop.exclude_dt_name = Some(s);
+                } else {
+                    prop.data_table_name = Some(s);
+                }
+            } else if prop_type == SendPropType::Array {
+                prop.element_count = br.read_bits(10)? as u16;
+            } else {
+                prop.low_value = br.read_bit_float()?;
+                prop.high_value = br.read_bit_float()?;
+                prop.bit_count = br.read_bits(6)?; // pre-OB PROPINFOBITS_NUMBITS = 6
+            }
+            if prop.flags & SPROP_INSIDEARRAY != 0 {
+                array_element = Some(prop);
+            } else if prop.prop_type == SendPropType::Array {
+                let elem = array_element.take()?;
+                prop.array_element = Some(Box::new(elem));
+                props.push(prop);
+            } else {
+                props.push(prop);
+            }
+        }
+        tables.push(RawSendTable {
+            needs_decoder,
+            name,
+            props,
+        });
+    }
+    let num_classes = br.read_bits(16)? as usize;
+    if num_classes == 0 || num_classes > 2048 {
+        return None;
+    }
+    let mut server_classes = Vec::with_capacity(num_classes);
+    for _ in 0..num_classes {
+        let id = br.read_bits(16)? as u16;
+        let name = br.read_cstring(256)?;
+        let dt = br.read_cstring(256)?;
+        server_classes.push(ServerClass {
+            id,
+            name,
+            data_table: dt,
+        });
+    }
+    Some((tables, server_classes))
 }
 
 /// Parse the DEM_DATATABLES payload. The payload starts with a sequence of
@@ -181,7 +436,9 @@ pub fn parse(payload: &[u8], demo_protocol: i32, quirks: DataTableQuirks) -> Opt
     // Read tables: each is preceded by a "has another table" bit.
     loop {
         let has_table = br.read_bool()?;
-        if !has_table { break; }
+        if !has_table {
+            break;
+        }
         let table = read_send_table(&mut br, demo_protocol, quirks)?;
         tables.push(table);
     }
@@ -193,10 +450,32 @@ pub fn parse(payload: &[u8], demo_protocol: i32, quirks: DataTableQuirks) -> Opt
         let id = br.read_bits(16)? as u16;
         let name = br.read_cstring(256)?;
         let dt = br.read_cstring(256)?;
-        server_classes.push(ServerClass { id, name, data_table: dt });
+        server_classes.push(ServerClass {
+            id,
+            name,
+            data_table: dt,
+        });
     }
 
-    Some(build_data_tables(tables, server_classes, demo_protocol >= 4))
+    Some(build_data_tables(
+        tables,
+        server_classes,
+        demo_protocol >= 4,
+    ))
+}
+
+/// Flat-prop ordering rules per engine generation.
+#[derive(Copy, Clone, PartialEq)]
+pub(crate) enum FlattenMode {
+    /// net_protocol <= 7: sub-tables recurse before local leaf props,
+    /// COLLAPSIBLE is not special-cased, then CHANGES_OFTEN props are shuffled
+    /// to the front (verified in the November 2004 retail engine.dll).
+    OldEngine,
+    /// Proto-3 (TF2 / CS:S Orange Box): DFS + move CHANGES_OFTEN props to the
+    /// front.
+    Proto3,
+    /// Proto-4 (Portal 2 / L4D / Alien Swarm): DFS + priority sort.
+    Proto4,
 }
 
 /// Assemble raw tables + server classes into a `DataTables` with each class's
@@ -208,19 +487,45 @@ pub(crate) fn build_data_tables(
     server_classes: Vec<ServerClass>,
     proto4: bool,
 ) -> DataTables {
-    let mut data = DataTables { tables, server_classes, flat_props: HashMap::new() };
-    let class_ids: Vec<(u16, String)> = data.server_classes.iter()
+    build_data_tables_mode(
+        tables,
+        server_classes,
+        if proto4 {
+            FlattenMode::Proto4
+        } else {
+            FlattenMode::Proto3
+        },
+    )
+}
+
+pub(crate) fn build_data_tables_mode(
+    tables: Vec<RawSendTable>,
+    server_classes: Vec<ServerClass>,
+    mode: FlattenMode,
+) -> DataTables {
+    let mut data = DataTables {
+        tables,
+        server_classes,
+        flat_props: HashMap::new(),
+    };
+    let class_ids: Vec<(u16, String)> = data
+        .server_classes
+        .iter()
         .map(|c| (c.id, c.data_table.clone()))
         .collect();
     for (cid, dt_name) in class_ids {
-        if let Some(flat) = flatten(&data, &dt_name, proto4) {
+        if let Some(flat) = flatten(&data, &dt_name, mode) {
             data.flat_props.insert(cid, flat);
         }
     }
     data
 }
 
-fn read_send_table(br: &mut BitReader, demo_protocol: i32, quirks: DataTableQuirks) -> Option<RawSendTable> {
+fn read_send_table(
+    br: &mut BitReader,
+    demo_protocol: i32,
+    quirks: DataTableQuirks,
+) -> Option<RawSendTable> {
     let needs_decoder = br.read_bool()?;
     let name = br.read_cstring(256)?;
     let num_props = br.read_bits(10)? as usize;
@@ -244,10 +549,18 @@ fn read_send_table(br: &mut BitReader, demo_protocol: i32, quirks: DataTableQuir
             props.push(prop);
         }
     }
-    Some(RawSendTable { needs_decoder, name, props })
+    Some(RawSendTable {
+        needs_decoder,
+        name,
+        props,
+    })
 }
 
-fn read_send_prop_def(br: &mut BitReader, demo_protocol: i32, quirks: DataTableQuirks) -> Option<RawSendPropDef> {
+fn read_send_prop_def(
+    br: &mut BitReader,
+    demo_protocol: i32,
+    quirks: DataTableQuirks,
+) -> Option<RawSendPropDef> {
     let type_raw = br.read_bits(5)? as u8;
     let prop_type = SendPropType::from_u8(type_raw)?;
     let name = br.read_cstring(256)?;
@@ -280,8 +593,11 @@ fn read_send_prop_def(br: &mut BitReader, demo_protocol: i32, quirks: DataTableQ
     if flags & SPROP_EXCLUDE != 0 || prop_type == SendPropType::DataTable {
         // Exclude prop's "table_name" field doubles as the dt name pointer
         let s = br.read_cstring(256)?;
-        if flags & SPROP_EXCLUDE != 0 { exclude_dt_name = Some(s); }
-        else { data_table_name = Some(s); }
+        if flags & SPROP_EXCLUDE != 0 {
+            exclude_dt_name = Some(s);
+        } else {
+            data_table_name = Some(s);
+        }
     } else if prop_type == SendPropType::Array {
         element_count = br.read_bits(10)? as u16;
     } else {
@@ -291,9 +607,16 @@ fn read_send_prop_def(br: &mut BitReader, demo_protocol: i32, quirks: DataTableQ
     }
 
     Some(RawSendPropDef {
-        prop_type, name, flags, priority,
-        exclude_dt_name, data_table_name,
-        low_value, high_value, bit_count, element_count,
+        prop_type,
+        name,
+        flags,
+        priority,
+        exclude_dt_name,
+        data_table_name,
+        low_value,
+        high_value,
+        bit_count,
+        element_count,
         array_element: None,
     })
 }
@@ -316,20 +639,33 @@ fn read_send_prop_def(br: &mut BitReader, demo_protocol: i32, quirks: DataTableQ
 //      Source's flattened prop ordering.
 //   3. After flattening, move every prop with SPROP_CHANGES_OFTEN to the
 //      front of the list (stable order within that group).
-fn flatten(data: &DataTables, root_table: &str, proto4: bool) -> Option<Vec<SendPropDef>> {
+fn flatten(data: &DataTables, root_table: &str, mode: FlattenMode) -> Option<Vec<SendPropDef>> {
     let excludes = build_excludes(data, root_table);
     let mut props: Vec<SendPropDef> = Vec::new();
-    push_props_end(data, root_table, None, &excludes, &mut props, &mut Vec::new());
+    push_props_end(
+        data,
+        root_table,
+        None,
+        &excludes,
+        &mut props,
+        &mut Vec::new(),
+        mode,
+    );
 
-    if proto4 {
-        sort_by_priority(&mut props);
-    } else {
-        // Proto-3: move "changes often" props to the front (stable shuffle).
-        let mut start = 0;
-        for i in 0..props.len() {
-            if props[i].flags & SPROP_CHANGES_OFTEN != 0 {
-                if i != start { props.swap(i, start); }
-                start += 1;
+    match mode {
+        FlattenMode::Proto4 => sort_by_priority(&mut props),
+        FlattenMode::Proto3 | FlattenMode::OldEngine => {
+            // Proto-3 and the November 2004 engine move CHANGES_OFTEN props to
+            // the front with this exact forward-swap pass. The old-engine pass
+            // is sub_20086A90 immediately after SendTable_BuildHierarchy.
+            let mut start = 0;
+            for i in 0..props.len() {
+                if props[i].flags & SPROP_CHANGES_OFTEN != 0 {
+                    if i != start {
+                        props.swap(i, start);
+                    }
+                    start += 1;
+                }
             }
         }
     }
@@ -360,14 +696,15 @@ fn sort_by_priority(props: &mut [SendPropDef]) {
     // 64 is always a pass).
     let mut priorities: Vec<u8> = vec![CHANGES_OFTEN_PRIORITY];
     for p in props.iter() {
-        if !priorities.contains(&p.priority) { priorities.push(p.priority); }
+        if !priorities.contains(&p.priority) {
+            priorities.push(p.priority);
+        }
     }
     priorities.sort_unstable();
 
     // Valve's two-clause match predicate.
     let matches = |p: &SendPropDef, pr: u8| -> bool {
-        p.priority == pr
-            || (p.flags & SPROP_CHANGES_OFTEN != 0 && pr == CHANGES_OFTEN_PRIORITY)
+        p.priority == pr || (p.flags & SPROP_CHANGES_OFTEN != 0 && pr == CHANGES_OFTEN_PRIORITY)
     };
 
     let mut start = 0usize;
@@ -375,7 +712,9 @@ fn sort_by_priority(props: &mut [SendPropDef]) {
         let mut i = start;
         while i < props.len() {
             if matches(&props[i], pr) {
-                if i != start { props.swap(start, i); }
+                if i != start {
+                    props.swap(start, i);
+                }
                 start += 1;
             }
             i += 1;
@@ -396,9 +735,14 @@ fn walk_excludes(
     stack: &mut Vec<String>,
     excludes: &mut HashSet<(String, String)>,
 ) {
-    if stack.iter().any(|n| n == table_name) { return; }
+    if stack.iter().any(|n| n == table_name) {
+        return;
+    }
     stack.push(table_name.to_string());
-    let Some(table) = data.find_table(table_name) else { stack.pop(); return; };
+    let Some(table) = data.find_table(table_name) else {
+        stack.pop();
+        return;
+    };
     for prop in &table.props {
         if prop.flags & SPROP_EXCLUDE != 0 {
             if let Some(dt) = &prop.exclude_dt_name {
@@ -420,12 +764,23 @@ fn push_props_end(
     excludes: &HashSet<(String, String)>,
     props: &mut Vec<SendPropDef>,
     table_stack: &mut Vec<String>,
+    mode: FlattenMode,
 ) {
     let mut local_props: Vec<SendPropDef> = Vec::new();
-    push_props_collapse(data, table_name, parent, excludes, &mut local_props, props, table_stack);
+    push_props_collapse(
+        data,
+        table_name,
+        parent,
+        excludes,
+        &mut local_props,
+        props,
+        table_stack,
+        mode,
+    );
     props.extend(local_props);
 }
 
+#[allow(clippy::too_many_arguments)]
 fn push_props_collapse(
     data: &DataTables,
     table_name: &str,
@@ -438,28 +793,55 @@ fn push_props_collapse(
     local_props: &mut Vec<SendPropDef>,
     props: &mut Vec<SendPropDef>,
     table_stack: &mut Vec<String>,
+    mode: FlattenMode,
 ) {
     table_stack.push(table_name.to_string());
-    let Some(table) = data.find_table(table_name) else { table_stack.pop(); return; };
+    let Some(table) = data.find_table(table_name) else {
+        table_stack.pop();
+        return;
+    };
 
     for prop in &table.props {
-        if prop.flags & SPROP_EXCLUDE != 0 { continue; }
+        if prop.flags & SPROP_EXCLUDE != 0 {
+            continue;
+        }
         // Exclude lookup uses (owner_table, prop_name) - `owner_table` is the
         // table this prop *lives in*, which is `table_name` here.
-        if excludes.contains(&(table_name.to_string(), prop.name.clone())) { continue; }
+        if excludes.contains(&(table_name.to_string(), prop.name.clone())) {
+            continue;
+        }
 
         if prop.prop_type == SendPropType::DataTable {
             if let Some(dt) = &prop.data_table_name {
                 if !table_stack.contains(dt) {
-                    if prop.flags & SPROP_COLLAPSIBLE != 0 {
+                    // Old engine: SendTable_BuildHierarchy has no COLLAPSIBLE
+                    // branch - every sub-table recurses the same way.
+                    if prop.flags & SPROP_COLLAPSIBLE != 0 && mode != FlattenMode::OldEngine {
                         // Collapsible sub-tables merge into the parent namespace,
                         // so the array-name context passes straight through.
-                        push_props_collapse(data, dt, parent, excludes, local_props, props, table_stack);
+                        push_props_collapse(
+                            data,
+                            dt,
+                            parent,
+                            excludes,
+                            local_props,
+                            props,
+                            table_stack,
+                            mode,
+                        );
                     } else {
                         // A genuine nested table (e.g. a SendPropArray's element
                         // table): its prop name is the array name our leaves
                         // should remember.
-                        push_props_end(data, dt, Some(&prop.name), excludes, props, table_stack);
+                        push_props_end(
+                            data,
+                            dt,
+                            Some(&prop.name),
+                            excludes,
+                            props,
+                            table_stack,
+                            mode,
+                        );
                     }
                 }
             }
@@ -467,20 +849,24 @@ fn push_props_collapse(
             // Inside-array element props are absorbed into the Array prop
             // at table-parse time; they never appear standalone in the flat
             // list.
-            if prop.flags & SPROP_INSIDEARRAY != 0 { continue; }
-            let element_def = prop.array_element.as_ref().map(|e| Box::new(SendPropDef {
-                name: e.name.clone(),
-                table_name: table_name.to_string(),
-                prop_type: e.prop_type,
-                flags: e.flags,
-                bit_count: e.bit_count,
-                low_value: e.low_value,
-                high_value: e.high_value,
-                element_count: e.element_count,
-                element_def: None,
-                priority: e.priority,
-                array_parent: parent.map(|s| s.to_string()),
-            }));
+            if prop.flags & SPROP_INSIDEARRAY != 0 {
+                continue;
+            }
+            let element_def = prop.array_element.as_ref().map(|e| {
+                Box::new(SendPropDef {
+                    name: e.name.clone(),
+                    table_name: table_name.to_string(),
+                    prop_type: e.prop_type,
+                    flags: e.flags,
+                    bit_count: e.bit_count,
+                    low_value: e.low_value,
+                    high_value: e.high_value,
+                    element_count: e.element_count,
+                    element_def: None,
+                    priority: e.priority,
+                    array_parent: parent.map(|s| s.to_string()),
+                })
+            });
             local_props.push(SendPropDef {
                 name: prop.name.clone(),
                 table_name: table_name.to_string(),

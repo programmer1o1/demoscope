@@ -6,7 +6,7 @@
 // (`gi32`/`gf32`), the `is_netmsg_anchor` frame scanner, and the header offsets.
 #![allow(dead_code)]
 
-use super::{gf32, gi32, is_netmsg_anchor, GoldSrcMeta, GOLDSRC_HEADER_SIZE, NM_FIXED, NM_MSGLEN};
+use super::{GOLDSRC_HEADER_SIZE, GoldSrcMeta, NM_FIXED, NM_MSGLEN, gf32, gi32, is_netmsg_anchor};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Other-player entity tracks.
@@ -44,6 +44,12 @@ pub(crate) struct GoldSrcEntities {
     pub(crate) tracks: HashMap<u32, Vec<(f32, f32, f32, f32)>>,
     /// entity index → (time_seconds, yaw, pitch).
     pub(crate) yaws: HashMap<u32, Vec<(f32, f32, f32)>>,
+    /// entity index → (time_seconds, life_state). 0 = alive, 1 = dead.
+    pub(crate) life_states: HashMap<u32, Vec<(f32, u8)>>,
+    /// entity index → (time_seconds, weapon model index).
+    pub(crate) weapons: HashMap<u32, Vec<(f32, i32)>>,
+    /// weapon model index → cleaned model/weapon name.
+    pub(crate) weapon_classes: HashMap<i32, String>,
     /// player slot entity index → display name.
     pub(crate) names: HashMap<u32, String>,
     /// recorder's own entity index, if known (RefParams `player_num`).
@@ -70,6 +76,12 @@ struct FieldDesc {
 }
 type Decoder = Vec<FieldDesc>;
 
+#[derive(Clone)]
+struct UserMsg {
+    name: String,
+    size: i8,
+}
+
 enum DVal {
     Num(f64),
     Str(String),
@@ -91,7 +103,11 @@ struct Bits<'a> {
 }
 impl<'a> Bits<'a> {
     fn new(d: &'a [u8]) -> Self {
-        Bits { d, pos: 0, ovf: false }
+        Bits {
+            d,
+            pos: 0,
+            ovf: false,
+        }
     }
     fn bits(&mut self, n: u32) -> u32 {
         let mut v = 0u32;
@@ -122,7 +138,11 @@ impl<'a> Bits<'a> {
         self.bits(1) != 0
     }
     fn peek16(&self) -> u32 {
-        let mut c = Bits { d: self.d, pos: self.pos, ovf: false };
+        let mut c = Bits {
+            d: self.d,
+            pos: self.pos,
+            ovf: false,
+        };
         c.bits(16)
     }
     /// Null-terminated 8-bit string (terminator consumed, not included).
@@ -232,15 +252,22 @@ struct NetState {
     decoders: HashMap<String, Decoder>,
     max_client: u8,
     is_hltv: bool,
+    is_counterstrike: bool,
     custom_msg_size: HashMap<u8, i8>, // user-message id → fixed size (-1 = u8-prefixed)
+    custom_msgs: HashMap<u8, UserMsg>,
     /// entity index → latest numeric field values (origin[*]/angles[*]/…).
     ent: HashMap<u16, HashMap<String, f64>>,
+    /// model precache/resource index → model path.
+    model_names: HashMap<i32, String>,
+    /// entity index → last emitted active weapon model index.
+    last_weapon: HashMap<u32, i32>,
     out: GoldSrcEntities,
 }
 
 impl NetState {
-    fn new() -> Self {
+    fn new(meta: &GoldSrcMeta) -> Self {
         let mut s = NetState::default();
+        s.is_counterstrike = is_counterstrike_game(&meta.game_dir);
         s.decoders
             .insert("delta_description_t".to_string(), bootstrap_decoder());
         s
@@ -248,6 +275,17 @@ impl NetState {
     fn dec(&self, name: &str) -> Option<&Decoder> {
         self.decoders.get(name)
     }
+
+    fn set_life(&mut self, eid: u32, state: u8, time: f32) {
+        if eid == 0 || eid > self.max_client as u32 {
+            return;
+        }
+        let bucket = self.out.life_states.entry(eid).or_default();
+        if bucket.last().map_or(true, |&(_, prev)| prev != state) {
+            bucket.push((time, state));
+        }
+    }
+
     /// Merge a parsed delta onto an entity's running state and, for player-slot
     /// entities, record an origin/angle sample.
     fn apply(&mut self, idx: u16, delta: HashMap<String, DVal>, time: f32) {
@@ -257,7 +295,7 @@ impl NetState {
                 state.insert(k, n);
             }
         }
-        let is_player = idx >= 1 && idx as u8 <= self.max_client && self.max_client > 0;
+        let is_player = idx >= 1 && idx <= self.max_client as u16 && self.max_client > 0;
         if !is_player {
             return;
         }
@@ -273,13 +311,32 @@ impl NetState {
                     .entry(idx as u32)
                     .or_default()
                     .push((time, x as f32, y as f32, z as f32));
-                let pitch = state.get("angles[0]").copied().unwrap_or(0.0) as f32;
                 let yaw = state.get("angles[1]").copied().unwrap_or(0.0) as f32;
                 self.out
                     .yaws
                     .entry(idx as u32)
                     .or_default()
-                    .push((time, yaw, pitch));
+                    .push((time, yaw, 0.0));
+
+                // `weaponmodel` is the player-visible p_*.mdl model index for
+                // the currently held weapon. HLTV demos do not carry usercmds,
+                // so this is the best active-weapon signal available for CS 1.6.
+                if let Some(w) = state.get("weaponmodel").copied() {
+                    let wid = w as i32;
+                    let eid = idx as u32;
+                    if wid > 0 && self.last_weapon.get(&eid).copied() != Some(wid) {
+                        self.last_weapon.insert(eid, wid);
+                        self.out.weapons.entry(eid).or_default().push((time, wid));
+                        if !self.out.weapon_classes.contains_key(&wid) {
+                            let label = self
+                                .model_names
+                                .get(&wid)
+                                .map(|s| clean_weapon_model_name(s))
+                                .unwrap_or_else(|| format!("model_{wid}"));
+                            self.out.weapon_classes.insert(wid, label);
+                        }
+                    }
+                }
             }
         }
     }
@@ -318,8 +375,8 @@ fn decode_blob(blob: &[u8], st: &mut NetState, time: f32) -> Option<()> {
         let t = blob[p];
         p += 1;
         match t {
-            0 => return Some(()),                  // svc_bad
-            1 | 19 | 27 | 28 | 30 | 42 => {}        // nop/damage/killedmonster/foundsecret/intermission/choke
+            0 => return Some(()),            // svc_bad
+            1 | 19 | 27 | 28 | 30 | 42 => {} // nop/damage/killedmonster/foundsecret/intermission/choke
             2 | 8 | 9 | 26 | 31 | 34 | 49 | 56 | 57 => {
                 cstr(blob, &mut p)?;
             }
@@ -343,11 +400,11 @@ fn decode_blob(blob: &[u8], st: &mut NetState, time: f32) -> Option<()> {
                     }
                 }
             })?,
-            4 => take(blob, &mut p, 4)?,            // version
-            5 => take(blob, &mut p, 2)?,            // set_view
+            4 => take(blob, &mut p, 4)?, // version
+            5 => take(blob, &mut p, 2)?, // set_view
             6 => bit_msg(blob, &mut p, decode_sound)?,
-            7 => take(blob, &mut p, 4)?,            // time
-            10 => take(blob, &mut p, 6)?,           // set_angle
+            7 => take(blob, &mut p, 4)?,  // time
+            10 => take(blob, &mut p, 6)?, // set_angle
             11 => {
                 // server_info: 3×i32, 16-byte hash, max_players, idx, dm,
                 // 4×cstr, trailing u8.
@@ -434,13 +491,13 @@ fn decode_blob(blob: &[u8], st: &mut NetState, time: f32) -> Option<()> {
                     }
                 }
             })?,
-            16 => take(blob, &mut p, 2)?,           // stop_sound
+            16 => take(blob, &mut p, 2)?, // stop_sound
             17 => bit_msg(blob, &mut p, |br| {
                 while br.bit() {
                     br.bits(24); // player_id + ping + loss (3×8)
                 }
             })?,
-            18 => take(blob, &mut p, 11)?,          // particle
+            18 => take(blob, &mut p, 11)?, // particle
             20 => {
                 // spawn_static: 17 fixed bytes; +3 if render-mode flag set.
                 let extra = if *blob.get(p + 16)? != 0 { 3 } else { 0 };
@@ -460,8 +517,8 @@ fn decode_blob(blob: &[u8], st: &mut NetState, time: f32) -> Option<()> {
             })?,
             22 => decode_spawnbaseline(blob, &mut p, st)?,
             23 => decode_temp_entity(blob, &mut p)?,
-            24 | 25 => take(blob, &mut p, 1)?,      // set_pause / sign_on_num
-            29 => take(blob, &mut p, 14)?,          // spawn_static_sound
+            24 | 25 => take(blob, &mut p, 1)?, // set_pause / sign_on_num
+            29 => take(blob, &mut p, 14)?,     // spawn_static_sound
             32 | 35 | 37 | 38 | 47 => take(blob, &mut p, 2)?,
             33 => {
                 cstr(blob, &mut p)?;
@@ -480,17 +537,19 @@ fn decode_blob(blob: &[u8], st: &mut NetState, time: f32) -> Option<()> {
                 // so later user messages can be sized correctly.
                 let id = *blob.get(p)?;
                 let size = *blob.get(p + 1)? as i8;
+                let name = read_fixed_str(blob.get(p + 2..p + 18)?);
                 take(blob, &mut p, 18)?;
                 st.custom_msg_size.insert(id, size);
+                st.custom_msgs.insert(id, UserMsg { name, size });
             }
             40 => decode_packet_entities(blob, &mut p, st, time)?,
             41 => decode_delta_packet_entities(blob, &mut p, st, time)?,
-            43 => bit_msg(blob, &mut p, decode_resource_list)?,
+            43 => bit_msg(blob, &mut p, |br| decode_resource_list(br, st))?,
             44 => {
                 take(blob, &mut p, 97)?;
                 cstr(blob, &mut p)?;
             }
-            45 => take(blob, &mut p, 8)?,           // resource_request
+            45 => take(blob, &mut p, 8)?, // resource_request
             46 => {
                 // customization: player u8, type u8, name cstr, index u16,
                 // download_size u32, flags u8, +16-byte md5 if flags & 4.
@@ -502,7 +561,7 @@ fn decode_blob(blob: &[u8], st: &mut NetState, time: f32) -> Option<()> {
                     take(blob, &mut p, 16)?;
                 }
             }
-            48 => take(blob, &mut p, 4)?,           // sound_fade
+            48 => take(blob, &mut p, 4)?, // sound_fade
             50 => {
                 take(blob, &mut p, 1)?;
                 st.is_hltv = true;
@@ -523,25 +582,86 @@ fn decode_blob(blob: &[u8], st: &mut NetState, time: f32) -> Option<()> {
                 cstr(blob, &mut p)?;
                 take(blob, &mut p, 1)?;
             }
-            55 => take(blob, &mut p, 4)?,           // time_scale
+            55 => take(blob, &mut p, 4)?, // time_scale
             58 => {
                 take(blob, &mut p, 4)?;
                 cstr(blob, &mut p)?;
             }
-            59..=63 => return Some(()),             // reserved/bad — stop cleanly
+            59..=63 => return Some(()), // reserved/bad: stop cleanly
             _ => {
                 // User message (id > 63): fixed size if registered, else u8-prefixed.
-                match st.custom_msg_size.get(&t) {
-                    Some(&sz) if sz >= 0 => take(blob, &mut p, sz as usize)?,
-                    _ => {
+                match st.custom_msgs.get(&t).cloned() {
+                    Some(msg) if msg.size >= 0 => {
+                        let len = msg.size as usize;
+                        let body = blob.get(p..p + len)?;
+                        handle_user_msg(st, &msg.name, body, time);
+                        take(blob, &mut p, len)?;
+                    }
+                    Some(msg) => {
                         let len = *blob.get(p)? as usize;
+                        let body = blob.get(p + 1..p + 1 + len)?;
+                        handle_user_msg(st, &msg.name, body, time);
                         take(blob, &mut p, 1 + len)?;
                     }
-                }
+                    None => match st.custom_msg_size.get(&t) {
+                        Some(&sz) if sz >= 0 => take(blob, &mut p, sz as usize)?,
+                        _ => {
+                            let len = *blob.get(p)? as usize;
+                            take(blob, &mut p, 1 + len)?;
+                        }
+                    },
+                };
             }
         }
     }
     Some(())
+}
+
+fn read_fixed_str(bytes: &[u8]) -> String {
+    let end = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
+    String::from_utf8_lossy(&bytes[..end]).into_owned()
+}
+
+fn handle_user_msg(st: &mut NetState, name: &str, body: &[u8], time: f32) {
+    // Signon blobs can replay stale scoreboard/death state at time 0. Treat
+    // gameplay life transitions as authoritative only after playback begins.
+    if time <= 0.0 {
+        return;
+    }
+    if !st.is_counterstrike {
+        return;
+    }
+    match name {
+        // Counter-Strike DeathMsg: killer byte, victim byte, headshot byte,
+        // weapon cstring. Slot ids are the player entity ids.
+        "DeathMsg" => {
+            if body.len() >= 2 {
+                let victim = body[1] as u32;
+                st.set_life(victim, 1, time);
+            }
+        }
+        // ScoreAttrib: player byte, flags byte. CS uses bit 0 for dead, but
+        // scoreboard refreshes can replay that bit without a new gameplay
+        // death. Use it only to clear dead state at spawn/round reset; DeathMsg
+        // is the authoritative death edge.
+        "ScoreAttrib" => {
+            if body.len() >= 2 {
+                let player = body[0] as u32;
+                let dead = body[1] & 1 != 0;
+                if !dead {
+                    st.set_life(player, 0, time);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn is_counterstrike_game(game_dir: &str) -> bool {
+    matches!(
+        game_dir.to_ascii_lowercase().as_str(),
+        "cstrike" | "czero" | "cstrike_beta"
+    )
 }
 
 /// Run a bit-packed message via `f`, then advance the byte cursor to the next
@@ -594,12 +714,15 @@ fn read_sound_origin(br: &mut Bits) {
     }
 }
 
-fn decode_resource_list(br: &mut Bits) {
+fn decode_resource_list(br: &mut Bits, st: &mut NetState) {
     let count = br.bits(12);
     for _ in 0..count {
-        br.bits(4); // type
-        br.read_str(); // name
-        br.bits(12); // index
+        let kind = br.bits(4);
+        let name = br.read_str();
+        let index = br.bits(12) as i32;
+        if kind == 2 && !name.is_empty() {
+            st.model_names.insert(index, name);
+        }
         br.bits(24); // size
         let flags = br.bits(3);
         if flags & 4 != 0 {
@@ -626,6 +749,20 @@ fn decode_resource_list(br: &mut Bits) {
     }
 }
 
+fn clean_weapon_model_name(path: &str) -> String {
+    let stem = path
+        .rsplit('/')
+        .next()
+        .unwrap_or(path)
+        .trim_end_matches(".mdl");
+    stem.strip_prefix("p_")
+        .or_else(|| stem.strip_prefix("v_"))
+        .or_else(|| stem.strip_prefix("w_"))
+        .unwrap_or(stem)
+        .trim_start_matches("shield_")
+        .to_ascii_lowercase()
+}
+
 fn decode_spawnbaseline(blob: &[u8], p: &mut usize, st: &mut NetState) -> Option<()> {
     let mut br = Bits::new(blob.get(*p..)?);
     let max = st.max_client as u16;
@@ -637,7 +774,11 @@ fn decode_spawnbaseline(blob: &[u8], p: &mut usize, st: &mut NetState) -> Option
         let between = idx > 0 && idx <= max;
         let type_ = br.bits(2);
         let dec = if type_ & 1 != 0 {
-            if between { player_t.as_ref() } else { ent_t.as_ref() }
+            if between {
+                player_t.as_ref()
+            } else {
+                ent_t.as_ref()
+            }
         } else {
             custom_t.as_ref()
         };
@@ -771,7 +912,7 @@ fn decode_temp_entity(blob: &[u8], p: &mut usize) -> Option<()> {
     *p += 1;
     let fixed = |n: usize| n;
     let n = match kind {
-        0 => fixed(24),  // beam_points
+        0 => fixed(24), // beam_points
         1 => 20,
         2 => 6,
         3 => 11,
@@ -866,7 +1007,7 @@ fn info_value(info: &str, key: &str) -> Option<String> {
 /// `extract_camera`'s resync logic; the only addition is decoding each NetMsg
 /// blob instead of skipping it.
 pub(crate) fn extract_entities(data: &[u8], meta: &GoldSrcMeta) -> GoldSrcEntities {
-    let mut st = NetState::new();
+    let mut st = NetState::new(meta);
     if meta.play_offset == 0 {
         return st.out;
     }
@@ -936,7 +1077,10 @@ pub(crate) fn extract_entities(data: &[u8], meta: &GoldSrcMeta) -> GoldSrcEntiti
                 let sl = gi32(data, body + 4);
                 if !(0..=8192).contains(&sl) {
                     match resync(p) {
-                        Some(np) => { p = np; continue; }
+                        Some(np) => {
+                            p = np;
+                            continue;
+                        }
                         None => break,
                     }
                 }
@@ -946,7 +1090,10 @@ pub(crate) fn extract_entities(data: &[u8], meta: &GoldSrcMeta) -> GoldSrcEntiti
                 let ln = gi32(data, body);
                 if !(0..=2_000_000).contains(&ln) {
                     match resync(p) {
-                        Some(np) => { p = np; continue; }
+                        Some(np) => {
+                            p = np;
+                            continue;
+                        }
                         None => break,
                     }
                 }
@@ -957,11 +1104,45 @@ pub(crate) fn extract_entities(data: &[u8], meta: &GoldSrcMeta) -> GoldSrcEntiti
     }
 
     // Recorder's own entity (RefParams `player_num`), if it lands on a slot.
-    st.out.primary = st
-        .out
-        .tracks
-        .keys()
-        .copied()
-        .min();
+    st.out.primary = st.out.tracks.keys().copied().min();
     st.out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn goldsrc_hltv_extracts_players_and_weapons() {
+        let path = match std::env::var("GOLDSRC_DEMO") {
+            Ok(p) => p,
+            Err(_) => {
+                eprintln!("[skip] set GOLDSRC_DEMO to run against a real GoldSrc HLTV demo");
+                return;
+            }
+        };
+        let data = std::fs::read(&path).expect("read GOLDSRC_DEMO");
+        let meta = super::super::parse(&data).expect("parse GoldSrc demo");
+        let entities = extract_entities(&data, &meta);
+
+        assert!(!entities.tracks.is_empty(), "no player tracks decoded");
+        assert!(
+            entities.tracks.keys().all(|eid| *eid >= 1 && *eid <= 32),
+            "non-player entity id leaked into player tracks: {:?}",
+            entities.tracks.keys().copied().collect::<Vec<_>>()
+        );
+        assert!(!entities.yaws.is_empty(), "no player yaw/pitch decoded");
+        assert!(
+            !entities.life_states.is_empty(),
+            "no CS life-state stream decoded"
+        );
+        assert!(
+            !entities.weapons.is_empty(),
+            "no active-weapon stream decoded"
+        );
+        assert!(
+            !entities.weapon_classes.is_empty(),
+            "no weapon model names decoded"
+        );
+    }
 }

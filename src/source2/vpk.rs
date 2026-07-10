@@ -1,4 +1,4 @@
-// Minimal Valve Pak (VPK) v2 directory reader — just enough to pull a single
+// Minimal Valve Pak (VPK) v2 directory reader: just enough to pull a single
 // resource (e.g. `maps/<map>/world_physics.vmdl_c`) out of a CS2 map pak.
 //
 // CS2 ships each map as a self-contained `<map>.vpk` whose entries all live
@@ -12,7 +12,9 @@ const VPK_SIGNATURE: u32 = 0x55aa_1234;
 /// Archive index meaning "the bytes are inline in this directory file".
 const INLINE_ARCHIVE: u16 = 0x7fff;
 
-fn le_u16(d: &[u8], o: usize) -> u16 { u16::from_le_bytes([d[o], d[o + 1]]) }
+fn le_u16(d: &[u8], o: usize) -> u16 {
+    u16::from_le_bytes([d[o], d[o + 1]])
+}
 fn le_u32(d: &[u8], o: usize) -> u32 {
     u32::from_le_bytes([d[o], d[o + 1], d[o + 2], d[o + 3]])
 }

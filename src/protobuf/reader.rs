@@ -88,8 +88,7 @@ impl<'a> Value<'a> {
     }
 
     pub fn as_sint64(self) -> Option<i64> {
-        self.as_u64()
-            .map(|v| ((v >> 1) as i64) ^ -((v & 1) as i64))
+        self.as_u64().map(|v| ((v >> 1) as i64) ^ -((v & 1) as i64))
     }
 
     /// IEEE-754 float from a Fixed32 field. `None` for any other wire type.
@@ -159,7 +158,7 @@ impl<'a> Reader<'a> {
         self.pos >= self.buf.len()
     }
 
-    /// Bytes not yet consumed — handy for length-framed outer envelopes that
+    /// Bytes not yet consumed: handy for length-framed outer envelopes that
     /// read a message header then hand the remainder to another decoder.
     pub fn remaining(&self) -> &'a [u8] {
         &self.buf[self.pos.min(self.buf.len())..]
@@ -187,7 +186,7 @@ impl<'a> Reader<'a> {
     }
 
     /// Take exactly `n` raw bytes, advancing the cursor. The counterpart to
-    /// `read_len` for outer envelopes that carry the length out-of-band — e.g.
+    /// `read_len` for outer envelopes that carry the length out-of-band: e.g.
     /// the CS:GO `DEM_PACKET` framing, where each message is a varint type, a
     /// varint size, then `size` bytes of protobuf body read with this.
     pub fn read_bytes(&mut self, n: usize) -> Result<&'a [u8]> {

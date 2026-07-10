@@ -16,7 +16,9 @@
 // We only need to fetch a block's raw bytes by 4CC; the inner block format
 // (KV3, VBIB, …) is decoded elsewhere.
 
-fn le_u16(d: &[u8], o: usize) -> u16 { u16::from_le_bytes([d[o], d[o + 1]]) }
+fn le_u16(d: &[u8], o: usize) -> u16 {
+    u16::from_le_bytes([d[o], d[o + 1]])
+}
 fn le_u32(d: &[u8], o: usize) -> u32 {
     u32::from_le_bytes([d[o], d[o + 1], d[o + 2], d[o + 3]])
 }
@@ -69,7 +71,7 @@ impl<'a> Resource<'a> {
         Some(&self.data[b.start..b.start + b.size])
     }
 
-    /// Header version (offset 4) — handy for debugging/format gating.
+    /// Header version (offset 4): handy for debugging/format gating.
     pub fn header_version(&self) -> u16 {
         le_u16(self.data, 4)
     }

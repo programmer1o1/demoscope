@@ -11,13 +11,12 @@ use std::path::Path;
 use super::csgo;
 use super::datatable::{self, DataTables};
 use super::packetentities::EntityWorld;
-use super::stringtable::{parse_userinfo, PlayerInfo};
+use super::stringtable::{PlayerInfo, parse_userinfo};
 
 // Per-frame packet/svc scanning lives in the `scan` submodule; the entry points
 // and the per-entity `OriginTracker` it fills are pulled back in here.
 mod scan;
-use scan::{scan_csgo_payload, scan_game_payload, OriginTracker};
-
+use scan::{OriginTracker, scan_csgo_payload, scan_game_payload, scan_old_payload};
 
 const HEADER_SIZE: usize = 1072;
 const DEMOCMDINFO_SIZE: usize = 76;
@@ -86,6 +85,10 @@ pub struct PlayerTrackData {
     /// eye-angle SendProp - this is the engine's actual playback camera. Drives
     /// the FPS camera on demos without usercmds (Portal 2 etc.).
     pub view_angles: Vec<(i32, f32, f32)>,
+    /// Recorder's per-frame camera origin from democmdinfo viewOrigin.
+    /// Used as a position-track fallback when entity decode is unavailable
+    /// (e.g. old-engine demos where the prop flat-list order differs from OB).
+    pub camera_track: Vec<(i32, f32, f32, f32)>,
 }
 
 fn le_i32(d: &[u8], off: usize) -> i32 {
@@ -95,7 +98,10 @@ fn le_f32(d: &[u8], off: usize) -> f32 {
     f32::from_le_bytes(d[off..off + 4].try_into().unwrap())
 }
 fn read_cstring(data: &[u8], off: usize, max: usize) -> String {
-    let end = data[off..off + max].iter().position(|&b| b == 0).unwrap_or(max);
+    let end = data[off..off + max]
+        .iter()
+        .position(|&b| b == 0)
+        .unwrap_or(max);
     String::from_utf8_lossy(&data[off..off + end]).into_owned()
 }
 
@@ -117,13 +123,13 @@ pub fn extract_from_bytes(data: &[u8]) -> Result<PlayerTrackData, Box<dyn Error>
     }
     let mut out = PlayerTrackData::default();
     out.demo_protocol = le_i32(&data, 8);
-    out.net_protocol  = le_i32(&data, 12);
-    out.server        = read_cstring(&data, 16, 260);
-    out.client_name   = read_cstring(&data, 276, 260);
-    out.map           = read_cstring(&data, 536, 260);
-    out.game_dir      = read_cstring(&data, 796, 260);
-    out.duration      = le_f32(&data, 1056);
-    out.ticks         = le_i32(&data, 1060);
+    out.net_protocol = le_i32(&data, 12);
+    out.server = read_cstring(&data, 16, 260);
+    out.client_name = read_cstring(&data, 276, 260);
+    out.map = read_cstring(&data, 536, 260);
+    out.game_dir = read_cstring(&data, 796, 260);
+    out.duration = le_f32(&data, 1056);
+    out.ticks = le_i32(&data, 1060);
     // Header carries sign_on_length at offset 1068 - currently unused since
     // we walk the signon section packet-by-packet (with splitscreen-aware
     // preamble for proto-4) rather than fast-forwarding past it.
@@ -181,9 +187,13 @@ pub fn extract_from_bytes(data: &[u8]) -> Result<PlayerTrackData, Box<dyn Error>
             let pkt_start = HEADER_SIZE + pkt_hdr;
             for n in [4, 2, 1] {
                 let len_off = pkt_start + 76 * n + 8;
-                if len_off + 4 > data.len() { continue; }
+                if len_off + 4 > data.len() {
+                    continue;
+                }
                 let length = le_i32(&data, len_off);
-                if length <= 0 { continue; }
+                if length <= 0 {
+                    continue;
+                }
                 let payload_end = len_off.saturating_add(4).saturating_add(length as usize);
                 if (length as usize) < (data.len() - pkt_start) && payload_end < data.len() {
                     splitscreen_count = n;
@@ -215,6 +225,9 @@ pub fn extract_from_bytes(data: &[u8]) -> Result<PlayerTrackData, Box<dyn Error>
     // the proto-4 family, so only those two arms branch.
     let is_csgo = out.game_dir.eq_ignore_ascii_case("csgo")
         || (out.demo_protocol >= 4 && (13000..14000).contains(&out.net_protocol));
+    // Old engine (HL2 2004 retail / GMod 9-10 classic): net_protocol <= 7.
+    // 5-bit net-message framing, pre-OB SendTable + entity delta encodings.
+    let old_engine = out.net_protocol > 0 && out.net_protocol <= 7;
     // MAX_EDICT_BITS: the bit width of edict/entity indices in svc_PacketEntities
     // (m_nMaxEntries, m_nUpdatedEntries) and the removed-entities list. Stock
     // Source is 11 (2048 edicts). GMod 13 raised the edict limit to 8192, so its
@@ -223,15 +236,100 @@ pub fn extract_from_bytes(data: &[u8]) -> Result<PlayerTrackData, Box<dyn Error>
     // garbage (numUpdates 1247 > maxEntries 225, length 26); with 13 it reads
     // clean (delta=1, ~8 updated entities, length == the rest of the packet).
     // Verified empirically against garrythirteen.dem (no reference parser exists).
-    let edict_bits: u32 = if out.game_dir.eq_ignore_ascii_case("garrysmod") { 13 } else { 11 };
+    let edict_bits: u32 = if out.game_dir.eq_ignore_ascii_case("garrysmod") {
+        13
+    } else {
+        11
+    };
     let dbg_scan = std::env::var("DUMP_SCAN").is_ok();
     if dbg_scan {
-        eprintln!("[SCAN] proto={} net={} game={} portal2_engine={} splitscreen={} csgo={}",
-            out.demo_protocol, out.net_protocol, out.game_dir, portal2_engine, splitscreen_count, is_csgo);
+        eprintln!(
+            "[SCAN] proto={} net={} game={} portal2_engine={} splitscreen={} csgo={}",
+            out.demo_protocol,
+            out.net_protocol,
+            out.game_dir,
+            portal2_engine,
+            splitscreen_count,
+            is_csgo
+        );
+    }
+    // Old-engine demos (net_protocol <= 7) place DEM_DATATABLES *after*
+    // DEM_SIGNON, but the signon already contains the full entity update.
+    // Pre-scan to parse DataTables first so the signon entity decode has a
+    // flat-prop map when it runs.
+    if old_engine && data_tables.is_none() {
+        let mut pre = HEADER_SIZE;
+        while pre + pkt_hdr <= data.len() {
+            let pre_cmd = data[pre];
+            pre += pkt_hdr;
+            if pre_cmd == DEM_DATATABLES {
+                if pre + 4 <= data.len() {
+                    let len = le_i32(&data, pre);
+                    if len > 0 {
+                        let ps = pre + 4;
+                        let pe = (ps + len as usize).min(data.len());
+                        if let Some(dt) = datatable::parse_old(&data[ps..pe], out.demo_protocol) {
+                            world = Some(EntityWorld::new(&dt));
+                            data_tables = Some(dt);
+                        }
+                    }
+                }
+                break;
+            }
+            // Skip frame payload so we advance correctly.
+            let skip = match pre_cmd {
+                DEM_SYNCTICK => 0,
+                DEM_STOP => break,
+                DEM_SIGNON | DEM_PACKET => {
+                    if pre + democmdinfo_bytes + 12 > data.len() {
+                        break;
+                    }
+                    let l = le_i32(&data, pre + democmdinfo_bytes + 8);
+                    if l < 0 {
+                        break;
+                    }
+                    democmdinfo_bytes + 12 + l as usize
+                }
+                DEM_CONSOLECMD => {
+                    if pre + 4 > data.len() {
+                        break;
+                    }
+                    let l = le_i32(&data, pre);
+                    if l < 0 {
+                        break;
+                    }
+                    4 + l as usize
+                }
+                DEM_USERCMD => {
+                    if pre + 8 > data.len() {
+                        break;
+                    }
+                    let l = le_i32(&data, pre + 4);
+                    if l < 0 {
+                        break;
+                    }
+                    8 + l as usize
+                }
+                DEM_STRINGTABLES => {
+                    if pre + 4 > data.len() {
+                        break;
+                    }
+                    let l = le_i32(&data, pre);
+                    if l < 0 {
+                        break;
+                    }
+                    4 + l as usize
+                }
+                _ => break,
+            };
+            pre += skip;
+        }
     }
     let mut dbg_pkts = 0u32;
     while offset < data.len() {
-        if offset + 5 > data.len() { break; }
+        if offset + 5 > data.len() {
+            break;
+        }
         let raw_cmd = data[offset];
         let tick = le_i32(&data, offset + 1);
         offset += pkt_hdr;
@@ -241,18 +339,26 @@ pub fn extract_from_bytes(data: &[u8]) -> Result<PlayerTrackData, Box<dyn Error>
                 8 => 99,               // DEM_CUSTOMDATA - we just want to skip it
                 v => v,
             }
-        } else { raw_cmd };
+        } else {
+            raw_cmd
+        };
 
         match cmd {
             DEM_STOP => break,
             DEM_SYNCTICK => { /* no payload */ }
             DEM_SIGNON | DEM_PACKET => {
-                if offset + democmdinfo_bytes + 12 > data.len() { break; }
+                if offset + democmdinfo_bytes + 12 > data.len() {
+                    break;
+                }
                 let length = le_i32(&data, offset + democmdinfo_bytes + 8);
-                if length < 0 { break; }
+                if length < 0 {
+                    break;
+                }
                 let payload_start = offset + democmdinfo_bytes + 12;
                 let payload_end = payload_start.saturating_add(length as usize);
-                if payload_end > data.len() { break; }
+                if payload_end > data.len() {
+                    break;
+                }
                 // democmdinfo Split_t[0]: flags(4)+viewOrigin(12)+viewAngles(12).
                 // viewAngles = the recorder's per-frame camera direction; capture
                 // it as the dense FPS-camera angle source (game packets only).
@@ -262,16 +368,58 @@ pub fn extract_from_bytes(data: &[u8]) -> Result<PlayerTrackData, Box<dyn Error>
                     if pitch.is_finite() && yaw.is_finite() {
                         out.view_angles.push((tick, pitch, yaw));
                     }
+                    let ox = le_f32(&data, offset + 4);
+                    let oy = le_f32(&data, offset + 8);
+                    let oz = le_f32(&data, offset + 12);
+                    if ox.is_finite()
+                        && oy.is_finite()
+                        && oz.is_finite()
+                        && (ox != 0.0 || oy != 0.0 || oz != 0.0)
+                    {
+                        out.camera_track.push((tick, ox, oy, oz));
+                    }
                 }
                 dbg_pkts += 1;
-                if is_csgo {
+                if old_engine {
+                    scan_old_payload(
+                        &data[payload_start..payload_end],
+                        tick,
+                        out.demo_protocol,
+                        data_tables.as_ref(),
+                        world.as_mut(),
+                        &mut last_pos,
+                        &mut origin_state,
+                        &mut last_life,
+                        &mut last_obs,
+                        &mut last_yaw,
+                        &mut last_weapon,
+                        &mut out.tracks,
+                        &mut out.life_states,
+                        &mut out.observer_modes,
+                        &mut out.yaws,
+                        &mut out.weapons,
+                        &mut out.weapon_classes,
+                        &mut out.econ,
+                        userinfo_table_id,
+                        &mut out.names,
+                    );
+                } else if is_csgo {
                     scan_csgo_payload(
                         &data[payload_start..payload_end],
                         tick,
                         data_tables.as_ref(),
                         world.as_mut(),
-                        &mut last_pos, &mut origin_state, &mut last_life, &mut last_obs, &mut last_yaw, &mut last_weapon,
-                        &mut out.tracks, &mut out.life_states, &mut out.observer_modes, &mut out.yaws, &mut out.weapons,
+                        &mut last_pos,
+                        &mut origin_state,
+                        &mut last_life,
+                        &mut last_obs,
+                        &mut last_yaw,
+                        &mut last_weapon,
+                        &mut out.tracks,
+                        &mut out.life_states,
+                        &mut out.observer_modes,
+                        &mut out.yaws,
+                        &mut out.weapons,
                         &mut out.weapon_classes,
                         &mut out.econ,
                         &mut csgo_string_tables,
@@ -287,8 +435,17 @@ pub fn extract_from_bytes(data: &[u8]) -> Result<PlayerTrackData, Box<dyn Error>
                         edict_bits,
                         data_tables.as_ref(),
                         world.as_mut(),
-                        &mut last_pos, &mut origin_state, &mut last_life, &mut last_obs, &mut last_yaw, &mut last_weapon,
-                        &mut out.tracks, &mut out.life_states, &mut out.observer_modes, &mut out.yaws, &mut out.weapons,
+                        &mut last_pos,
+                        &mut origin_state,
+                        &mut last_life,
+                        &mut last_obs,
+                        &mut last_yaw,
+                        &mut last_weapon,
+                        &mut out.tracks,
+                        &mut out.life_states,
+                        &mut out.observer_modes,
+                        &mut out.yaws,
+                        &mut out.weapons,
                         &mut out.weapon_classes,
                         &mut out.econ,
                         userinfo_table_id,
@@ -298,24 +455,40 @@ pub fn extract_from_bytes(data: &[u8]) -> Result<PlayerTrackData, Box<dyn Error>
                 offset = payload_end;
             }
             DEM_CONSOLECMD => {
-                if offset + 4 > data.len() { break; }
+                if offset + 4 > data.len() {
+                    break;
+                }
                 let length = le_i32(&data, offset);
-                if length < 0 { break; }
+                if length < 0 {
+                    break;
+                }
                 offset = offset.saturating_add(4).saturating_add(length as usize);
             }
             DEM_USERCMD => {
-                if offset + 8 > data.len() { break; }
+                if offset + 8 > data.len() {
+                    break;
+                }
                 let length = le_i32(&data, offset + 4);
-                if length < 0 { break; }
+                if length < 0 {
+                    break;
+                }
                 offset = offset.saturating_add(8).saturating_add(length as usize);
             }
             DEM_DATATABLES => {
-                if offset + 4 > data.len() { break; }
+                if offset + 4 > data.len() {
+                    break;
+                }
                 let length = le_i32(&data, offset);
-                if length < 0 { break; }
+                if length < 0 {
+                    break;
+                }
                 let payload_start = offset + 4;
-                let payload_end = payload_start.saturating_add(length as usize).min(data.len());
-                let parsed = if is_csgo {
+                let payload_end = payload_start
+                    .saturating_add(length as usize)
+                    .min(data.len());
+                let parsed = if old_engine {
+                    datatable::parse_old(&data[payload_start..payload_end], out.demo_protocol)
+                } else if is_csgo {
                     // CS:GO ships SendTables as protobuf CSVCMsg_SendTable.
                     csgo::sendtable::parse(&data[payload_start..payload_end])
                 } else {
@@ -335,23 +508,44 @@ pub fn extract_from_bytes(data: &[u8]) -> Result<PlayerTrackData, Box<dyn Error>
                             if let Some(flat) = dt.flat_props.get(&id) {
                                 eprintln!("[FLAT] class {} has {} props", id, flat.len());
                                 for (i, p) in flat.iter().enumerate() {
-                                    let co = if p.flags & super::sendprop::SPROP_CHANGES_OFTEN != 0 { "CO" } else { "" };
-                                    eprintln!("[FLAT] {:>3} {:?} nbits={} prio={} {} {}{}",
-                                        i, p.prop_type, p.bit_count, p.priority, co,
-                                        p.array_parent.as_deref().map(|a| format!("{a}.")).unwrap_or_default(),
-                                        p.name);
+                                    let co = if p.flags & super::sendprop::SPROP_CHANGES_OFTEN != 0
+                                    {
+                                        "CO"
+                                    } else {
+                                        ""
+                                    };
+                                    eprintln!(
+                                        "[FLAT] {:>3} {:?} nbits={} prio={} {} {}{}",
+                                        i,
+                                        p.prop_type,
+                                        p.bit_count,
+                                        p.priority,
+                                        co,
+                                        p.array_parent
+                                            .as_deref()
+                                            .map(|a| format!("{a}."))
+                                            .unwrap_or_default(),
+                                        p.name
+                                    );
                                 }
                             }
                         }
                     }
                     if dbg_scan {
-                        eprintln!("[SCAN] DATATABLES parsed at pkt {}: {} classes, {} flat arrays",
-                            dbg_pkts, dt.server_classes.len(), dt.flat_props.len());
+                        eprintln!(
+                            "[SCAN] DATATABLES parsed at pkt {}: {} classes, {} flat arrays",
+                            dbg_pkts,
+                            dt.server_classes.len(),
+                            dt.flat_props.len()
+                        );
                     }
                     world = Some(EntityWorld::new(&dt));
                     data_tables = Some(dt);
                 } else if dbg_scan {
-                    eprintln!("[SCAN] DATATABLES parse FAILED (returned None) at offset {:#x}", offset);
+                    eprintln!(
+                        "[SCAN] DATATABLES parse FAILED (returned None) at offset {:#x}",
+                        offset
+                    );
                 }
                 offset = payload_end;
             }
@@ -359,40 +553,95 @@ pub fn extract_from_bytes(data: &[u8]) -> Result<PlayerTrackData, Box<dyn Error>
                 // DEM_CUSTOMDATA (proto-4 only) - length-prefixed payload we
                 // don't need to interpret. Skip past it cleanly so the rest
                 // of the packet stream remains aligned.
-                if offset + 8 > data.len() { break; }
+                if offset + 8 > data.len() {
+                    break;
+                }
                 let _id = le_i32(&data, offset);
                 let length = le_i32(&data, offset + 4);
-                if length < 0 { break; }
-                offset = offset.saturating_add(8).saturating_add(length as usize).min(data.len());
+                if length < 0 {
+                    break;
+                }
+                offset = offset
+                    .saturating_add(8)
+                    .saturating_add(length as usize)
+                    .min(data.len());
             }
             DEM_STRINGTABLES => {
-                if offset + 4 > data.len() { break; }
+                if offset + 4 > data.len() {
+                    break;
+                }
                 let length = le_i32(&data, offset);
-                if length < 0 { break; }
+                if length < 0 {
+                    break;
+                }
                 let payload_start = offset + 4;
-                let payload_end = payload_start.saturating_add(length as usize).min(data.len());
+                let payload_end = payload_start
+                    .saturating_add(length as usize)
+                    .min(data.len());
                 if let Some(parsed) = parse_userinfo(&data[payload_start..payload_end]) {
                     out.names.extend(parsed.players);
-                    userinfo_table_id = parsed.table_names.iter()
-                        .position(|n| n == "userinfo");
+                    userinfo_table_id = parsed.table_names.iter().position(|n| n == "userinfo");
                 }
                 offset = payload_end;
             }
             _ => {
                 if dbg_scan {
-                    eprintln!("[SCAN] abort at offset {:#x}: unknown cmd raw={} mapped={} after {} game pkts (data_tables={})",
-                        offset, raw_cmd, cmd, dbg_pkts, data_tables.is_some());
+                    eprintln!(
+                        "[SCAN] abort at offset {:#x}: unknown cmd raw={} mapped={} after {} game pkts (data_tables={})",
+                        offset,
+                        raw_cmd,
+                        cmd,
+                        dbg_pkts,
+                        data_tables.is_some()
+                    );
                 }
                 break;
             }
         }
     }
     if dbg_scan {
-        eprintln!("[SCAN] done: {} game packets, data_tables={}, entities={}",
-            dbg_pkts, data_tables.is_some(),
-            world.as_ref().map(|w| w.entities.len()).unwrap_or(0));
+        eprintln!(
+            "[SCAN] done: {} game packets, data_tables={}, entities={}",
+            dbg_pkts,
+            data_tables.is_some(),
+            world.as_ref().map(|w| w.entities.len()).unwrap_or(0)
+        );
+    }
+
+    // Use the recorder's camera path as the entity-1 position track when no
+    // entity decoded any position samples. For old-engine demos, also prefer it
+    // when entity 1 has less than 25% of the camera's coverage; keep decoded
+    // remote entities and yaw/life data intact. This covers:
+    //   • Old-engine mods whose later SendProp variants remain incomplete
+    //   • Single-player Source games like HL:Source (hl1, net_protocol=24)
+    //     where the local player's m_vecOrigin is in DT_LocalPlayerExclusive
+    //     and never gets networked if the entity decode produces nothing.
+    // Guard: only apply when ALL tracks are empty so multi-player demos that
+    // happen to have entity 1 without data aren't affected.
+    let all_tracks_empty = out.tracks.values().all(|v| v.is_empty());
+    let entity_one_len = out.tracks.get(&1).map(Vec::len).unwrap_or(0);
+    let old_engine_sparse = old_engine
+        && out.camera_track.len() >= 64
+        && entity_one_len.saturating_mul(4) < out.camera_track.len();
+    if !out.camera_track.is_empty()
+        && ((all_tracks_empty && entity_one_len == 0) || old_engine_sparse)
+    {
+        out.tracks.insert(1, out.camera_track.clone());
+        // Synthesize a minimal name entry so the viewer can label this track.
+        if !out.names.contains_key(&1) {
+            out.names.insert(
+                1,
+                PlayerInfo {
+                    name: out.client_name.clone(),
+                    user_id: 1,
+                    steam_id: String::new(),
+                    is_fake: false,
+                    is_hltv: false,
+                    aliases: Vec::new(),
+                },
+            );
+        }
     }
 
     Ok(out)
 }
-

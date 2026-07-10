@@ -20,10 +20,175 @@
 
 use std::collections::{HashMap, HashSet};
 
-use base64::{engine::general_purpose::STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 
 use super::super::util::bytes::{le_f32, le_i32, le_u16};
 use super::find_spawn_in_entities;
+
+/// Spatial metadata needed to stitch consecutive GoldSrc campaign maps.
+/// `info_landmark` origins are the coordinate-space anchors used by the engine
+/// itself during a changelevel; bounds let the renderer decide which map owns
+/// a new post-changelevel track segment.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct GoldSrcMapInfo {
+    pub(crate) landmarks: HashMap<String, [f32; 3]>,
+    pub(crate) mins: [f32; 3],
+    pub(crate) maxs: [f32; 3],
+}
+
+fn goldsrc_lump(data: &[u8], index: usize) -> Option<(usize, usize)> {
+    if data.len() < 4 + 15 * 8 || !matches!(le_i32(data, 0), 29 | 30) {
+        return None;
+    }
+    let o = 4 + index * 8;
+    let off = le_i32(data, o);
+    let len = le_i32(data, o + 4);
+    if off < 0 || len < 0 {
+        return None;
+    }
+    let (off, len) = (off as usize, len as usize);
+    off.checked_add(len)
+        .filter(|end| *end <= data.len())
+        .map(|_| (off, len))
+}
+
+fn entity_blocks(text: &str) -> Vec<HashMap<String, String>> {
+    let bytes = text.as_bytes();
+    let mut entities = Vec::new();
+    let mut p = 0usize;
+    while p < bytes.len() {
+        while p < bytes.len() && bytes[p] != b'{' {
+            p += 1;
+        }
+        if p == bytes.len() {
+            break;
+        }
+        p += 1;
+        let mut fields = HashMap::new();
+        while p < bytes.len() && bytes[p] != b'}' {
+            while p < bytes.len() && bytes[p].is_ascii_whitespace() {
+                p += 1;
+            }
+            if p >= bytes.len() || bytes[p] == b'}' {
+                break;
+            }
+            if p >= bytes.len() || bytes[p] != b'"' {
+                p += 1;
+                continue;
+            }
+            p += 1;
+            let ks = p;
+            while p < bytes.len() && bytes[p] != b'"' {
+                p += 1;
+            }
+            let key = String::from_utf8_lossy(&bytes[ks..p]).into_owned();
+            p = (p + 1).min(bytes.len());
+            while p < bytes.len() && bytes[p].is_ascii_whitespace() {
+                p += 1;
+            }
+            if p >= bytes.len() || bytes[p] != b'"' {
+                continue;
+            }
+            p += 1;
+            let vs = p;
+            while p < bytes.len() && bytes[p] != b'"' {
+                p += 1;
+            }
+            let value = String::from_utf8_lossy(&bytes[vs..p]).into_owned();
+            p = (p + 1).min(bytes.len());
+            fields.insert(key, value);
+        }
+        entities.push(fields);
+        p = (p + 1).min(bytes.len());
+    }
+    entities
+}
+
+fn parse_origin(value: &str) -> Option<[f32; 3]> {
+    let mut values = value.split_whitespace().map(str::parse::<f32>);
+    let origin = [
+        values.next()?.ok()?,
+        values.next()?.ok()?,
+        values.next()?.ok()?,
+    ];
+    if values.next().is_none() && origin.iter().all(|n| n.is_finite()) {
+        Some(origin)
+    } else {
+        None
+    }
+}
+
+/// Read the landmark anchors and raw coordinate bounds from a v29/v30 BSP.
+pub(crate) fn goldsrc_map_info(data: &[u8]) -> Option<GoldSrcMapInfo> {
+    const L_ENTITIES: usize = 0;
+    const L_VERTICES: usize = 3;
+    let (v_off, v_len) = goldsrc_lump(data, L_VERTICES)?;
+    if v_len < 12 {
+        return None;
+    }
+    let mut mins = [f32::INFINITY; 3];
+    let mut maxs = [f32::NEG_INFINITY; 3];
+    for o in (v_off..v_off + v_len - 11).step_by(12) {
+        for axis in 0..3 {
+            let value = le_f32(data, o + axis * 4);
+            if value.is_finite() {
+                mins[axis] = mins[axis].min(value);
+                maxs[axis] = maxs[axis].max(value);
+            }
+        }
+    }
+    let mut landmarks = HashMap::new();
+    if let Some((e_off, e_len)) = goldsrc_lump(data, L_ENTITIES) {
+        let text = String::from_utf8_lossy(&data[e_off..e_off + e_len]);
+        for entity in entity_blocks(&text) {
+            if !entity
+                .get("classname")
+                .is_some_and(|v| v.eq_ignore_ascii_case("info_landmark"))
+            {
+                continue;
+            }
+            let Some(name) = entity.get("targetname").filter(|v| !v.trim().is_empty()) else {
+                continue;
+            };
+            let Some(origin) = entity.get("origin").and_then(|v| parse_origin(v)) else {
+                continue;
+            };
+            landmarks.insert(name.trim().to_ascii_lowercase(), origin);
+        }
+    }
+    Some(GoldSrcMapInfo {
+        landmarks,
+        mins,
+        maxs,
+    })
+}
+
+/// Compute local→campaign translations for ordered map layers. Consecutive HL1
+/// maps contain an `info_landmark` with the same targetname; placing those two
+/// origins on top of one another reproduces GoldSrc's changelevel transform.
+/// Looking backward also handles a supplied layer with no direct predecessor.
+pub(crate) fn goldsrc_alignment_offsets(infos: &[GoldSrcMapInfo]) -> Vec<[f32; 3]> {
+    let mut offsets = vec![[0.0; 3]; infos.len()];
+    for i in 1..infos.len() {
+        'previous: for j in (0..i).rev() {
+            let mut common: Vec<&String> = infos[i]
+                .landmarks
+                .keys()
+                .filter(|name| infos[j].landmarks.contains_key(*name))
+                .collect();
+            common.sort_unstable();
+            if let Some(name) = common.first() {
+                let from = infos[j].landmarks[*name];
+                let to = infos[i].landmarks[*name];
+                for axis in 0..3 {
+                    offsets[i][axis] = offsets[j][axis] + from[axis] - to[axis];
+                }
+                break 'previous;
+            }
+        }
+    }
+    offsets
+}
 
 pub(crate) fn extract_goldsrc_bsp_from_bytes(
     data: &[u8],
@@ -171,10 +336,18 @@ pub(crate) fn extract_goldsrc_bsp_from_bytes(
             let s = se[se_idx];
             let vi = if s >= 0 {
                 let idx = s as usize;
-                if idx < edges.len() { edges[idx].0 as u32 } else { continue }
+                if idx < edges.len() {
+                    edges[idx].0 as u32
+                } else {
+                    continue;
+                }
             } else {
                 let idx = s.unsigned_abs() as usize;
-                if idx < edges.len() { edges[idx].1 as u32 } else { continue }
+                if idx < edges.len() {
+                    edges[idx].1 as u32
+                } else {
+                    continue;
+                }
             };
             fv.push(vi);
         }
@@ -206,7 +379,13 @@ pub(crate) fn extract_goldsrc_bsp_from_bytes(
     }
     let compact_v: Vec<[f32; 3]> = used
         .iter()
-        .map(|&i| if (i as usize) < verts_xyz.len() { verts_xyz[i as usize] } else { [0.0; 3] })
+        .map(|&i| {
+            if (i as usize) < verts_xyz.len() {
+                verts_xyz[i as usize]
+            } else {
+                [0.0; 3]
+            }
+        })
         .collect();
     let compact_t: Vec<(u32, u32, u32)> = tris
         .iter()
@@ -238,4 +417,66 @@ pub(crate) fn extract_goldsrc_bsp_from_bytes(
     };
 
     Some((verts_b64, idx_b64, compact_v.len(), compact_t.len(), spawn))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn map_with_landmarks(entries: &[(&str, [f32; 3])]) -> Vec<u8> {
+        let mut entities = String::from("{\n\"classname\" \"worldspawn\"\n}\n");
+        for (name, origin) in entries {
+            entities.push_str(&format!(
+                "{{\n\"classname\" \"info_landmark\"\n\"targetname\" \"{name}\"\n\"origin\" \"{} {} {}\"\n}}\n",
+                origin[0], origin[1], origin[2]
+            ));
+        }
+        entities.push('\0');
+        let entity_offset = 4 + 15 * 8;
+        let vertex_offset = entity_offset + entities.len();
+        let mut data = vec![0u8; vertex_offset + 24];
+        data[0..4].copy_from_slice(&30i32.to_le_bytes());
+        data[4..8].copy_from_slice(&(entity_offset as i32).to_le_bytes());
+        data[8..12].copy_from_slice(&(entities.len() as i32).to_le_bytes());
+        let vertex_lump = 4 + 3 * 8;
+        data[vertex_lump..vertex_lump + 4].copy_from_slice(&(vertex_offset as i32).to_le_bytes());
+        data[vertex_lump + 4..vertex_lump + 8].copy_from_slice(&24i32.to_le_bytes());
+        data[entity_offset..vertex_offset].copy_from_slice(entities.as_bytes());
+        for (i, value) in [-64.0f32, -32.0, -8.0, 128.0, 96.0, 72.0]
+            .into_iter()
+            .enumerate()
+        {
+            let at = vertex_offset + i * 4;
+            data[at..at + 4].copy_from_slice(&value.to_le_bytes());
+        }
+        data
+    }
+
+    #[test]
+    fn reads_landmarks_and_map_bounds() {
+        let data = map_with_landmarks(&[("LM_A", [10.0, 20.0, 30.0])]);
+        let info = goldsrc_map_info(&data).unwrap();
+        assert_eq!(info.landmarks["lm_a"], [10.0, 20.0, 30.0]);
+        assert_eq!(info.mins, [-64.0, -32.0, -8.0]);
+        assert_eq!(info.maxs, [128.0, 96.0, 72.0]);
+    }
+
+    #[test]
+    fn chains_shared_landmark_transforms() {
+        let maps = [
+            map_with_landmarks(&[("a", [100.0, 0.0, 0.0])]),
+            map_with_landmarks(&[("a", [10.0, 0.0, 0.0]), ("b", [500.0, 0.0, 0.0])]),
+            map_with_landmarks(&[("b", [50.0, 0.0, 0.0])]),
+        ];
+        let infos: Vec<_> = maps
+            .iter()
+            .map(|map| goldsrc_map_info(map).unwrap())
+            .collect();
+        assert_eq!(infos[0].landmarks.get("a"), Some(&[100.0, 0.0, 0.0]));
+        assert_eq!(infos[1].landmarks.get("a"), Some(&[10.0, 0.0, 0.0]));
+        assert_eq!(
+            goldsrc_alignment_offsets(&infos),
+            vec![[0.0, 0.0, 0.0], [90.0, 0.0, 0.0], [540.0, 0.0, 0.0]]
+        );
+    }
 }

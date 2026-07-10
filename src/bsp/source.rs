@@ -4,7 +4,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use base64::{engine::general_purpose::STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use lzma_rs::lzma_decompress;
 
 use super::super::util::bytes::{le_f32, le_i16_bytes, le_i32, le_u16};
@@ -14,13 +14,17 @@ use super::find_spawn_in_entities;
 // TF2/OrangBox BSP lumps start with b"LZMA" when compressed.
 // Format: magic(4) + actual_size(u32) + lzma_size(u32) + properties(5) + data
 fn decompress_lzma_lump(data: &[u8]) -> Option<Vec<u8>> {
-    if data.len() < 4 { return None; }
+    if data.len() < 4 {
+        return None;
+    }
     if &data[0..4] != b"LZMA" {
         return Some(data.to_vec());
     }
-    if data.len() < 17 { return None; }
+    if data.len() < 17 {
+        return None;
+    }
     let actual_size = u32::from_le_bytes(data[4..8].try_into().ok()?) as u64;
-    let props = &data[12..17];  // 5 bytes: [lc/lp/pb, dict_size LE u32]
+    let props = &data[12..17]; // 5 bytes: [lc/lp/pb, dict_size LE u32]
     let body = &data[17..];
 
     // Build LZMA "alone" format: props(5) + uncompressed_size(8 LE) + body
@@ -47,26 +51,30 @@ fn detect_lump_base(data: &[u8]) -> usize {
         let mut ok = 0usize;
         for i in 0..64 {
             let o = base + i * 16;
-            if o + 16 > data.len() { break; }
+            if o + 16 > data.len() {
+                break;
+            }
             let ofs = le_i32(data, o) as i64;
             let len = le_i32(data, o + 4) as i64;
             let ver = le_i32(data, o + 8);
             let sane_ver = (0..=255).contains(&ver);
             let sane_span = len == 0 || (ofs > 0 && ofs + len <= filelen);
-            if sane_ver && sane_span { ok += 1; }
+            if sane_ver && sane_span {
+                ok += 1;
+            }
         }
         ok
     };
     if score(12) > score(8) { 12 } else { 8 }
 }
 
-// Separate coplanar faces that overlap a face already kept on the same plane —
+// Separate coplanar faces that overlap a face already kept on the same plane :
 // the classic Source z-fight where a `func_detail` brush face lands exactly on a
 // world brush face (identical plane → identical depth → strobing stripes that no
 // depth buffer, polygon offset, or log-depth can resolve). Rather than DROP the
 // duplicate (which would leave a hole wherever a partial overlap uniquely covered
 // surface), we nudge it a fraction of a unit along its normal so both faces still
-// render but at different depths — no strobe, no hole. New vertices are appended
+// render but at different depths: no strobe, no hole. New vertices are appended
 // for the nudged faces (they can't share positions with their un-nudged
 // neighbours), so the triangle list is rewritten to point at them.
 //
@@ -74,7 +82,10 @@ fn detect_lump_base(data: &[u8]) -> usize {
 // properly crossing) so partial/banded overlaps are caught; faces that only share
 // an edge or vertex (adjacent tiles, the two halves of a quad) are not, so genuine
 // flat surfaces are untouched. Huge coplanar buckets are skipped to bound cost.
-fn remove_coplanar_overlaps(verts: &mut Vec<[f32; 3]>, tris: Vec<(u32, u32, u32)>) -> Vec<(u32, u32, u32)> {
+fn remove_coplanar_overlaps(
+    verts: &mut Vec<[f32; 3]>,
+    tris: Vec<(u32, u32, u32)>,
+) -> Vec<(u32, u32, u32)> {
     let mut tris = tris;
 
     // Phase 1 (read-only): find which faces overlap, and the normal to nudge
@@ -84,41 +95,80 @@ fn remove_coplanar_overlaps(verts: &mut Vec<[f32; 3]>, tris: Vec<(u32, u32, u32)
         let get = |i: u32| v[i as usize];
         let sub = |a: [f32; 3], b: [f32; 3]| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
         let cross = |a: [f32; 3], b: [f32; 3]| {
-            [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
+            [
+                a[1] * b[2] - a[2] * b[1],
+                a[2] * b[0] - a[0] * b[2],
+                a[0] * b[1] - a[1] * b[0],
+            ]
         };
         let dot = |a: [f32; 3], b: [f32; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 
-        struct TInfo { axis: usize, area: f32, key: (i32, i32, i32, i32), normal: [f32; 3] }
+        struct TInfo {
+            axis: usize,
+            area: f32,
+            key: (i32, i32, i32, i32),
+            normal: [f32; 3],
+        }
         let mut info: Vec<Option<TInfo>> = Vec::with_capacity(tris.len());
         for &(a, b, c) in &tris {
             let (pa, pb, pc) = (get(a), get(b), get(c));
             let n = cross(sub(pb, pa), sub(pc, pa));
             let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
-            if len < 1e-6 { info.push(None); continue; }
+            if len < 1e-6 {
+                info.push(None);
+                continue;
+            }
             let area = 0.5 * len;
             let rn = [n[0] / len, n[1] / len, n[2] / len]; // true (un-canonicalised) normal
             let (mut nn, mut d) = (rn, dot(rn, pa));
             // Canonicalise the sign so a face and its opposite-wound twin share a key.
-            let s = if nn[0].abs() > 1e-4 { nn[0] } else if nn[1].abs() > 1e-4 { nn[1] } else { nn[2] };
-            if s < 0.0 { nn = [-nn[0], -nn[1], -nn[2]]; d = -d; }
+            let s = if nn[0].abs() > 1e-4 {
+                nn[0]
+            } else if nn[1].abs() > 1e-4 {
+                nn[1]
+            } else {
+                nn[2]
+            };
+            if s < 0.0 {
+                nn = [-nn[0], -nn[1], -nn[2]];
+                d = -d;
+            }
             let key = (
-                (nn[0] * 64.0).round() as i32, (nn[1] * 64.0).round() as i32,
-                (nn[2] * 64.0).round() as i32, (d * 2.0).round() as i32,
+                (nn[0] * 64.0).round() as i32,
+                (nn[1] * 64.0).round() as i32,
+                (nn[2] * 64.0).round() as i32,
+                (d * 2.0).round() as i32,
             );
-            let axis = if nn[0].abs() >= nn[1].abs() && nn[0].abs() >= nn[2].abs() { 0 }
-                else if nn[1].abs() >= nn[2].abs() { 1 } else { 2 };
-            info.push(Some(TInfo { axis, area, key, normal: rn }));
+            let axis = if nn[0].abs() >= nn[1].abs() && nn[0].abs() >= nn[2].abs() {
+                0
+            } else if nn[1].abs() >= nn[2].abs() {
+                1
+            } else {
+                2
+            };
+            info.push(Some(TInfo {
+                axis,
+                area,
+                key,
+                normal: rn,
+            }));
         }
         let mut buckets: HashMap<(i32, i32, i32, i32), Vec<usize>> = HashMap::new();
         for (i, inf) in info.iter().enumerate() {
-            if let Some(t) = inf { buckets.entry(t.key).or_default().push(i); }
+            if let Some(t) = inf {
+                buckets.entry(t.key).or_default().push(i);
+            }
         }
         let proj = |p: [f32; 3], axis: usize| -> [f32; 2] {
-            match axis { 0 => [p[1], p[2]], 1 => [p[0], p[2]], _ => [p[0], p[1]] }
+            match axis {
+                0 => [p[1], p[2]],
+                1 => [p[0], p[2]],
+                _ => [p[0], p[1]],
+            }
         };
         // STRICTLY-inside point-in-triangle: all three edge signs agree AND are
         // nonzero. A point on an edge or shared vertex gives a zero, so it isn't
-        // counted inside — essential, since every adjacent face shares edges.
+        // counted inside: essential, since every adjacent face shares edges.
         let in_tri = |p: [f32; 2], a: [f32; 2], b: [f32; 2], c: [f32; 2]| -> bool {
             let d1 = (p[0] - b[0]) * (a[1] - b[1]) - (a[0] - b[0]) * (p[1] - b[1]);
             let d2 = (p[0] - c[0]) * (b[1] - c[1]) - (b[0] - c[0]) * (p[1] - c[1]);
@@ -127,28 +177,50 @@ fn remove_coplanar_overlaps(verts: &mut Vec<[f32; 3]>, tris: Vec<(u32, u32, u32)
         };
         let orient = |a: [f32; 2], b: [f32; 2], c: [f32; 2]| -> i32 {
             let val = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
-            if val > 1e-4 { 1 } else if val < -1e-4 { -1 } else { 0 }
+            if val > 1e-4 {
+                1
+            } else if val < -1e-4 {
+                -1
+            } else {
+                0
+            }
         };
         let seg_cross = |p1, p2, p3, p4| -> bool {
-            let (d1, d2, d3, d4) = (orient(p3, p4, p1), orient(p3, p4, p2), orient(p1, p2, p3), orient(p1, p2, p4));
+            let (d1, d2, d3, d4) = (
+                orient(p3, p4, p1),
+                orient(p3, p4, p2),
+                orient(p1, p2, p3),
+                orient(p1, p2, p4),
+            );
             d1 != 0 && d2 != 0 && d3 != 0 && d4 != 0 && d1 != d2 && d3 != d4
         };
         let tri_overlap = |t1: &[[f32; 2]; 3], t2: &[[f32; 2]; 3]| -> bool {
-            if t1.iter().any(|&p| in_tri(p, t2[0], t2[1], t2[2])) { return true; }
-            if t2.iter().any(|&p| in_tri(p, t1[0], t1[1], t1[2])) { return true; }
+            if t1.iter().any(|&p| in_tri(p, t2[0], t2[1], t2[2])) {
+                return true;
+            }
+            if t2.iter().any(|&p| in_tri(p, t1[0], t1[1], t1[2])) {
+                return true;
+            }
             for i in 0..3 {
                 for j in 0..3 {
-                    if seg_cross(t1[i], t1[(i + 1) % 3], t2[j], t2[(j + 1) % 3]) { return true; }
+                    if seg_cross(t1[i], t1[(i + 1) % 3], t2[j], t2[(j + 1) % 3]) {
+                        return true;
+                    }
                 }
             }
             false
         };
         let mut out = Vec::new();
         for idxs in buckets.values() {
-            if idxs.len() < 2 || idxs.len() > 4000 { continue; }
+            if idxs.len() < 2 || idxs.len() > 4000 {
+                continue;
+            }
             let mut order = idxs.clone();
             order.sort_by(|&x, &y| {
-                info[y].as_ref().unwrap().area
+                info[y]
+                    .as_ref()
+                    .unwrap()
+                    .area
                     .partial_cmp(&info[x].as_ref().unwrap().area)
                     .unwrap_or(std::cmp::Ordering::Equal)
             });
@@ -156,13 +228,22 @@ fn remove_coplanar_overlaps(verts: &mut Vec<[f32; 3]>, tris: Vec<(u32, u32, u32)
             for &i in &order {
                 let inf = info[i].as_ref().unwrap();
                 let (a, b, c) = tris[i];
-                let tri = [proj(get(a), inf.axis), proj(get(b), inf.axis), proj(get(c), inf.axis)];
+                let tri = [
+                    proj(get(a), inf.axis),
+                    proj(get(b), inf.axis),
+                    proj(get(c), inf.axis),
+                ];
                 let bb = [
-                    tri[0][0].min(tri[1][0]).min(tri[2][0]), tri[0][1].min(tri[1][1]).min(tri[2][1]),
-                    tri[0][0].max(tri[1][0]).max(tri[2][0]), tri[0][1].max(tri[1][1]).max(tri[2][1]),
+                    tri[0][0].min(tri[1][0]).min(tri[2][0]),
+                    tri[0][1].min(tri[1][1]).min(tri[2][1]),
+                    tri[0][0].max(tri[1][0]).max(tri[2][0]),
+                    tri[0][1].max(tri[1][1]).max(tri[2][1]),
                 ];
                 let overlaps = kept.iter().any(|(t, kbb)| {
-                    bb[0] <= kbb[2] && bb[2] >= kbb[0] && bb[1] <= kbb[3] && bb[3] >= kbb[1]
+                    bb[0] <= kbb[2]
+                        && bb[2] >= kbb[0]
+                        && bb[1] <= kbb[3]
+                        && bb[3] >= kbb[1]
                         && tri_overlap(&tri, t)
                 });
                 if overlaps {
@@ -193,9 +274,15 @@ fn remove_coplanar_overlaps(verts: &mut Vec<[f32; 3]>, tris: Vec<(u32, u32, u32)
     tris
 }
 
-pub(crate) fn extract_bsp_from_bytes(data: &[u8]) -> Option<(String, String, usize, usize, [f32; 3])> {
-    if data.len() < 1036 { return None; }
-    if &data[0..4] != b"VBSP" { return None; }
+pub(crate) fn extract_bsp_from_bytes(
+    data: &[u8],
+) -> Option<(String, String, usize, usize, [f32; 3])> {
+    if data.len() < 1036 {
+        return None;
+    }
+    if &data[0..4] != b"VBSP" {
+        return None;
+    }
 
     // Read lump table: 64 lumps × 16 bytes each, at the auto-detected base.
     let lump_base = detect_lump_base(data);
@@ -207,17 +294,19 @@ pub(crate) fn extract_bsp_from_bytes(data: &[u8]) -> Option<(String, String, usi
     // Decompress (or copy) a lump into an owned Vec
     let get_lump = |i: usize| -> Option<Vec<u8>> {
         let (off, len) = lump_raw(i);
-        if off + len > data.len() { return None; }
+        if off + len > data.len() {
+            return None;
+        }
         decompress_lzma_lump(&data[off..off + len])
     };
 
-    let en_data = get_lump(0)?;   // entities
-    let v_data  = get_lump(3)?;   // vertices
-    let ti_data = get_lump(6)?;   // texinfo
-    let f_data  = get_lump(7)?;   // faces
-    let e_data  = get_lump(12)?;  // edges
-    let se_data = get_lump(13)?;  // surfedges
-    let m_data  = get_lump(14);   // models
+    let en_data = get_lump(0)?; // entities
+    let v_data = get_lump(3)?; // vertices
+    let ti_data = get_lump(6)?; // texinfo
+    let f_data = get_lump(7)?; // faces
+    let e_data = get_lump(12)?; // edges
+    let se_data = get_lump(13)?; // surfedges
+    let m_data = get_lump(14); // models
     let di_data = get_lump(26).unwrap_or_default(); // dispinfo
     let dv_data = get_lump(33).unwrap_or_default(); // disp_verts
 
@@ -225,31 +314,41 @@ pub(crate) fn extract_bsp_from_bytes(data: &[u8]) -> Option<(String, String, usi
     let n_tinfo = ti_data.len() / 72;
     let n_faces = f_data.len() / 56;
     let n_edges = e_data.len() / 4;
-    let n_se    = se_data.len() / 4;
+    let n_se = se_data.len() / 4;
 
-    if n_verts == 0 || n_faces == 0 { return None; }
+    if n_verts == 0 || n_faces == 0 {
+        return None;
+    }
 
     // Parse texinfo flags (offset 64 in each 72-byte struct)
     let mut ti_flags: Vec<i32> = vec![0i32; n_tinfo];
     for i in 0..n_tinfo {
         let off = i * 72 + 64;
-        if off + 4 <= ti_data.len() { ti_flags[i] = le_i32(&ti_data, off); }
+        if off + 4 <= ti_data.len() {
+            ti_flags[i] = le_i32(&ti_data, off);
+        }
     }
 
     // Edges: pair of u16 vertex indices
     let mut edges: Vec<(u16, u16)> = Vec::with_capacity(n_edges);
     for i in 0..n_edges {
         let o = i * 4;
-        if o + 4 <= e_data.len() { edges.push((le_u16(&e_data, o), le_u16(&e_data, o + 2))); }
-        else { edges.push((0, 0)); }
+        if o + 4 <= e_data.len() {
+            edges.push((le_u16(&e_data, o), le_u16(&e_data, o + 2)));
+        } else {
+            edges.push((0, 0));
+        }
     }
 
     // Surfedges: i32 (sign encodes edge direction)
     let mut se: Vec<i32> = Vec::with_capacity(n_se);
     for i in 0..n_se {
         let o = i * 4;
-        if o + 4 <= se_data.len() { se.push(le_i32(&se_data, o)); }
-        else { se.push(0); }
+        if o + 4 <= se_data.len() {
+            se.push(le_i32(&se_data, o));
+        } else {
+            se.push(0);
+        }
     }
 
     // Vertices: float32 x3
@@ -257,7 +356,11 @@ pub(crate) fn extract_bsp_from_bytes(data: &[u8]) -> Option<(String, String, usi
     for i in 0..n_verts {
         let o = i * 12;
         if o + 12 <= v_data.len() {
-            verts_xyz.push([le_f32(&v_data, o), le_f32(&v_data, o + 4), le_f32(&v_data, o + 8)]);
+            verts_xyz.push([
+                le_f32(&v_data, o),
+                le_f32(&v_data, o + 4),
+                le_f32(&v_data, o + 8),
+            ]);
         } else {
             verts_xyz.push([0.0; 3]);
         }
@@ -307,32 +410,52 @@ pub(crate) fn extract_bsp_from_bytes(data: &[u8]) -> Option<(String, String, usi
     const MAX_TRIS: usize = 600_000;
     let mut tris: Vec<(u32, u32, u32)> = Vec::new();
     for fi in world_first..world_end {
-        if tris.len() + disp_tris.len() >= MAX_TRIS { break; }
+        if tris.len() + disp_tris.len() >= MAX_TRIS {
+            break;
+        }
         let b = fi * 56;
-        if b + 56 > f_data.len() { continue; }
+        if b + 56 > f_data.len() {
+            continue;
+        }
         let firstedge = le_i32(&f_data, b + 4) as i32;
-        let numedges  = le_i16_bytes(&f_data, b + 8) as i32;
-        let ti_idx    = le_i16_bytes(&f_data, b + 10) as i32;
-        let dispinfo  = le_i16_bytes(&f_data, b + 12) as i32;
+        let numedges = le_i16_bytes(&f_data, b + 8) as i32;
+        let ti_idx = le_i16_bytes(&f_data, b + 10) as i32;
+        let dispinfo = le_i16_bytes(&f_data, b + 12) as i32;
 
-        if ti_idx < 0 || ti_idx as usize >= n_tinfo { continue; }
-        if ti_flags[ti_idx as usize] & skip_flags != 0 { continue; }
-        if numedges < 3 { continue; }
+        if ti_idx < 0 || ti_idx as usize >= n_tinfo {
+            continue;
+        }
+        if ti_flags[ti_idx as usize] & skip_flags != 0 {
+            continue;
+        }
+        if numedges < 3 {
+            continue;
+        }
 
         // Resolve corner verts via surfedges.
         let mut fv: Vec<u32> = Vec::with_capacity(numedges as usize);
         'edge: for i in 0..numedges {
             let se_idx = (firstedge + i) as usize;
-            if se_idx >= se.len() { break; }
+            if se_idx >= se.len() {
+                break;
+            }
             let s = se[se_idx];
             let vi = if s >= 0 {
                 let idx = s as usize;
-                if idx < edges.len() { edges[idx].0 as u32 } else { continue 'edge; }
+                if idx < edges.len() {
+                    edges[idx].0 as u32
+                } else {
+                    continue 'edge;
+                }
             } else {
                 // unsigned_abs handles s == i32::MIN (negating it as i32 overflows);
                 // garbage indices fall through the bounds check below.
                 let idx = s.unsigned_abs() as usize;
-                if idx < edges.len() { edges[idx].1 as u32 } else { continue 'edge; }
+                if idx < edges.len() {
+                    edges[idx].1 as u32
+                } else {
+                    continue 'edge;
+                }
             };
             fv.push(vi);
         }
@@ -345,39 +468,61 @@ pub(crate) fn extract_bsp_from_bytes(data: &[u8]) -> Option<(String, String, usi
         }
 
         // ── Displacement face ──
-        if numedges != 4 { continue; } // Source displacements are always quads.
+        if numedges != 4 {
+            continue;
+        } // Source displacements are always quads.
         // Corner resolution above can skip edges on bad surfedge/edge indices,
         // leaving fewer than 4 corners; the bilinear basis below needs exactly 4.
-        if fv.len() != 4 { continue; }
+        if fv.len() != 4 {
+            continue;
+        }
         let di = dispinfo as usize;
-        if di >= n_disp { continue; }
+        if di >= n_disp {
+            continue;
+        }
         let di_off = di * DISPINFO_SIZE;
         let sx = le_f32(&di_data, di_off);
         let sy = le_f32(&di_data, di_off + 4);
         let sz = le_f32(&di_data, di_off + 8);
         let dv_start = le_i32(&di_data, di_off + 12) as usize;
-        let power    = le_i32(&di_data, di_off + 20);
-        if !(1..=4).contains(&power) { continue; }
+        let power = le_i32(&di_data, di_off + 20);
+        if !(1..=4).contains(&power) {
+            continue;
+        }
         let n = (1usize << power) + 1; // verts per side
         let total_dv = n * n;
-        if dv_start + total_dv > dv_data.len() / DISPVERT_SIZE { continue; }
+        if dv_start + total_dv > dv_data.len() / DISPVERT_SIZE {
+            continue;
+        }
 
         // Look up the 4 corner positions (in surfedge order).
-        let c: Vec<[f32; 3]> = fv.iter().map(|&i| {
-            if (i as usize) < verts_xyz.len() { verts_xyz[i as usize] } else { [0.0; 3] }
-        }).collect();
+        let c: Vec<[f32; 3]> = fv
+            .iter()
+            .map(|&i| {
+                if (i as usize) < verts_xyz.len() {
+                    verts_xyz[i as usize]
+                } else {
+                    [0.0; 3]
+                }
+            })
+            .collect();
 
         // Rotate corners so c[start_idx] is closest to startPosition.
         let d2 = |a: &[f32; 3], b: (f32, f32, f32)| {
-            let dx = a[0] - b.0; let dy = a[1] - b.1; let dz = a[2] - b.2;
-            dx*dx + dy*dy + dz*dz
+            let dx = a[0] - b.0;
+            let dy = a[1] - b.1;
+            let dz = a[2] - b.2;
+            dx * dx + dy * dy + dz * dz
         };
         let start = (sx, sy, sz);
         let mut start_idx = 0usize;
         let mut best = d2(&c[0], start);
         for i in 1..4 {
             let d = d2(&c[i], start);
-            if d < best { best = d; start_idx = i; }
+            if d < best {
+                best = d;
+                start_idx = i;
+            }
         }
         // Pick rotation per qbyte's mapping; the 4 corners then act as
         // v00, v10, v01, v11 (bilinear basis with start at v00).
@@ -395,7 +540,11 @@ pub(crate) fn extract_bsp_from_bytes(data: &[u8]) -> Option<(String, String, usi
         // Allocate grid: index (y, x) → flat index y + x*n (qbyte's layout).
         let base = disp_verts_xyz.len() as u32;
         let lerp = |a: [f32; 3], b: [f32; 3], t: f32| -> [f32; 3] {
-            [a[0]*(1.0-t) + b[0]*t, a[1]*(1.0-t) + b[1]*t, a[2]*(1.0-t) + b[2]*t]
+            [
+                a[0] * (1.0 - t) + b[0] * t,
+                a[1] * (1.0 - t) + b[1] * t,
+                a[2] * (1.0 - t) + b[2] * t,
+            ]
         };
         let denom = (n - 1) as f32;
         for y0 in 0..n {
@@ -410,11 +559,7 @@ pub(crate) fn extract_bsp_from_bytes(data: &[u8]) -> Option<(String, String, usi
                 let dvy = le_f32(&dv_data, dv_idx + 4);
                 let dvz = le_f32(&dv_data, dv_idx + 8);
                 let dist = le_f32(&dv_data, dv_idx + 12);
-                disp_verts_xyz.push([
-                    p[0] + dvx * dist,
-                    p[1] + dvy * dist,
-                    p[2] + dvz * dist,
-                ]);
+                disp_verts_xyz.push([p[0] + dvx * dist, p[1] + dvy * dist, p[2] + dvz * dist]);
             }
         }
         // Triangulate the grid. Two tris per quad in alternating pattern -
@@ -439,7 +584,9 @@ pub(crate) fn extract_bsp_from_bytes(data: &[u8]) -> Option<(String, String, usi
         }
     }
 
-    if tris.is_empty() && disp_tris.is_empty() { return None; }
+    if tris.is_empty() && disp_tris.is_empty() {
+        return None;
+    }
 
     // Separate coplanar overlapping faces (a func_detail brush sitting exactly on
     // a world brush, etc.) - they share a plane, so they render at identical depth
@@ -450,18 +597,32 @@ pub(crate) fn extract_bsp_from_bytes(data: &[u8]) -> Option<(String, String, usi
     // Compact non-displacement geometry: remap to only used vertex indices.
     let used: Vec<u32> = {
         let mut set: HashSet<u32> = HashSet::new();
-        for &(a, b, c) in &tris { set.insert(a); set.insert(b); set.insert(c); }
+        for &(a, b, c) in &tris {
+            set.insert(a);
+            set.insert(b);
+            set.insert(c);
+        }
         let mut v: Vec<u32> = set.into_iter().collect();
         v.sort_unstable();
         v
     };
     let mut remap: HashMap<u32, u32> = HashMap::with_capacity(used.len());
-    for (ni, &oi) in used.iter().enumerate() { remap.insert(oi, ni as u32); }
+    for (ni, &oi) in used.iter().enumerate() {
+        remap.insert(oi, ni as u32);
+    }
 
-    let mut compact_v: Vec<[f32; 3]> = used.iter()
-        .map(|&i| if (i as usize) < verts_xyz.len() { verts_xyz[i as usize] } else { [0.0; 3] })
+    let mut compact_v: Vec<[f32; 3]> = used
+        .iter()
+        .map(|&i| {
+            if (i as usize) < verts_xyz.len() {
+                verts_xyz[i as usize]
+            } else {
+                [0.0; 3]
+            }
+        })
         .collect();
-    let mut compact_t: Vec<(u32, u32, u32)> = tris.iter()
+    let mut compact_t: Vec<(u32, u32, u32)> = tris
+        .iter()
         .filter_map(|&(a, b, c)| Some((*remap.get(&a)?, *remap.get(&b)?, *remap.get(&c)?)))
         .collect();
 
@@ -491,7 +652,7 @@ pub(crate) fn extract_bsp_from_bytes(data: &[u8]) -> Option<(String, String, usi
     }
 
     let verts_b64 = STANDARD.encode(&v_buf);
-    let idx_b64   = STANDARD.encode(&i_buf);
+    let idx_b64 = STANDARD.encode(&i_buf);
 
     // Parse entity lump for spawn origin
     let en_str = String::from_utf8_lossy(&en_data);

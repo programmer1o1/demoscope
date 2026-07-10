@@ -6,8 +6,8 @@
 // decode the value, and set it into the tree.
 
 use super::bitreader::BitReader;
-use super::fieldpath::{read_field_paths, FieldPath};
-use super::serializer::{decode_value, FieldValue, Tables};
+use super::fieldpath::{FieldPath, read_field_paths};
+use super::serializer::{FieldValue, Tables, decode_value};
 
 enum Slot {
     Empty,
@@ -21,7 +21,9 @@ pub struct FieldState {
 
 impl FieldState {
     pub fn new() -> Self {
-        FieldState { slots: Vec::with_capacity(8) }
+        FieldState {
+            slots: Vec::with_capacity(8),
+        }
     }
 
     fn ensure(&mut self, z: usize) {
@@ -87,10 +89,15 @@ pub struct Entity {
 
 /// Apply a delta from `r` to `state` using `ser_idx`'s serializer. Returns false
 /// on an unresolvable field path (a desync) so the caller can stop this packet.
-pub fn read_fields(tables: &Tables, ser_idx: usize, r: &mut BitReader, state: &mut FieldState) -> bool {
+pub fn read_fields(
+    tables: &Tables,
+    ser_idx: usize,
+    r: &mut BitReader,
+    state: &mut FieldState,
+) -> bool {
     let paths = match read_field_paths(r) {
         Some(p) => p,
-        None => return false, // desync — fail the packet
+        None => return false, // desync: fail the packet
     };
     for fp in &paths {
         match tables.decoder_for_path(ser_idx, fp, 0) {

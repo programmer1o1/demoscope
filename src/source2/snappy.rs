@@ -18,7 +18,7 @@ fn read_varint(src: &[u8], pos: &mut usize) -> Option<u32> {
         let byte = *src.get(*pos)?;
         *pos += 1;
         if shift >= 32 {
-            return None; // wider than a u32 — malformed
+            return None; // wider than a u32: malformed
         }
         result |= ((byte & 0x7f) as u32).checked_shl(shift)?;
         if byte & 0x80 == 0 {

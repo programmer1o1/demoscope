@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>demoscope: __DEMO_NAME__</title>
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiIgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByb2xlPSJpbWciIGFyaWEtbGFiZWw9ImRlbW9zY29wZSI+CiAgPHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iNyIgZmlsbD0iIzBlMGUxMiIvPgogIDxjaXJjbGUgY3g9IjE2IiBjeT0iMTYiIHI9IjEwLjUiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2VjZTllMiIgc3Ryb2tlLXdpZHRoPSIxLjciLz4KICA8Y2xpcFBhdGggaWQ9ImFmdiI+PGNpcmNsZSBjeD0iMTYiIGN5PSIxNiIgcj0iOS42Ii8+PC9jbGlwUGF0aD4KICA8ZyBjbGlwLXBhdGg9InVybCgjYWZ2KSI+CiAgICA8cG9seWxpbmUgcG9pbnRzPSIxMSwyMiAxMSwxMyAxOS41LDEzIiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmIwMDAiIHN0cm9rZS13aWR0aD0iMi40IiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICAgIDxwYXRoIGQ9Ik0yNCwxMyBMMTksMTAgTDIxLDEzIEwxOSwxNiBaIiBmaWxsPSIjZmZiMDAwIi8+CiAgPC9nPgo8L3N2Zz4K">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+CiAgPHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iNyIgZmlsbD0iIzBlMGUxMiIvPgogIDxjaXJjbGUgY3g9IjE2IiBjeT0iMTYiIHI9IjEyIiBmaWxsPSJub25lIiBzdHJva2U9IiNlY2U5ZTIiIHN0cm9rZS13aWR0aD0iMS41IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1kYXNoYXJyYXk9IjE2IDQiIHRyYW5zZm9ybT0icm90YXRlKC01IDE2IDE2KSIvPgogIDxwYXRoIGQ9Ik04IDIxaDV2LTVoNXYtNWg4IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmIwMDAiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+CiAgPGNpcmNsZSBjeD0iOCIgY3k9IjIxIiByPSIxLjciIGZpbGw9IiNlY2U5ZTIiLz48cGF0aCBkPSJtMjQgOCA1IDMtNSAzeiIgZmlsbD0iI2ZmYjAwMCIvPgo8L3N2Zz4K">
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.js"></script>
@@ -18,7 +18,7 @@ html, body {
   overflow: hidden;
 }
 :root {
-  /* Telemetry Editorial — warm ink + paper-bone type + one amber signal.
+  /* Telemetry Editorial: warm ink + paper-bone type + one amber signal.
      Semantic data colors (death/tele/round/uber) are unchanged; the canvas/JS
      relies on them. Only the chrome neutrals + accent were retuned. */
   --bg: #0e0e12;
@@ -27,6 +27,7 @@ html, body {
   --grid: #1d1d25;
   --border: #2a2a34;
   --text: #ece9e2;
+  --fg: var(--text);
   --muted: #9a968c;
   --accent: #ffb000;
   --accent-dim: #b87c12;
@@ -48,6 +49,11 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
+}
+button, input, select { font: inherit; }
+button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 header {
   background: linear-gradient(180deg, var(--panel), rgba(21,21,27,0.55));
@@ -159,6 +165,7 @@ header h1::first-letter { color: var(--accent); }
   transition: background 0.15s, border-color 0.15s;
 }
 .cam-btn:hover { background: var(--grid); }
+.cam-btn:disabled { cursor: not-allowed; opacity: 0.45; }
 .cam-btn.active { background: var(--accent-deep); border-color: var(--accent); color: var(--accent); }
 #btn-gif.active { background: #5f1f1f; border-color: #f08080; color: #f08080; }
 /* Stats */
@@ -488,6 +495,19 @@ tr.highlight-row td { background: var(--accent-deep); color: var(--text); }
 .sb-name { display:inline-flex;align-items:center;gap:7px; }
 .sb-dot { width:9px;height:9px;border-radius:50%;flex:none; }
 .sb-empty { color:var(--muted);font-size:12px;font-style:italic;padding:8px 0; }
+@media (max-width: 760px) {
+  :root { --sidebar: 100%; }
+  header { flex-wrap: nowrap; overflow-x: auto; padding: 9px 12px; scrollbar-width: thin; }
+  header h1 { max-width: 62vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .app-body { flex-direction: column; }
+  .sidebar {
+    width: 100%; min-width: 0; max-width: none; height: 42vh;
+    border-right: 0; border-bottom: 1px solid var(--border);
+  }
+  #minimap-canvas { width: 128px; height: 128px; }
+  .sb-hint { display: none; }
+  #scoreboard-overlay { padding: 12px; }
+}
 </style>
 </head>
 <body>
@@ -522,12 +542,9 @@ tr.highlight-row td { background: var(--accent-deep); color: var(--text); }
 
 <header>
   <svg width="22" height="22" viewBox="0 0 100 100" style="flex-shrink:0;margin-right:-2px" aria-hidden="true">
-    <defs><clipPath id="hdr-ap"><circle cx="50" cy="50" r="39.5"/></clipPath></defs>
-    <circle cx="50" cy="50" r="41" fill="none" stroke="#ece9e2" stroke-width="3.2"/>
-    <g clip-path="url(#hdr-ap)">
-      <polyline points="38,62 38,42 64,42" fill="none" stroke="#ffb000" stroke-width="4.2" stroke-linejoin="round" stroke-linecap="round"/>
-      <path d="M74,42 L65,37.5 L67.3,42 L65,46.5 Z" fill="#ffb000"/>
-    </g>
+    <circle cx="50" cy="50" r="43" fill="none" stroke="#ece9e2" stroke-width="3.2" stroke-linecap="round" stroke-dasharray="56 11" transform="rotate(-3 50 50)"/>
+    <path d="M25 66H42V52H60V37H91" fill="none" stroke="#ffb000" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="25" cy="66" r="4" fill="#ece9e2"/><path d="m88 31 9 6-9 6z" fill="#ffb000"/>
   </svg>
   <h1>demoscope &mdash; <span>__DEMO_NAME__</span></h1>
   <div class="meta-tag">Map: <span id="m-map">-</span></div>
@@ -547,9 +564,9 @@ tr.highlight-row td { background: var(--accent-deep); color: var(--text); }
   <!-- Sidebar -->
   <div class="sidebar">
     <div class="sidebar-section">
-      <div class="section-title" id="lives-toggle" onclick="toggleLivesPanel()" style="cursor:pointer;user-select:none;display:flex;justify-content:space-between;align-items:center">
+      <button class="section-title" id="lives-toggle" type="button" onclick="toggleLivesPanel()" aria-expanded="true" style="cursor:pointer;user-select:none;display:flex;justify-content:space-between;align-items:center;width:100%;background:none;border:0;text-align:left">
         <span id="lives-title">Lives</span><span id="lives-chevron" style="font-size:10px;opacity:0.6">&#9660;</span>
-      </div>
+      </button>
       <div class="life-list" id="life-list"></div>
       <div id="mp-lives-meta" style="font-size:10px;color:var(--muted);margin-top:5px;display:none"></div>
     </div>
@@ -599,7 +616,7 @@ tr.highlight-row td { background: var(--accent-deep); color: var(--text); }
         <button class="cam-btn" id="btn-deaths" onclick="toggleDeaths()" title="Mark death sites with ✕ (cycle: you → all players → off). Headshot kills get a gold ring; deaths the lifeState prop missed are filled in from player_death events">Deaths</button>
         <button class="cam-btn" id="btn-fire" onclick="toggleFire()">Fire ✓</button>
         <button class="cam-btn" id="btn-kills" onclick="toggleKills()" title="Draw an arc from attacker to victim on each kill, lit up during playback (headshots in gold)">Kills</button>
-        <button class="cam-btn" id="btn-nades" onclick="toggleGrenades()" title="Mark where grenades detonated — colored by type, with thrower label; nades pop in real-time as you play. Cycle: off → markers → markers + trajectory arcs → off. Legend bottom-left. CS2 / CS:GO.">Nades</button>
+        <button class="cam-btn" id="btn-nades" onclick="toggleGrenades()" title="Mark where grenades detonated: colored by type, with thrower label; nades pop in real-time as you play. Cycle: off → markers → markers + trajectory arcs → off. Legend bottom-left. CS2 / CS:GO.">Nades</button>
       </div>
     </div>
     <div class="sidebar-section" id="players-panel" style="display:none">
@@ -631,7 +648,7 @@ tr.highlight-row td { background: var(--accent-deep); color: var(--text); }
     </div>
     <div class="sidebar-section" id="player-stats-panel" style="display:none">
       <div class="section-title">Scoreboard</div>
-      <button class="cam-btn" id="btn-scoreboard" onclick="toggleScoreboard()" style="width:100%" title="Open the full player scoreboard in a window (Tab)">&#9638; Open scoreboard</button>
+      <button class="cam-btn" id="btn-scoreboard" onclick="toggleScoreboard()" style="width:100%" title="Open the full player scoreboard in a window (S)">&#9638; Open scoreboard</button>
     </div>
     <div class="sidebar-section">
       <div class="section-title">Events</div>
@@ -765,7 +782,7 @@ const ENTITY_WEAPONS = __ENTITY_WEAPONS__;
 // weaponEntityId → short class name (e.g. "rocketlauncher"). Built once.
 const WEAPON_CLASSES = __WEAPON_CLASSES__;
 
-// entity_id → [[tick, buttonMask], ...] — REAL held-button state, emitted on
+// entity_id → [[tick, buttonMask], ...]: REAL held-button state, emitted on
 // change. Source 2 (CS2/Deadlock/Dota) has no usercmd stream in the demo, but
 // the movement-services networks the button mask + jump/duck booleans, decoded
 // server-side into this stream. Mask bits match the engine IN_ flags the input
@@ -902,7 +919,7 @@ const JUMP_THRESHOLD = deriveJumpThreshold();
 const JUMP_THRESHOLD_SQ = JUMP_THRESHOLD * JUMP_THRESHOLD;
 
 // Velocity ceiling (units/sec) above which a sample-to-sample gap is treated
-// as a teleport rather than continuous motion — which BREAKS the route line.
+// as a teleport rather than continuous motion, which BREAKS the route line.
 // This must sit ABOVE every kind of legitimate fast movement, or fast players
 // get their routes chopped into fragments (the reported bug): surf (~3-5k u/s),
 // bunny-hops, boosts/ziplines (Deadlock ~1.8k), rocket/strafe jumps (~2k),
@@ -910,13 +927,13 @@ const JUMP_THRESHOLD_SQ = JUMP_THRESHOLD * JUMP_THRESHOLD;
 //
 // A real teleport is *instantaneous*: a respawn or map/trigger teleport jumps
 // hundreds-to-thousands of units within a single tick, i.e. tens of thousands
-// of u/s in a dense stream — an order of magnitude above any real movement. So
+// of u/s in a dense stream: an order of magnitude above any real movement. So
 // 6000 cleanly separates the two. Respawns also break on the death/observer
 // interval change (see the run-splitter), so this is only the backstop for
 // teleports that DON'T involve death (portals, trigger_teleport, noclip).
 //
 // (Velocity, not a flat distance, because slow-tick games like CS:S space a
-// player's samples 1-4s apart — a 500u run across a 2s gap is normal movement.)
+// player's samples 1-4s apart: a 500u run across a 2s gap is normal movement.)
 const TELEPORT_VEL = 6000;
 const TELEPORT_VEL_SQ = TELEPORT_VEL * TELEPORT_VEL;
 
@@ -1142,6 +1159,30 @@ let finalPositions;
   finalPositions = (worldInterp && WORLD_POSITIONS.length > 10) ? worldInterp : POSITIONS3D;
 }
 
+// Continuous recorder-camera position in raw Source coordinates. The initial
+// primary is the person who recorded the demo, so their authoritative motion
+// is democmdinfo's viewOrigin (finalPositions), not the much sparser networked
+// m_vecOrigin entity track. Interpolating that sparse entity track made a still
+// camera slowly drift toward its next packet sample.
+function recorderCameraPositionAt(tick) {
+  if (CMDS.length === 0 || finalPositions.length === 0) return null;
+  let hi = (typeof findCmdIdx === 'function') ? findCmdIdx(tick) : (currentCmdIdx | 0);
+  hi = Math.max(0, Math.min(hi, CMDS.length - 1, finalPositions.length - 1));
+  let lo = hi;
+  if (CMDS[hi][0] > tick && hi > 0) lo = hi - 1;
+  const t0 = CMDS[lo][0], t1 = CMDS[hi][0];
+  const f = (hi !== lo && t1 > t0)
+    ? Math.max(0, Math.min(1, (tick - t0) / (t1 - t0)))
+    : 0;
+  const p0 = finalPositions[lo], p1 = finalPositions[hi];
+  const dx = p1[0] - p0[0], dy = p1[1] - p0[1], dz = p1[2] - p0[2];
+  const snap = dx * dx + dy * dy + dz * dz > JUMP_THRESHOLD_SQ;
+  const x = snap ? p0[0] : p0[0] + f * dx;
+  const fy = snap ? p0[1] : p0[1] + f * dy;
+  const z = snap ? p0[2] : p0[2] + f * dz;
+  return { x, y: -fy, z };
+}
+
 // Real per-cmd horizontal speed (u/s) derived from world-position deltas.
 // Teleport gaps (>JUMP_THRESHOLD) are zeroed so they don't poison peaks.
 const REAL_SPEED = new Float32Array(CMDS.length);
@@ -1236,7 +1277,7 @@ const container = document.getElementById('threejs-container');
 // logarithmicDepthBuffer spreads depth precision logarithmically instead of
 // piling it all near the camera. Maps span thousands of units with a 1→200000
 // near/far range, so a normal depth buffer z-fights badly on coplanar surfaces
-// (water brushes, overlapping faces, decals) — a flicker that's both ugly and a
+// (water brushes, overlapping faces, decals): a flicker that's both ugly and a
 // genuine photosensitivity hazard. The log buffer all but eliminates it.
 const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, logarithmicDepthBuffer: true });
 renderer.setPixelRatio(window.devicePixelRatio);
@@ -1337,7 +1378,7 @@ if (BSP_VERTS && BSP_IDX && BSP_VERTS.length > 4 && BSP_IDX.length > 4) {
       scene.add(new THREE.Mesh(bspGeo, bspMat));
       // Line overlays (structural edges, per-triangle wireframe) are the tricky
       // part under logarithmicDepthBuffer: the log-depth shader writes its own
-      // depth, which nullifies polygon offset — the trick that used to lift these
+      // depth, which nullifies polygon offset: the trick that used to lift these
       // coplanar lines clear of the solid faces. Without it they either z-fight
       // the surface (depth-tested) or, drawn depth-test-off, pile up into a
       // shimmering x-ray web on a dense map. Both read as flicker. So:
@@ -1566,14 +1607,66 @@ function subtractIntervals(base, holes) {
   return cur;
 }
 
+function intersectIntervals(a, b) {
+  if (!a || !a.length || !b || !b.length) return [];
+  const out = [];
+  let i = 0, j = 0;
+  while (i < a.length && j < b.length) {
+    const s = Math.max(a[i][0], b[j][0]);
+    const e = Math.min(a[i][1], b[j][1]);
+    if (s < e) out.push([s, e]);
+    if (a[i][1] < b[j][1]) i++; else j++;
+  }
+  return out;
+}
+
+function mpSampleCoverageIntervals(eid) {
+  const samples = ENTITY_TRACKS[eid] || [];
+  if (samples.length === 0) return [];
+  const gap = Math.max(20, Math.round(2.0 * ((typeof META !== 'undefined' && META.tick_rate) || 66)));
+  const ivs = [];
+  let runStart = samples[0][0];
+  let prev = samples[0][0];
+  for (let i = 1; i < samples.length; i++) {
+    const t = samples[i][0];
+    if (t - prev > gap) {
+      ivs.push([runStart, prev + 1]);
+      runStart = t;
+    }
+    prev = t;
+  }
+  ivs.push([runStart, prev + 1]);
+  return ivs;
+}
+
 // "Shown" intervals = alive (m_lifeState) with spectating windows removed.
 // Every rendering path keys off these so a player is only ever drawn while
 // their m_vecOrigin is genuinely their own. mpAliveIntervals stays lifeState-
 // only so the Lives panel / death counts are unaffected.
 const mpShownIntervals = new Map();
+const mpStateShownIntervals = new Map();
+const _mpLastTick = CMDS.length > 0 ? CMDS[CMDS.length - 1][0] : 0;
 for (const eid of Object.keys(ENTITY_TRACKS)) {
-  const alive = mpAliveIntervals.get(eid) || [];
-  mpShownIntervals.set(eid, subtractIntervals(alive, mpObserveIntervals(eid)));
+  const hasLifeState = (ENTITY_LIFE_STATES[eid] || []).length > 0;
+  // With no explicit life-state stream, absence of a position sample is not a
+  // death signal. Keep state visibility open across the demo and let the
+  // separate coverage intersection decide whether a non-primary avatar should
+  // be drawn. This distinction keeps recorder-camera fallback alive in gaps.
+  const stateAlive = hasLifeState
+    ? (mpAliveIntervals.get(eid) || [])
+    : [[0, _mpLastTick + 1]];
+  const stateShown = subtractIntervals(stateAlive, mpObserveIntervals(eid));
+  mpStateShownIntervals.set(eid, stateShown);
+  mpShownIntervals.set(eid, intersectIntervals(stateShown, mpSampleCoverageIntervals(eid)));
+}
+
+function mpIsStateShownAt(eid, tick) {
+  const ivs = mpStateShownIntervals.get(eid);
+  if (!ivs) return true;
+  for (const [s, e] of ivs) {
+    if (tick >= s && tick < e) return true;
+  }
+  return false;
 }
 
 function mpIsShownAt(eid, tick) {
@@ -1811,6 +1904,16 @@ const mpEntities = []; // [{ eid, name, color, samples, pathGroup, avatar, label
       });
       const avatarBox = new THREE.Mesh(avatarGeom, avatarMat);
       avatarGroup.add(avatarBox);
+      const viewArrow = new THREE.ArrowHelper(
+        new THREE.Vector3(1, 0, 0),
+        new THREE.Vector3(0, 18, 0),
+        86,
+        isPrimaryInit ? 0xffd76a : 0xffffff,
+        18,
+        9
+      );
+      viewArrow.visible = false;
+      avatarGroup.add(viewArrow);
       const avatar = avatarGroup;
       avatar.visible = false;
       scene.add(avatar);
@@ -1835,13 +1938,16 @@ const mpEntities = []; // [{ eid, name, color, samples, pathGroup, avatar, label
       mpEntities.push({
         eid, samples, color, hue,
         name: displayName, meta,
-        pathGroup, avatar, label,
+        pathGroup, avatar, viewArrow, label,
         enabled: false, // set below
       });
 
       const isPrimary = (PRIMARY_ENTITY != null && +eid === +PRIMARY_ENTITY);
       const hasName = !!(meta.name && !/^\d+$/.test(meta.name));
-      const startEnabled = hasName;
+      // Entities that are named but have no position samples at all have no
+      // visible pawn or path; start them disabled so the sidebar is honest.
+      // They remain in the list so the user can see who was in the session.
+      const startEnabled = hasName && (samples.length > 0 || isPrimary);
       const nameSuffix = meta.is_fake ? ' (bot)' : (meta.is_hltv ? ' (STV)' : '');
       // If this slot was renamed mid-demo (or someone reconnected into it),
       // surface the prior aliases in the tooltip so it's clear who's who.
@@ -1959,6 +2065,17 @@ function mpPrimaryPositionAt(tick) {
   if (!MP_ACTIVE || currentPrimaryEid == null) return null;
   const e = mpEntities.find(x => x.eid === currentPrimaryEid);
   if (!e) return null;
+  // The initially selected player is the demo recorder. Never replace their
+  // per-tick camera origin with a sparse entity-origin interpolation: besides
+  // being less accurate, that interpolation visibly drifts while the actual
+  // camera is stationary. Manually selected remote players still use their
+  // entity tracks below.
+  const isRecorder = PRIMARY_ENTITY != null
+    && currentPrimaryEid === String(PRIMARY_ENTITY);
+  if (isRecorder) {
+    const cameraPos = recorderCameraPositionAt(tick);
+    if (cameraPos) return cameraPos;
+  }
   // Sparse-sample primaries (spectator/recorder) → use the camera trajectory
   // so Follow camera tracks the user instead of their stuck spawn coord.
   // Look up the cmdIdx for `tick` directly instead of using the global
@@ -1976,6 +2093,26 @@ function mpPrimaryPositionAt(tick) {
   if (!s) return null;
   return { x: s[1], y: s[2], z: s[3] };
 }
+
+function mpPrimaryAimAt(tick) {
+  if (!MP_ACTIVE || currentPrimaryEid == null) return null;
+  // CMDS / VIEW_ANGLES is the recorder's per-tick camera orientation. Entity
+  // eye angles are remote-player networking data and can be seconds apart;
+  // blending between them causes an unwanted slow pan after mouse movement has
+  // already stopped. Returning null preserves the authoritative camera path.
+  if (PRIMARY_ENTITY != null && currentPrimaryEid === String(PRIMARY_ENTITY)) return null;
+  const yawArr = ENTITY_YAWS[currentPrimaryEid] || [];
+  if (yawArr.length === 0) return null;
+  // Don't lock the camera to a stale single sample. The recorder's own
+  // m_angEyeAngles is not networked in POV demos (it's only in the usercmds /
+  // VIEW_ANGLES), so entity 1 typically has just a baseline entry at tick 0.
+  // Returning null for stale data lets the CMDS / VIEW_ANGLES path take over.
+  const dist = mpNearestDist(yawArr, tick);
+  if (dist > TICK_RATE * 3) return null;
+  const aim = yawPitchAt(yawArr, tick);
+  if (!aim) return null;
+  return { yaw: aim[0], pitch: aim[1] };
+}
 // True when the current primary is dead or spectating at `tick` - i.e. their
 // m_vecOrigin stream is no longer their own body (the engine repoints it at the
 // spectated target during deathcam/freeze). The Follow / FPS cameras use this
@@ -1984,8 +2121,18 @@ function mpPrimaryPositionAt(tick) {
 // Returns false when we have no shown-interval info for them (assume alive).
 function mpPrimaryDeadAt(tick) {
   if (!MP_ACTIVE || currentPrimaryEid == null) return false;
-  if (!mpShownIntervals.has(currentPrimaryEid)) return false;
-  return !mpIsShownAt(currentPrimaryEid, tick);
+  const e = mpEntities.find(x => x.eid === currentPrimaryEid);
+  if (!e || e.soloRecorder) return false;
+  // The initially selected entity is the demo recorder. Its democmdinfo camera
+  // remains authoritative while its body is dead, spectating, or temporarily
+  // absent from PacketEntities; follow/FPS must continue along that camera path
+  // instead of freezing. A manually followed remote player still freezes while
+  // genuinely dead/spectating.
+  const isRecorder = PRIMARY_ENTITY != null
+    && currentPrimaryEid === String(PRIMARY_ENTITY)
+    && typeof finalPositions !== 'undefined' && finalPositions.length > 0;
+  if (isRecorder) return false;
+  return !mpIsStateShownAt(currentPrimaryEid, tick);
 }
 function setPrimaryEntity(eid) {
   currentPrimaryEid = String(eid);
@@ -2087,9 +2234,9 @@ function yawSampleAt(yawSamples, tick) {
   return yawSamples[lo][1];
 }
 
-// Closest-before [yaw, pitch] (degrees) from an ENTITY_YAWS stream
-// ([tick, yaw, pitch] rows), or null if empty. Used to aim grenade arcs along
-// the thrower's real eye direction at the throw moment.
+// Interpolated [yaw, pitch] (degrees) from an ENTITY_YAWS stream
+// ([tick, yaw, pitch] rows), or null if empty. Yaw interpolation takes the
+// shortest wraparound path so entity facing and follow/FPS cameras stay smooth.
 function yawPitchAt(arr, tick) {
   if (!arr || arr.length === 0) return null;
   if (tick <= arr[0][0]) return [arr[0][1], arr[0][2] || 0];
@@ -2097,7 +2244,21 @@ function yawPitchAt(arr, tick) {
   if (tick >= last[0]) return [last[1], last[2] || 0];
   let lo = 0, hi = arr.length - 1;
   while (lo < hi - 1) { const m = (lo + hi) >> 1; if (arr[m][0] <= tick) lo = m; else hi = m; }
-  return [arr[lo][1], arr[lo][2] || 0];
+  const t0 = arr[lo][0], y0 = arr[lo][1], p0 = arr[lo][2] || 0;
+  const t1 = arr[hi][0], y1 = arr[hi][1], p1 = arr[hi][2] || 0;
+  const span = t1 - t0;
+  if (span <= 0) return [y0, p0];
+  const f = Math.max(0, Math.min(1, (tick - t0) / span));
+  let dy = y1 - y0;
+  if (dy >  180) dy -= 360;
+  if (dy < -180) dy += 360;
+  // Pitch uses the same shortest-path interpolation. Source encodes negative
+  // pitch (looking up) as values near 360 (e.g. -13° → 347°), so without
+  // wraparound the camera sweeps 359° instead of 1° between samples.
+  let dp = p1 - p0;
+  if (dp >  180) dp -= 360;
+  if (dp < -180) dp += 360;
+  return [y0 + f * dy, p0 + f * dp];
 }
 
 // Interpolated recorder camera {yaw, pitch} from the dense VIEW_ANGLES stream
@@ -2124,6 +2285,31 @@ function viewAngleAt(tick) {
   const f = (tick - t0) / span;
   let dy = y1 - y0;
   if (dy >  180) dy -= 360;
+  if (dy < -180) dy += 360;
+  return { pitch: p0 + f * (p1 - p0), yaw: y0 + f * dy };
+}
+
+// Authoritative recorder aim at a continuous game tick. This deliberately
+// mirrors the main POV arrow/camera source: real usercmd demos use CMDS, while
+// demos with a synthesized command timeline use democmdinfo VIEW_ANGLES.
+function recorderCameraAimAt(tick) {
+  if (CMDS_SYNTHESIZED) {
+    const eye = viewAngleAt(tick);
+    if (eye) return eye;
+  }
+  if (CMDS.length === 0) return viewAngleAt(tick);
+  let hi = findCmdIdx(tick);
+  hi = Math.max(0, Math.min(hi, CMDS.length - 1));
+  let lo = hi;
+  if (CMDS[hi][0] > tick && hi > 0) lo = hi - 1;
+  const t0 = CMDS[lo][0], t1 = CMDS[hi][0];
+  const f = (hi !== lo && t1 > t0)
+    ? Math.max(0, Math.min(1, (tick - t0) / (t1 - t0)))
+    : 0;
+  const p0 = CMDS[lo][1], p1 = CMDS[hi][1];
+  const y0 = CMDS[lo][2], y1 = CMDS[hi][2];
+  let dy = y1 - y0;
+  if (dy > 180) dy -= 360;
   if (dy < -180) dy += 360;
   return { pitch: p0 + f * (p1 - p0), yaw: y0 + f * dy };
 }
@@ -2366,6 +2552,9 @@ function updateMultiPlayer(currentTick) {
     }
     const hasStateData = (ENTITY_LIFE_STATES[e.eid] || []).length > 0
                       || (ENTITY_OBSERVER[e.eid] || []).length > 0;
+    const isPrimEid = (currentPrimaryEid != null && e.eid === currentPrimaryEid);
+    const hasCamFallback = isPrimEid && mpIsStateShownAt(e.eid, currentTick)
+      && typeof finalPositions !== 'undefined' && finalPositions.length > 0;
     // Hide whenever this entity has no position data at `currentTick`. With
     // lifeState/observer (Source/Quake) that's the dead/spectating windows;
     // lacking those (GoldSrc), mpShownIntervals is built from sample coverage,
@@ -2374,19 +2563,25 @@ function updateMultiPlayer(currentTick) {
     // known position (which made bots look parked until they "spawned").
     const coverageGated = !hasStateData && e.samples.length >= 3;
     if ((hasStateData || coverageGated) && !mpIsShownAt(e.eid, currentTick)) {
-      e.avatar.visible = false;
-      e.label.style.display = 'none';
-      continue;
+      // Primary entity with sample gaps: fall through to the finalPositions
+      // path below instead of hiding. The recorder is always present in their
+      // own demo even when their m_vecOrigin temporarily stops being networked
+      // (e.g. L4D2 networking pauses or out-of-PVS windows).
+      if (!hasCamFallback) {
+        e.avatar.visible = false;
+        e.label.style.display = 'none';
+        continue;
+      }
     }
-    // Transmission-gap hide. A player out of the recorder's PVS — or dead
+    // Transmission-gap hide. A player out of the recorder's PVS, or dead
     // between rounds, which the LOCAL player's life-state misses (it arrives via
-    // clientdata, not the entity stream) — simply stops being networked, so BOTH
+    // clientdata, not the entity stream): simply stops being networked, so BOTH
     // their position AND eye-angle streams go stale together. A player merely
     // holding an angle still micro-adjusts their view, so requiring BOTH stale
     // catches the "phantom frozen player" without hiding a camper. ~4.5s
     // tolerates brief stillness; the real gaps run 30-70s. (This is the catch-all
     // for the cases the life/observer signals above don't cover.)
-    if (e.samples.length >= 3) {
+    if (e.samples.length >= 3 && !hasCamFallback) {
       const STALE = TICK_RATE * 4.5;
       if (mpNearestDist(e.samples, currentTick) > STALE
           && mpNearestDist(ENTITY_YAWS[e.eid] || [], currentTick) > STALE) {
@@ -2413,11 +2608,14 @@ function updateMultiPlayer(currentTick) {
     // viewOrigin. That makes Sierra follow the camera as the user expects,
     // instead of being parked at her ethereal spawn for the whole demo.
     let x, y, z;
-    if (e.samples.length < 3 && typeof finalPositions !== 'undefined' && finalPositions.length > 0) {
-      // finalPositions stores [x, -y, z] (y already flipped) per CMDS index
-      const idx = Math.max(0, Math.min(currentCmdIdx | 0, finalPositions.length - 1));
-      const fp = finalPositions[idx];
-      x = fp[0]; y = -fp[1]; z = fp[2]; // convert back to raw tf2 coords
+    const _useCamPath = (e.soloRecorder || e.samples.length < 3 || (currentPrimaryEid != null && e.eid === currentPrimaryEid && !mpIsShownAt(e.eid, currentTick)))
+      && typeof finalPositions !== 'undefined' && finalPositions.length > 0;
+    if (_useCamPath) {
+      // Single-player recorder avatars and sparse primaries follow the same
+      // continuous camera trajectory used by Follow/FPS mode.
+      const cameraPos = recorderCameraPositionAt(currentTick);
+      if (!cameraPos) { e.avatar.visible = false; e.label.style.display = 'none'; continue; }
+      x = cameraPos.x; y = cameraPos.y; z = cameraPos.z;
     } else {
       const s = mpSampleAt(e.samples, currentTick);
       if (!s) { e.avatar.visible = false; e.label.style.display = 'none'; continue; }
@@ -2425,6 +2623,29 @@ function updateMultiPlayer(currentTick) {
     }
     e.avatar.position.set(x, z + 36, -y);   // 36 = half box height; Three.js Z = -tf2.y
     e.avatar.visible = true;
+    if (e.viewArrow) {
+      // The recorder's facing arrow must use the same per-tick aim as their
+      // actual camera. Sparse m_angEyeAngles interpolation otherwise keeps the
+      // arrow slowly rotating after the recorded mouse movement has stopped.
+      const isRecorderArrow = e.soloRecorder
+        || (PRIMARY_ENTITY != null && e.eid === String(PRIMARY_ENTITY));
+      const recorderAim = isRecorderArrow ? recorderCameraAimAt(currentTick) : null;
+      const entityAim = recorderAim ? null : yawPitchAt(ENTITY_YAWS[e.eid] || [], currentTick);
+      const aim = recorderAim ? [recorderAim.yaw, recorderAim.pitch] : entityAim;
+      if (aim) {
+        const yawR = aim[0] * Math.PI / 180;
+        const pitchR = aim[1] * Math.PI / 180;
+        const dir = new THREE.Vector3(
+          Math.cos(pitchR) * Math.cos(yawR),
+          -Math.sin(pitchR),
+          -Math.cos(pitchR) * Math.sin(yawR)
+        ).normalize();
+        e.viewArrow.setDirection(dir);
+        e.viewArrow.visible = true;
+      } else {
+        e.viewArrow.visible = false;
+      }
+    }
     // Project to screen for the name label
     _mpProj.set(x, z + 90, -y).project(camera);
     if (_mpProj.z < -1 || _mpProj.z > 1) {
@@ -3401,6 +3622,7 @@ function toggleLivesPanel() {
   livesOpen = !livesOpen;
   document.getElementById('life-list').style.display = livesOpen ? '' : 'none';
   document.getElementById('lives-chevron').innerHTML = livesOpen ? '&#9660;' : '&#9654;';
+  document.getElementById('lives-toggle').setAttribute('aria-expanded', String(livesOpen));
 }
 
 function togglePlay() {
@@ -3440,8 +3662,9 @@ document.addEventListener('keydown', e => {
   if (e.code === 'Space' && e.target === document.body) { e.preventDefault(); togglePlay(); return; }
   if (e.key === '[') { e.preventDefault(); if (typeof seekRound === 'function') seekRound(-1); return; }
   if (e.key === ']') { e.preventDefault(); if (typeof seekRound === 'function') seekRound(1); return; }
-  // Tab toggles the scoreboard window (only when one is available).
-  if (e.key === 'Tab') {
+  // S toggles the scoreboard window (only when one is available). Tab remains
+  // available for normal keyboard navigation through every control.
+  if (e.key.toLowerCase() === 's') {
     const btn = document.getElementById('player-stats-panel');
     if (btn && btn.style.display !== 'none') { e.preventDefault(); toggleScoreboard(); }
     return;
@@ -3458,6 +3681,11 @@ function updatePlayhead(idx, exactTick) {
   // for row/event/keyboard seeks).
   const renderTick = (exactTick != null) ? exactTick : CMDS[currentCmdIdx][0];
   if (!isPlaying) { playbackGameTick = renderTick; }
+  const playbackInfo = document.getElementById('playback-info');
+  if (playbackInfo) {
+    const currentSec = (renderTick - CMDS[0][0]) / TICK_RATE;
+    playbackInfo.textContent = currentSec.toFixed(1) + 's / ' + totalDuration.toFixed(1) + 's';
+  }
 
   // Interpolate position + view angle to renderTick (sub-cmd) instead of
   // snapping to the cmd sample - keeps dragging smooth on sparse timelines.
@@ -3927,7 +4155,7 @@ const consoleEntries = []; // [{ tick, sec, category, html }]
 const extraDeathTicks = []; // ticks of m_lifeState deaths with no player_death event
 let consoleHighlightTick = 0;
 // ─── Grenade detonation markers (CS2 / CS:GO) ────────────────────────────────
-// Grenade game events carry the detonation x/y/z plus the thrower (userid — a
+// Grenade game events carry the detonation x/y/z plus the thrower (userid: a
 // pawn index for CS2 after the kill-attribution remap, a real user_id for
 // CS:GO). We drop a colored diamond + faint ground ring exactly where each one
 // detonated ("where it landed"); the thrower + type ride along in the event log
@@ -3942,7 +4170,7 @@ const GRENADE_INFO = {
 };
 const cssHex = c => '#' + c.toString(16).padStart(6, '0');
 let grenadesVisible = false;
-let grenadeArcsOn = false; // trajectory arcs — the 3rd state of the Nades cycle
+let grenadeArcsOn = false; // trajectory arcs: the 3rd state of the Nades cycle
 let grenadeMarkers = []; // [{group, line, label, mat, ringMat, tick, type, color, thrower, wx,wy,wz}]
 var grenadeMarkersGroup = new THREE.Group();
 grenadeMarkersGroup.visible = false;
@@ -3960,7 +4188,7 @@ function rebuildGrenadeMarkers() {
     if (meta && typeof meta.user_id === 'number') uidToEid[meta.user_id] = eid;
   }
   const diamond = new THREE.OctahedronGeometry(13);
-  // Per-grenade-type time from throw to the event (seconds) — sets where the arc
+  // Per-grenade-type time from throw to the event (seconds): sets where the arc
   // starts. Air-detonate (HE/flash) fuse ~1.6s; land-detonate types
   // (smoke/molotov/inferno/decoy) ~1.3s of travel.
   const FUSE_SEC = {
@@ -3994,7 +4222,7 @@ function rebuildGrenadeMarkers() {
 
     // Trajectory: a lob from the thrower toward the burst. The REAL projectile
     // path isn't usable (its networked origin is a local frame, not world), so
-    // this is a MODEL — but a throw-accurate one: it starts at the thrower's eye
+    // this is a MODEL, but a throw-accurate one: it starts at the thrower's eye
     // at the estimated throw tick and leaves along their ACTUAL aim (eye
     // yaw+pitch) before curving down to the detonation point. Falls back to a
     // plain upward bow when no aim sample exists. Skipped when the thrower has no
@@ -4024,7 +4252,7 @@ function rebuildGrenadeMarkers() {
           } else {
             // No aim sample (~30% of POV throws): we know the throw point and the
             // burst point but not the launch pitch. Draw the ballistic parabola
-            // those two points imply under grenade gravity — a quadratic Bézier
+            // those two points imply under grenade gravity: a quadratic Bézier
             // whose horizontal motion is linear and whose vertical profile peaks
             // at g·T²/8, i.e. true projectile motion. Flight time T grows with
             // throw distance (longer throws hang longer). We can't recover a steep
@@ -4043,7 +4271,7 @@ function rebuildGrenadeMarkers() {
       }
     }
 
-    // Floating label ("type — thrower") shown only while the nade is "active"
+    // Floating label ("type: thrower") shown only while the nade is "active"
     // during playback (positioned each frame by updateGrenadeMarkers).
     const label = document.createElement('div');
     label.style.cssText =
@@ -4051,7 +4279,7 @@ function rebuildGrenadeMarkers() {
       + "font-family:'IBM Plex Mono','SF Mono',Menlo,monospace;font-size:10px;font-weight:600;padding:1px 5px;"
       + 'border-radius:3px;white-space:nowrap;background:rgba(0,0,0,0.65);z-index:7;'
       + `border:1px solid ${cssHex(info.color)};color:${cssHex(info.color)};`;
-    label.textContent = thrower ? `${info.label} — ${thrower}` : info.label;
+    label.textContent = thrower ? `${info.label}: ${thrower}` : info.label;
     if (typeof labelContainer !== 'undefined' && labelContainer) labelContainer.appendChild(label);
 
     grenadeMarkers.push({ group: g, line, label, mat, ringMat, tick: ev.tick, type: info.label, color: info.color, thrower, wx: dx, wy: ev.z + 24, wz: dz });
@@ -4099,7 +4327,7 @@ function buildGrenadeLegend() {
   if (grenadeLegendEl) return;
   const el = document.createElement('div');
   el.id = 'nade-legend';
-  // Right side, just above the minimap — clear of the input-monitor (bottom-left),
+  // Right side, just above the minimap: clear of the input-monitor (bottom-left),
   // the speedometer (top-left), the kill legend (top-right) and the minimap (below).
   el.style.cssText = 'position:absolute;right:12px;bottom:200px;z-index:8;display:none;'
     + 'background:rgba(14, 14, 18,0.85);border:1px solid var(--border);border-radius:6px;'
@@ -4305,7 +4533,7 @@ function shortWeapon(w) {
       // CS:S/CS:GO carry a real round_end (winner team + reason); CS2 has none,
       // so the Rust side synthesizes one per m_totalRoundsPlayed step (round #).
       category = 'round';
-      const wn = (typeof ev.winner === 'number') ? ` — ${csTeam(ev.winner)} win` : '';
+      const wn = (typeof ev.winner === 'number') ? `: ${csTeam(ev.winner)} win` : '';
       const rnd = (typeof ev.round === 'number') ? `Round ${ev.round}` : 'Round';
       html = `${stamp} <span style="color:#e3b341">&#9873; ${rnd} ended${wn}</span>`;
     } else if (ev.event === 'round_mvp') {
@@ -4722,6 +4950,8 @@ function animate() {
       let pitch = CMDS[currentCmdIdx][1], yaw = CMDS[currentCmdIdx][2];
       const _eye = CMDS_SYNTHESIZED ? viewAngleAt(playbackGameTick) : null;
       if (_eye) { pitch = _eye.pitch; yaw = _eye.yaw; }
+      const _mpAim = MP_ACTIVE ? mpPrimaryAimAt(playbackGameTick) : null;
+      if (_mpAim) { pitch = _mpAim.pitch; yaw = _mpAim.yaw; }
       camera.position.set(tx, ty + 64, tz);
       const yawR = yaw * Math.PI / 180;
       const pitchR = pitch * Math.PI / 180;
@@ -4782,6 +5012,11 @@ function animate() {
       if (dYaw < -180) dYaw += 360;
       iYaw   = yaw0   + frac * dYaw;
       iPitch = pitch0 + frac * (pitch1 - pitch0);
+    }
+    const _mpAim = MP_ACTIVE ? mpPrimaryAimAt(playbackGameTick) : null;
+    if (_mpAim) {
+      iYaw = _mpAim.yaw;
+      iPitch = _mpAim.pitch;
     }
     const yR = iYaw   * Math.PI / 180;
     const pR = iPitch * Math.PI / 180;
@@ -4874,13 +5109,13 @@ function animate() {
         ? currentPrimaryEid === String(PRIMARY_ENTITY)
         : (mpEntities.find(e => e.eid === currentPrimaryEid)?.samples.length || 0) < 3);
   // Real button flags only exist when the demo carried parsed usercmds. When
-  // CMDS were synthesized from an entity track (Portal 2, CS2, Deadlock, Dota —
+  // CMDS were synthesized from an entity track (Portal 2, CS2, Deadlock, Dota :
   // none of which deliver usercmds to the viewer), btns is always 0, so even the
   // recorder/primary must DERIVE WSAD from velocity + eye-yaw, exactly like a
   // non-recorder MP primary. This is what lights up movement input for those
   // engines instead of a permanently dark WSAD cluster.
   const _useRealButtons = _isRecorderPrimary && !CMDS_SYNTHESIZED;
-  // Source 2 (CS2/Deadlock/Dota) networks the real held-button state per pawn —
+  // Source 2 (CS2/Deadlock/Dota) networks the real held-button state per pawn :
   // no usercmds, but actual W/A/S/D/attack + jump/duck. When that stream exists
   // for the current primary, it wins over both the CMDS path (which is synthetic
   // here) and velocity-derivation, for ANY player you follow, not just the
@@ -4929,7 +5164,7 @@ function animate() {
     _jmp.style.opacity = '0.35';
     _duck.style.opacity = '0.35';
     if (!s || s.length < 2) {
-      // No usable track to derive from — leave WSAD neutral rather than throwing
+      // No usable track to derive from: leave WSAD neutral rather than throwing
       // on a missing entity/sample.
       _w.classList.remove('on'); _a.classList.remove('on');
       _s.classList.remove('on'); _d.classList.remove('on');
@@ -4943,7 +5178,7 @@ function animate() {
         hi = (s[b][0] <= T) ? b : a; }
       // Measure displacement over a ~0.2s window, NOT the immediately-bracketing
       // pair. Source 2 / Portal 2 tracks are ~1 tick apart, so a single-step
-      // delta is only a few units and never crosses the movement threshold —
+      // delta is only a few units and never crosses the movement threshold :
       // that's why WSAD stayed dark. Walking back until the window spans ~0.2s
       // gives a real velocity; sparse tracks (CS:S, seconds apart) just take the
       // previous sample, matching the old behaviour. Threshold is on actual

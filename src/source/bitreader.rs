@@ -17,12 +17,20 @@ pub struct BitReader<'a> {
 impl<'a> BitReader<'a> {
     pub fn new(data: &'a [u8]) -> Self {
         let max = data.len() * 8;
-        BitReader { data, bit_pos: 0, max_bit: max }
+        BitReader {
+            data,
+            bit_pos: 0,
+            max_bit: max,
+        }
     }
 
     pub fn new_at(data: &'a [u8], pos: usize) -> Self {
         let max = data.len() * 8;
-        BitReader { data, bit_pos: pos, max_bit: max }
+        BitReader {
+            data,
+            bit_pos: pos,
+            max_bit: max,
+        }
     }
 
     /// Lower the upper bound on this reader. Used to constrain a sub-region
@@ -31,16 +39,26 @@ impl<'a> BitReader<'a> {
         self.max_bit = self.max_bit.min(max);
     }
 
-    pub fn bit_pos(&self) -> usize { self.bit_pos }
-    pub fn set_bit_pos(&mut self, p: usize) { self.bit_pos = p; }
+    pub fn bit_pos(&self) -> usize {
+        self.bit_pos
+    }
+    pub fn set_bit_pos(&mut self, p: usize) {
+        self.bit_pos = p;
+    }
     pub fn bits_remaining(&self) -> usize {
         self.max_bit.saturating_sub(self.bit_pos)
     }
-    pub fn max_bit(&self) -> usize { self.max_bit }
+    pub fn max_bit(&self) -> usize {
+        self.max_bit
+    }
 
     pub fn read_bits(&mut self, n: u32) -> Option<u32> {
-        if n == 0 { return Some(0); }
-        if self.max_bit < self.bit_pos + n as usize { return None; }
+        if n == 0 {
+            return Some(0);
+        }
+        if self.max_bit < self.bit_pos + n as usize {
+            return None;
+        }
         let mut result = 0u32;
         for i in 0..n {
             let byte_idx = self.bit_pos / 8;
@@ -52,12 +70,20 @@ impl<'a> BitReader<'a> {
         Some(result)
     }
 
-    pub fn read_u32(&mut self) -> Option<u32> { self.read_bits(32) }
-    pub fn read_byte(&mut self) -> Option<u8> { Some(self.read_bits(8)? as u8) }
-    pub fn read_i16(&mut self) -> Option<i16> { Some(self.read_bits(16)? as i16) }
+    pub fn read_u32(&mut self) -> Option<u32> {
+        self.read_bits(32)
+    }
+    pub fn read_byte(&mut self) -> Option<u8> {
+        Some(self.read_bits(8)? as u8)
+    }
+    pub fn read_i16(&mut self) -> Option<i16> {
+        Some(self.read_bits(16)? as i16)
+    }
 
     /// Read 1 bit as a boolean
-    pub fn read_bool(&mut self) -> Option<bool> { Some(self.read_bits(1)? != 0) }
+    pub fn read_bool(&mut self) -> Option<bool> {
+        Some(self.read_bits(1)? != 0)
+    }
 
     /// Read a signed n-bit integer (sign-extends the high bit)
     pub fn read_signed(&mut self, n: u32) -> Option<i32> {
@@ -77,7 +103,9 @@ impl<'a> BitReader<'a> {
 
     /// Skip n bits forward. Returns false if there aren't enough bits.
     pub fn skip(&mut self, n: u32) -> bool {
-        if self.max_bit < self.bit_pos + n as usize { return false; }
+        if self.max_bit < self.bit_pos + n as usize {
+            return false;
+        }
         self.bit_pos += n as usize;
         true
     }
@@ -86,9 +114,13 @@ impl<'a> BitReader<'a> {
     pub fn read_cstring(&mut self, max: usize) -> Option<String> {
         let mut chars = Vec::with_capacity(32);
         for _ in 0..max {
-            if self.bits_remaining() < 8 { return None; }
+            if self.bits_remaining() < 8 {
+                return None;
+            }
             let b = self.read_bits(8)? as u8;
-            if b == 0 { break; }
+            if b == 0 {
+                break;
+            }
             chars.push(b);
         }
         Some(String::from_utf8_lossy(&chars).into_owned())
@@ -101,7 +133,9 @@ impl<'a> BitReader<'a> {
         for shift in (0..32).step_by(7) {
             let b = self.read_byte()? as u32;
             result |= (b & 0x7F) << shift;
-            if b & 0x80 == 0 { break; }
+            if b & 0x80 == 0 {
+                break;
+            }
         }
         Some(result)
     }
@@ -119,7 +153,7 @@ impl<'a> BitReader<'a> {
             0x10 => Some((v & 0x0F) | (self.read_bits(4)? << 4)),
             0x20 => Some((v & 0x0F) | (self.read_bits(8)? << 4)),
             0x30 => Some((v & 0x0F) | (self.read_bits(28)? << 4)),
-            _    => Some(v & 0x0F),
+            _ => Some(v & 0x0F),
         }
     }
 

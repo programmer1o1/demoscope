@@ -14,7 +14,12 @@ pub struct BitReader<'a> {
 
 impl<'a> BitReader<'a> {
     pub fn new(buf: &'a [u8]) -> Self {
-        BitReader { buf, pos: 0, bit_val: 0, bit_count: 0 }
+        BitReader {
+            buf,
+            pos: 0,
+            bit_val: 0,
+            bit_count: 0,
+        }
     }
 
     /// Unread whole bytes remaining (ignores the partial bit cache).
@@ -134,10 +139,18 @@ impl<'a> BitReader<'a> {
 
     /// Field-path variable uint (escalating 2/4/10/17/31-bit windows).
     pub fn read_ubit_var_fp(&mut self) -> u32 {
-        if self.read_bit() { return self.read_bits(2); }
-        if self.read_bit() { return self.read_bits(4); }
-        if self.read_bit() { return self.read_bits(10); }
-        if self.read_bit() { return self.read_bits(17); }
+        if self.read_bit() {
+            return self.read_bits(2);
+        }
+        if self.read_bit() {
+            return self.read_bits(4);
+        }
+        if self.read_bit() {
+            return self.read_bits(10);
+        }
+        if self.read_bit() {
+            return self.read_bits(17);
+        }
         self.read_bits(31)
     }
 
@@ -195,14 +208,20 @@ impl<'a> BitReader<'a> {
         let mut ret = [0.0f32; 3];
         let has_x = self.read_bit();
         let has_y = self.read_bit();
-        if has_x { ret[0] = self.read_normal(); }
-        if has_y { ret[1] = self.read_normal(); }
+        if has_x {
+            ret[0] = self.read_normal();
+        }
+        if has_y {
+            ret[1] = self.read_normal();
+        }
         let neg_z = self.read_bit();
         let prodsum = ret[0] * ret[0] + ret[1] * ret[1];
         if prodsum < 1.0 {
             ret[2] = (1.0 - prodsum).sqrt();
         }
-        if neg_z { ret[2] = -ret[2]; }
+        if neg_z {
+            ret[2] = -ret[2];
+        }
         ret
     }
 }

@@ -1,18 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100" role="img" aria-label="demoscope (monochrome)">
-  <g fill="none" stroke="currentColor" color="#ece9e2">
-    <clipPath id="apm"><circle cx="50" cy="50" r="39.5"/></clipPath>
-    <circle cx="50" cy="50" r="41" stroke-width="2.4"/>
-    <circle cx="50" cy="50" r="44.5" stroke-width="1" opacity="0.3"/>
-    <g stroke-width="2" stroke-linecap="round" opacity="0.85">
-      <line x1="50" y1="1.5" x2="50" y2="6.5"/><line x1="50" y1="93.5" x2="50" y2="98.5"/>
-      <line x1="1.5" y1="50" x2="6.5" y2="50"/><line x1="93.5" y1="50" x2="98.5" y2="50"/>
-    </g>
-    <g clip-path="url(#apm)">
-      <polyline points="34,60 50,60 50,40 62,40" stroke-width="3.2" stroke-linejoin="round" stroke-linecap="round"/>
-      <circle cx="50" cy="60" r="1.7" fill="currentColor" stroke="none"/>
-      <circle cx="50" cy="40" r="1.7" fill="currentColor" stroke="none"/>
-      <circle cx="34" cy="60" r="3.1" stroke-width="1.8"/>
-      <path d="M70,40 L61,35.6 L63.3,40 L61,44.4 Z" fill="currentColor" stroke="none"/>
-    </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-labelledby="title desc">
+  <title id="title">Demoscope monochrome mark</title>
+  <desc id="desc">A stepped route passing through a broken circular aperture.</desc>
+  <g fill="none" stroke="#ece9e2" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="50" cy="50" r="43" stroke-width="2.5" stroke-dasharray="56 11" transform="rotate(-3 50 50)"/>
+    <circle cx="50" cy="50" r="35" stroke-width="1" opacity=".18"/>
+    <path d="M25 66H42V52H60V37H91" stroke-width="3.5"/>
+    <circle cx="25" cy="66" r="4" fill="#0e0e12" stroke-width="2"/>
   </g>
+  <circle cx="42" cy="52" r="2.5" fill="#ece9e2"/><circle cx="60" cy="37" r="2.5" fill="#ece9e2"/>
+  <path d="m88 31 9 6-9 6z" fill="#ece9e2"/>
 </svg>

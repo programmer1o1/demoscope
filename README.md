@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="assets/logo/demoscope-banner.svg" alt="demoscope — pure-Rust parser and 3D visualiser for game demo files" width="100%">
+  <img src="assets/logo/demoscope-banner.svg" alt="demoscope: pure-Rust parser and 3D visualiser for game demo files" width="100%">
 </p>
 
-Fast, pure-Rust parser and interactive 3D visualiser for game demo files (`.dem`) across four engine families — built with a handful of pure-Rust crates and no C toolchain.
+Fast, pure-Rust parser and interactive 3D visualiser for game demo files across four engine families: built with a handful of pure-Rust crates and no C toolchain.
 
 - **Source 1 (HL2DEMO)** - Team Fortress 2, Half-Life 2 (all versions), Counter-Strike: Source, Counter-Strike: Global Offensive, Day of Defeat: Source, Portal, Portal 2, The Stanley Parable, Left 4 Dead 1/2, and Garry's Mod (`GMODEMO`). Decodes player positions, inputs, game events, per-player entity tracks, and (CS:S / CS:GO) economy + scoreboard into a full visualisation.
 - **Source 2 (PBDEMS2)** - Counter-Strike 2, Dota 2, Deadlock. Per-player world positions, names, death/respawn, game events, and economy + scoreboard, plus a **CS2 map overlay** decoded from the map's `.vpk` (VPK → Source 2 resource → KV3 → world-collision mesh).
@@ -24,7 +24,7 @@ cargo build --release
 # binary: target/release/demoscope
 ```
 
-Requires Rust stable (≥ 1.85). No external system libraries and no C toolchain — every dependency is pure Rust. The CLI pulls only `base64`, `lzma-rs`, and `ruzstd` (a pure-Rust zstd decoder, used for CS2 map resources); the WASM build adds `wasm-bindgen` and `console_error_panic_hook` (gated to `target_arch = "wasm32"`). Everything engine-specific — the protobuf reader, Snappy and the Source 2 KV3/VPK stack — is hand-rolled in-tree.
+Requires Rust stable (≥ 1.85). No external system libraries and no C toolchain are needed because every dependency is pure Rust. The CLI pulls only `base64`, `lzma-rs`, and `ruzstd` (a pure-Rust zstd decoder, used for CS2 map resources); the WASM build adds `wasm-bindgen` and `console_error_panic_hook` (gated to `target_arch = "wasm32"`). Everything engine-specific, including the protobuf reader, Snappy, and the Source 2 KV3/VPK stack, is hand-rolled in-tree.
 
 ### WASM (in-browser) build
 
@@ -47,18 +47,22 @@ Build artifacts land in `web/` (the `.wasm` + JS glue are gitignored and built f
 ## Usage
 
 ```
-demoscope <demo.dem> [OPTIONS]
+demoscope <demo-file> [OPTIONS]
 ```
 
 | Flag | Description |
 |------|-------------|
-| *(none)* | Print every usercmd with view angles, movement, keys, mouse |
+| *(none)* | Source 1: print usercmds; other formats: print a summary and HTML hint |
 | `--all` | Also print non-usercmd packets (signon, packet, synctick, …) |
 | `--csv` | Output usercmds as CSV (one row per frame) |
 | `--json` | Output usercmds as a JSON array |
 | `--summary` | Print header info and packet counts only |
 | `--html [FILE]` | Generate self-contained interactive 3D HTML visualisation (always includes multi-player tracks) |
-| `--jump-threshold N` | Distance (units) above which a position jump breaks the rendered path. Default 750. |
+| `--diff FILE` | Overlay a second Source demo as translucent ghost tracks |
+| `--diff-split FILE` | Compare two Source demos in a synchronized split viewer |
+| `--map FILE` | Add a BSP/VPK map layer; repeat for multi-map GoldSrc viewers |
+| `--jump-threshold N` | Override the automatically derived path-break distance |
+| `--check FILE_OR_DIR` | Run the decoder self-check and fail if any demo cannot be decoded |
 
 ### Examples
 
@@ -80,7 +84,10 @@ demoscope demo.dem --html
 # Custom output path
 demoscope demo.dem --html /tmp/out.html
 
-# Tighter path-break threshold (default 750)
+# Load several Half-Life/GoldSrc maps into one viewer
+demoscope meow.dem --html --map c1a0.bsp --map c1a1.bsp --map c1a2.bsp
+
+# Override the automatically derived path-break threshold
 demoscope demo.dem --html --jump-threshold 400
 ```
 
@@ -90,9 +97,13 @@ The CSV columns are documented in [docs/FORMAT.md](docs/FORMAT.md#csv-column-ref
 
 ## HTML visualisation
 
-`demoscope --html` produces a single self-contained HTML file with all data embedded. Three.js is loaded from a CDN (works offline once cached).
+`demoscope --html` produces a single HTML file with all demo data embedded. Viewer libraries are loaded from a CDN, so the first open requires a network connection; they work offline afterward when the browser cache is available.
 
 Place the `.bsp` map file in the same directory as the demo for the full 3D map overlay. Source VBSP (incl. LZMA-compressed lumps common in TF2 workshop maps), GoldSrc / Quake 1 (v30 / v29), Quake 2 (`IBSP` v38), and Quake 3 (`IBSP` v46) maps are all decoded automatically by version. Quake 3 maps ship inside a `.pk3` - extract `maps/<name>.bsp` and place it beside the demo.
+
+For campaigns split across several GoldSrc maps, repeat `--map FILE` or drop
+multiple BSPs into the browser. All layers render together in their native map
+coordinates; automatic landmark-based alignment is not yet implemented.
 
 ### Controls
 
@@ -139,7 +150,7 @@ Place the `.bsp` map file in the same directory as the demo for the full 3D map 
 
 | Doc | Contents |
 |-----|----------|
-| [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) | Per-game support matrix (Source 1, GoldSrc + Quake family) and the smoke-test corpus results |
+| [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) | Per-game support matrix and release-verification guidance |
 | [docs/FORMAT.md](docs/FORMAT.md) | Demo file format, packet layout, UserCmd bit format, button masks, proto-4 SendTable/PacketEntities wire format, CSV columns, decode notes |
 | [docs/PROTO4.md](docs/PROTO4.md) | How proto-4 (Portal 2 / Stanley / L4D) decode was reverse-engineered, plus the env-gated trace switches for investigating a new proto-4 game |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes and the full list of completed work |

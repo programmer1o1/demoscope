@@ -1,9 +1,9 @@
-// KV3 binary reader — the typed key-values blob that Source 2 resource blocks
+// KV3 binary reader: the typed key-values blob that Source 2 resource blocks
 // (DATA, PHYS, …) are encoded in. We target the current on-disk version 5
 // (magic `\x05 3 V K`), which is what CS2 maps ship.
 //
-// This file currently implements the *container* half — header parse + buffer
-// decompression — which the empirical layout check against `de_nuke.vpk`'s
+// This file currently implements the *container* half: header parse + buffer
+// decompression, which the empirical layout check against `de_nuke.vpk`'s
 // PHYS block confirmed byte-exact (header is 120 bytes; the first zstd frame
 // begins at 120; buffer2's frame begins at 120 + sizeCompressedBuffer1). The
 // value-tree decode (objects/arrays/typed buffers) builds on top of this.
@@ -12,7 +12,9 @@
 
 use std::io::Read;
 
-fn le_u16(d: &[u8], o: usize) -> u16 { u16::from_le_bytes([d[o], d[o + 1]]) }
+fn le_u16(d: &[u8], o: usize) -> u16 {
+    u16::from_le_bytes([d[o], d[o + 1]])
+}
 fn le_u32(d: &[u8], o: usize) -> u32 {
     u32::from_le_bytes([d[o], d[o + 1], d[o + 2], d[o + 3]])
 }
@@ -71,16 +73,26 @@ fn parse_header(d: &[u8]) -> Option<Kv3Header> {
     }
     let mut h = Kv3Header::default();
     let mut o = 4 + 16; // magic + 16-byte format GUID
-    macro_rules! u32f { () => {{ let v = le_u32(d, o); o += 4; v }} }
+    macro_rules! u32f {
+        () => {{
+            let v = le_u32(d, o);
+            o += 4;
+            v
+        }};
+    }
     h.compression_method = u32f!();
-    h.compression_dictionary_id = le_u16(d, o); o += 2;
-    h.compression_frame_size = le_u16(d, o); o += 2;
+    h.compression_dictionary_id = le_u16(d, o);
+    o += 2;
+    h.compression_frame_size = le_u16(d, o);
+    o += 2;
     h.count_bytes1 = u32f!();
     h.count_bytes4 = u32f!();
     h.count_bytes8 = u32f!();
     h.count_types = u32f!();
-    h.count_objects = le_u16(d, o); o += 2;
-    h.count_arrays = le_u16(d, o); o += 2;
+    h.count_objects = le_u16(d, o);
+    o += 2;
+    h.count_arrays = le_u16(d, o);
+    o += 2;
     h.size_uncompressed_total = u32f!();
     h.size_compressed_total = u32f!();
     h.count_blocks = u32f!();
@@ -116,7 +128,7 @@ fn zstd(src: &[u8], expected: usize) -> Option<Vec<u8>> {
 
 impl Kv3 {
     /// Parse + decompress a KV3 v5 block. Only compression methods 0 (none) and
-    /// 2 (zstd) are handled — what CS2 map PHYS/DATA blocks actually use.
+    /// 2 (zstd) are handled: what CS2 map PHYS/DATA blocks actually use.
     pub fn parse(block: &[u8]) -> Option<Kv3> {
         let h = parse_header(block)?;
         let mut o = h.payload_offset;
@@ -158,7 +170,12 @@ impl Kv3 {
             _ => return None, // LZ4 (1) not needed for the CS2 map path yet
         };
 
-        Some(Kv3 { header: h, buffer1, buffer2, blobs })
+        Some(Kv3 {
+            header: h,
+            buffer1,
+            buffer2,
+            blobs,
+        })
     }
 
     /// Decode the value tree. Returns the root value (an Object for a resource
@@ -196,16 +213,30 @@ impl Value {
         }
     }
     pub fn as_array(&self) -> Option<&[Value]> {
-        match self { Value::Array(a) => Some(a), _ => None }
+        match self {
+            Value::Array(a) => Some(a),
+            _ => None,
+        }
     }
     pub fn as_blob(&self) -> Option<&[u8]> {
-        match self { Value::Blob(b) => Some(b), _ => None }
+        match self {
+            Value::Blob(b) => Some(b),
+            _ => None,
+        }
     }
     pub fn as_i64(&self) -> Option<i64> {
-        match self { Value::Int(i) => Some(*i), Value::Double(d) => Some(*d as i64), _ => None }
+        match self {
+            Value::Int(i) => Some(*i),
+            Value::Double(d) => Some(*d as i64),
+            _ => None,
+        }
     }
     pub fn as_f64(&self) -> Option<f64> {
-        match self { Value::Double(d) => Some(*d), Value::Int(i) => Some(*i as f64), _ => None }
+        match self {
+            Value::Double(d) => Some(*d),
+            Value::Int(i) => Some(*i as f64),
+            _ => None,
+        }
     }
 }
 
@@ -239,47 +270,81 @@ const T_ARRAY_AUX: u8 = 25;
 const MAX_DEPTH: u32 = 200;
 
 /// A position-tracking view over one decompressed byte stream.
-struct Stream<'a> { d: &'a [u8], p: usize }
+struct Stream<'a> {
+    d: &'a [u8],
+    p: usize,
+}
 impl<'a> Stream<'a> {
-    fn new(d: &'a [u8]) -> Self { Stream { d, p: 0 } }
-    fn u8(&mut self) -> Option<u8> { let v = *self.d.get(self.p)?; self.p += 1; Some(v) }
+    fn new(d: &'a [u8]) -> Self {
+        Stream { d, p: 0 }
+    }
+    fn u8(&mut self) -> Option<u8> {
+        let v = *self.d.get(self.p)?;
+        self.p += 1;
+        Some(v)
+    }
     fn u16(&mut self) -> Option<u16> {
         let v = u16::from_le_bytes(self.d.get(self.p..self.p + 2)?.try_into().ok()?);
-        self.p += 2; Some(v)
+        self.p += 2;
+        Some(v)
     }
     fn u32(&mut self) -> Option<u32> {
         let v = u32::from_le_bytes(self.d.get(self.p..self.p + 4)?.try_into().ok()?);
-        self.p += 4; Some(v)
+        self.p += 4;
+        Some(v)
     }
-    fn i32(&mut self) -> Option<i32> { self.u32().map(|v| v as i32) }
+    fn i32(&mut self) -> Option<i32> {
+        self.u32().map(|v| v as i32)
+    }
     fn u64(&mut self) -> Option<u64> {
         let v = u64::from_le_bytes(self.d.get(self.p..self.p + 8)?.try_into().ok()?);
-        self.p += 8; Some(v)
+        self.p += 8;
+        Some(v)
     }
-    fn f32(&mut self) -> Option<f32> { self.u32().map(f32::from_bits) }
-    fn f64(&mut self) -> Option<f64> { self.u64().map(f64::from_bits) }
+    fn f32(&mut self) -> Option<f32> {
+        self.u32().map(f32::from_bits)
+    }
+    fn f64(&mut self) -> Option<f64> {
+        self.u64().map(f64::from_bits)
+    }
 }
 
 /// The four numeric value streams of one buffer (swapped wholesale when a typed
 /// array switches to the auxiliary buffer).
-struct BufCtx<'a> { b1: Stream<'a>, b2: Stream<'a>, b4: Stream<'a>, b8: Stream<'a> }
+struct BufCtx<'a> {
+    b1: Stream<'a>,
+    b2: Stream<'a>,
+    b4: Stream<'a>,
+    b8: Stream<'a>,
+}
 
-fn align(x: usize, a: usize) -> usize { (x + (a - 1)) & !(a - 1) }
+fn align(x: usize, a: usize) -> usize {
+    (x + (a - 1)) & !(a - 1)
+}
 
 /// Carve a buffer into its (bytes1, bytes2, bytes4, bytes8) sub-streams given
 /// the element counts, with the 2/4/8-byte alignment between them. Returns the
 /// four slices plus the offset just past bytes8 (where types/strings follow).
 fn split_buffer<'a>(
-    buf: &'a [u8], c1: usize, c2: usize, c4: usize, c8: usize, start: usize,
+    buf: &'a [u8],
+    c1: usize,
+    c2: usize,
+    c4: usize,
+    c8: usize,
+    start: usize,
 ) -> Option<(&'a [u8], &'a [u8], &'a [u8], &'a [u8], usize)> {
     let mut o = start;
-    let s1 = buf.get(o..o + c1)?; o += c1;
+    let s1 = buf.get(o..o + c1)?;
+    o += c1;
     o = align(o, 2);
-    let s2 = buf.get(o..o + c2 * 2)?; o += c2 * 2;
+    let s2 = buf.get(o..o + c2 * 2)?;
+    o += c2 * 2;
     o = align(o, 4);
-    let s4 = buf.get(o..o + c4 * 4)?; o += c4 * 4;
+    let s4 = buf.get(o..o + c4 * 4)?;
+    o += c4 * 4;
     o = align(o, 8);
-    let s8 = buf.get(o..o + c8 * 8)?; o += c8 * 8;
+    let s8 = buf.get(o..o + c8 * 8)?;
+    o += c8 * 8;
     Some((s1, s2, s4, s8, o))
 }
 
@@ -299,8 +364,12 @@ impl<'a> Reader<'a> {
         // Auxiliary = buffer1: bytes1 (holds the string table at its front),
         // bytes2, bytes4 (starts with the string count), bytes8.
         let (x1, x2, x4, x8, _) = split_buffer(
-            &kv.buffer1, h.count_bytes1 as usize, h.count_bytes2 as usize,
-            h.count_bytes4 as usize, h.count_bytes8 as usize, 0,
+            &kv.buffer1,
+            h.count_bytes1 as usize,
+            h.count_bytes2 as usize,
+            h.count_bytes4 as usize,
+            h.count_bytes8 as usize,
+            0,
         )?;
         // String count is the first int32 of buffer1's bytes4; the strings
         // themselves are NUL-terminated runs at the front of buffer1's bytes1.
@@ -313,28 +382,39 @@ impl<'a> Reader<'a> {
             sp = end + 1;
         }
         let mut aux = BufCtx {
-            b1: Stream::new(x1), b2: Stream::new(x2), b4: Stream::new(x4), b8: Stream::new(x8),
+            b1: Stream::new(x1),
+            b2: Stream::new(x2),
+            b4: Stream::new(x4),
+            b8: Stream::new(x8),
         };
-        aux.b1.p = sp;     // byte-values follow the strings
-        aux.b4.p = 4;      // first int32 was the string count
+        aux.b1.p = sp; // byte-values follow the strings
+        aux.b4.p = 4; // first int32 was the string count
 
         // Active = buffer2 (the value buffer for v5), laid out: object-lengths,
         // bytes1/2/4/8, then the TYPES stream, then the binary-blob lengths.
         // (Order quoted verbatim from ValveResourceFormat's v5 path.)
         let obj_len_bytes = h.count_objects_b2 as usize * 4;
         let (a1, a2, a4, a8, after8) = split_buffer(
-            &kv.buffer2, h.count_bytes1_b2 as usize, h.count_bytes2_b2 as usize,
-            h.count_bytes4_b2 as usize, h.count_bytes8_b2 as usize, obj_len_bytes,
+            &kv.buffer2,
+            h.count_bytes1_b2 as usize,
+            h.count_bytes2_b2 as usize,
+            h.count_bytes4_b2 as usize,
+            h.count_bytes8_b2 as usize,
+            obj_len_bytes,
         )?;
         let types = kv.buffer2.get(after8..after8 + h.count_types as usize)?;
         let blob_len_start = after8 + h.count_types as usize;
-        let blob_lengths = kv.buffer2
+        let blob_lengths = kv
+            .buffer2
             .get(blob_len_start..blob_len_start + h.count_blocks as usize * 4)
             .unwrap_or(&[]);
 
         Some(Reader {
             active: BufCtx {
-                b1: Stream::new(a1), b2: Stream::new(a2), b4: Stream::new(a4), b8: Stream::new(a8),
+                b1: Stream::new(a1),
+                b2: Stream::new(a2),
+                b4: Stream::new(a4),
+                b8: Stream::new(a8),
             },
             aux,
             types: Stream::new(types),
@@ -350,13 +430,17 @@ impl<'a> Reader<'a> {
         let mut t = self.types.u8()?;
         if t & 0x80 != 0 {
             t &= 0x3F;
-            let _flag = self.types.u8()?; // string/resource hint — unused here
+            let _flag = self.types.u8()?; // string/resource hint: unused here
         }
         Some(t)
     }
 
     fn string_by_id(&self, id: i32) -> String {
-        if id < 0 { String::new() } else { self.strings.get(id as usize).cloned().unwrap_or_default() }
+        if id < 0 {
+            String::new()
+        } else {
+            self.strings.get(id as usize).cloned().unwrap_or_default()
+        }
     }
 
     /// Parse one node, mirroring ValveResourceFormat's ParseBinaryKV3: read the
@@ -376,12 +460,16 @@ impl<'a> Reader<'a> {
     /// Read `count` elements all of node type `t` (typed-array fast path).
     fn read_typed_elems(&mut self, t: u8, count: usize, depth: u32) -> Option<Vec<Value>> {
         let mut out = Vec::with_capacity(count.min(1 << 20));
-        for _ in 0..count { out.push(self.read_value(t, depth + 1)?); }
+        for _ in 0..count {
+            out.push(self.read_value(t, depth + 1)?);
+        }
         Some(out)
     }
 
     fn read_value(&mut self, t: u8, depth: u32) -> Option<Value> {
-        if depth > MAX_DEPTH { return None; }
+        if depth > MAX_DEPTH {
+            return None;
+        }
         Some(match t {
             T_NULL => Value::Null,
             T_BOOL_TRUE => Value::Bool(true),
@@ -400,7 +488,10 @@ impl<'a> Reader<'a> {
             T_INT64 => Value::Int(self.active.b8.u64()? as i64),
             T_UINT64 => Value::Int(self.active.b8.u64()? as i64),
             T_DOUBLE => Value::Double(self.active.b8.f64()?),
-            T_STRING => { let id = self.active.b4.i32()?; Value::String(self.string_by_id(id)) }
+            T_STRING => {
+                let id = self.active.b4.i32()?;
+                Value::String(self.string_by_id(id))
+            }
             T_BLOB => {
                 let len = self.blob_lengths.u32()? as usize;
                 let start = self.blobs.p;
@@ -454,8 +545,8 @@ impl<'a> Reader<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::{resource::Resource, vpk::Vpk};
+    use super::*;
 
     // End-to-end foundation check against a real CS2 map pak. Self-skips unless
     // CS2_VPK points at one, e.g.:
@@ -491,36 +582,73 @@ mod tests {
             kv.header.size_uncompressed_buffer2,
             kv.header.size_binary_blobs,
         );
-        assert_eq!(kv.buffer1.len(), kv.header.size_uncompressed_buffer1 as usize);
-        assert_eq!(kv.buffer2.len(), kv.header.size_uncompressed_buffer2 as usize);
+        assert_eq!(
+            kv.buffer1.len(),
+            kv.header.size_uncompressed_buffer1 as usize
+        );
+        assert_eq!(
+            kv.buffer2.len(),
+            kv.header.size_uncompressed_buffer2 as usize
+        );
         assert_eq!(kv.blobs.len(), kv.header.size_binary_blobs as usize);
 
         // Decode the value tree: the root is the physics aggregate object and
         // exposes the world collision shapes.
         let root = kv.root().expect("decode KV3 value tree");
-        let parts = root.get("m_parts").and_then(|v| v.as_array()).expect("m_parts array");
+        let parts = root
+            .get("m_parts")
+            .and_then(|v| v.as_array())
+            .expect("m_parts array");
         assert!(!parts.is_empty(), "expected at least one physics part");
         let shape = parts[0].get("m_rnShape").expect("m_rnShape");
-        let n_hulls = shape.get("m_hulls").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
-        let n_meshes = shape.get("m_meshes").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
-        assert!(n_hulls + n_meshes > 0, "expected hull/mesh collision shapes");
+        let n_hulls = shape
+            .get("m_hulls")
+            .and_then(|v| v.as_array())
+            .map(|a| a.len())
+            .unwrap_or(0);
+        let n_meshes = shape
+            .get("m_meshes")
+            .and_then(|v| v.as_array())
+            .map(|a| a.len())
+            .unwrap_or(0);
+        assert!(
+            n_hulls + n_meshes > 0,
+            "expected hull/mesh collision shapes"
+        );
 
         // Walk the shapes into one triangle mesh and sanity-check its extent.
-        let (verts, indices) = super::super::vphys::extract_collision_mesh(&root)
-            .expect("extract collision mesh");
+        let (verts, indices) =
+            super::super::vphys::extract_collision_mesh(&root).expect("extract collision mesh");
         let mut mn = [f32::MAX; 3];
         let mut mx = [f32::MIN; 3];
         for v in &verts {
-            for k in 0..3 { mn[k] = mn[k].min(v[k]); mx[k] = mx[k].max(v[k]); }
+            for k in 0..3 {
+                mn[k] = mn[k].min(v[k]);
+                mx[k] = mx[k].max(v[k]);
+            }
         }
         eprintln!(
             "de_nuke collision: {} hulls + {} meshes -> {} verts, {} triangles | \
              bounds X[{:.0},{:.0}] Y[{:.0},{:.0}] Z[{:.0},{:.0}]",
-            n_hulls, n_meshes, verts.len(), indices.len() / 3,
-            mn[0], mx[0], mn[1], mx[1], mn[2], mx[2],
+            n_hulls,
+            n_meshes,
+            verts.len(),
+            indices.len() / 3,
+            mn[0],
+            mx[0],
+            mn[1],
+            mx[1],
+            mn[2],
+            mx[2],
         );
-        assert!(verts.len() > 1000 && indices.len() > 3000, "expected substantial geometry");
+        assert!(
+            verts.len() > 1000 && indices.len() > 3000,
+            "expected substantial geometry"
+        );
         // Map-sane extent (units): de_nuke spans several thousand units per axis.
-        assert!((mx[0] - mn[0]) > 2000.0 && (mx[1] - mn[1]) > 2000.0, "geometry extent too small");
+        assert!(
+            (mx[0] - mn[0]) > 2000.0 && (mx[1] - mn[1]) > 2000.0,
+            "geometry extent too small"
+        );
     }
 }

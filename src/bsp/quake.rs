@@ -94,10 +94,18 @@ pub(crate) fn extract_q2_bsp_from_bytes(
             let s = se[se_idx];
             let vi = if s >= 0 {
                 let idx = s as usize;
-                if idx < edges.len() { edges[idx].0 as u32 } else { continue }
+                if idx < edges.len() {
+                    edges[idx].0 as u32
+                } else {
+                    continue;
+                }
             } else {
                 let idx = s.unsigned_abs() as usize;
-                if idx < edges.len() { edges[idx].1 as u32 } else { continue }
+                if idx < edges.len() {
+                    edges[idx].1 as u32
+                } else {
+                    continue;
+                }
             };
             fv.push(vi);
         }
@@ -176,7 +184,11 @@ pub(crate) fn extract_q3_bsp_from_bytes(
         n.is_empty() || n == "noshader" || n.contains("common/") || n.contains("sky")
     };
     let meshvert = |i: usize| -> i32 {
-        if i < n_mv { le_i32(data, mv_off + i * 4) } else { 0 }
+        if i < n_mv {
+            le_i32(data, mv_off + i * 4)
+        } else {
+            0
+        }
     };
 
     const MAX_TRIS: usize = 600_000;
@@ -221,7 +233,10 @@ pub(crate) fn extract_q3_bsp_from_bytes(
         }
     }
     if patches > 0 {
-        eprintln!("  Q3 BSP: {} bezier patch(es) skipped (curves not tessellated)", patches);
+        eprintln!(
+            "  Q3 BSP: {} bezier patch(es) skipped (curves not tessellated)",
+            patches
+        );
     }
 
     let entities = if en_len > 0 && en_off + en_len <= data.len() {

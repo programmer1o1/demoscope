@@ -10,27 +10,27 @@ use std::fs::File;
 use std::io::{self, Read, Write as IoWrite};
 use std::path::Path;
 
+use super::super::bsp::{extract_bsp_from_bytes, find_bsp_file};
+use super::super::header::{parse_header, parse_usercmd_for_demo};
+use super::super::source::events::{
+    EventField, EventValue, GameEvent, SampledCmd, compute_life_breaks, display_events_for_game,
+    extract_events_from_payload, scan_for_game_event_list,
+};
+use super::super::source::multi_player::PlayerMeta;
+use super::super::source::packets::{
+    detect_splitscreen, extract_svc_setview, iterate_demo_packets, parse_userinfo_from_demo,
+    spectator_switch_intervals,
+};
+use super::super::source::{self, multi_player};
 use super::super::util::bytes::{le_f32, le_i32};
 use super::super::util::constants::{HEADER_SIZE, SPLIT_SIZE};
-use super::super::source::events::{
-    compute_life_breaks, display_events_for_game, extract_events_from_payload,
-    scan_for_game_event_list, EventField, EventValue, GameEvent, SampledCmd,
-};
-use super::super::bsp::{extract_bsp_from_bytes, find_bsp_file};
-use super::super::header::{parse_header, parse_usercmd};
+use super::super::{goldsrc, quake, source2};
 use super::json::{
     breaks_to_json, cmds_to_json, escape_html, escape_json_str, events_to_json, json_f32,
     meta_to_json, multi_life_states_to_json, multi_names_to_json, multi_observer_modes_to_json,
     multi_tracks_to_json, multi_weapon_classes_to_json, multi_weapons_to_json, multi_yaws_to_json,
     spawn_to_json, view_angles_to_json, world_positions_to_json,
 };
-use super::super::source::packets::{
-    detect_splitscreen, extract_svc_setview, iterate_demo_packets, parse_userinfo_from_demo,
-    spectator_switch_intervals,
-};
-use super::super::source::{self, multi_player};
-use super::super::source::multi_player::PlayerMeta;
-use super::super::{goldsrc, quake, source2};
 
 // Diff-overlay ghost decoding and the Quake/GoldSrc generators live in
 // submodules; the diff helpers are used internally by the Source generator,
@@ -38,8 +38,10 @@ use super::super::{goldsrc, quake, source2};
 // reaching them as `render::html::generate_{quake,goldsrc}_html`.
 mod diff;
 mod engines;
-use diff::{extract_ghosts, merge_json_obj, Ghost};
-pub use engines::{generate_goldsrc_html, generate_quake_html, generate_source2_html};
+use diff::{Ghost, extract_ghosts, merge_json_obj};
+pub use engines::{
+    generate_goldsrc_html, generate_goldsrc_html_multi, generate_quake_html, generate_source2_html,
+};
 
 const HTML_TEMPLATE: &str = include_str!("template.html");
 
@@ -48,8 +50,18 @@ const MAX_CMDS_EMBED: usize = 20_000;
 // CLI wrapper - reads the dem + (optional) bsp from disk, delegates to the
 // pure-bytes core, then writes the result. Keeps the existing command-line
 // behaviour intact while the WASM build calls the core directly.
-pub(crate) fn generate_html(dem_path: &Path, output_path: &Path, jump_threshold: f32, diff_path: Option<&Path>, diff_split: bool) -> io::Result<()> {
-    eprintln!("Reading {} ...", dem_path.file_name().unwrap_or_default().to_string_lossy());
+pub(crate) fn generate_html(
+    dem_path: &Path,
+    output_path: &Path,
+    jump_threshold: f32,
+    diff_path: Option<&Path>,
+    diff_split: bool,
+    map_paths: &[std::path::PathBuf],
+) -> io::Result<()> {
+    eprintln!(
+        "Reading {} ...",
+        dem_path.file_name().unwrap_or_default().to_string_lossy()
+    );
     let mut file = File::open(dem_path)?;
     let mut data = Vec::new();
     file.read_to_end(&mut data)?;
@@ -58,7 +70,10 @@ pub(crate) fn generate_html(dem_path: &Path, output_path: &Path, jump_threshold:
     // path consumes it. Its display name is the file stem.
     let diff_bytes: Option<Vec<u8>> = match diff_path {
         Some(p) => {
-            eprintln!("  Diff overlay: {}", p.file_name().unwrap_or_default().to_string_lossy());
+            eprintln!(
+                "  Diff overlay: {}",
+                p.file_name().unwrap_or_default().to_string_lossy()
+            );
             Some(std::fs::read(p)?)
         }
         None => None,
@@ -68,9 +83,24 @@ pub(crate) fn generate_html(dem_path: &Path, output_path: &Path, jump_threshold:
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_default();
 
-    let name_hint = dem_path.file_name().unwrap_or_default().to_string_lossy().into_owned();
+    let name_hint = dem_path
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned();
 
-    // Source 2 (`PBDEMS2`: CS2 / Dota 2 / Deadlock) — a different container from
+    let explicit_maps: Vec<Vec<u8>> = map_paths
+        .iter()
+        .map(|path| {
+            eprintln!(
+                "  Map layer: {}",
+                path.file_name().unwrap_or_default().to_string_lossy()
+            );
+            std::fs::read(path)
+        })
+        .collect::<io::Result<_>>()?;
+
+    // Source 2 (`PBDEMS2`: CS2 / Dota 2 / Deadlock): a different container from
     // HL2DEMO. Checked FIRST: its 8-byte magic is unambiguous, whereas the Quake
     // route below matches by `.dem` extension and would otherwise swallow it.
     // Metadata-only viewer for now (map / duration / build); position tracks
@@ -79,90 +109,151 @@ pub(crate) fn generate_html(dem_path: &Path, output_path: &Path, jump_threshold:
         // The CS2 world geometry overlay is resolved inside the generator (it
         // needs the map name, which only appears after the entity parse) by
         // looking for `<map>.vpk` beside the demo.
-        let html = generate_source2_html(&data, None, Some(dem_path), &name_hint)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
+        let html = generate_source2_html(
+            &data,
+            explicit_maps.first().map(Vec::as_slice),
+            Some(dem_path),
+            &name_hint,
+        )
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
         let mut out_file = File::create(output_path)?;
         out_file.write_all(html.as_bytes())?;
-        eprintln!("HTML -> {}  ({:.1} KB)", output_path.display(), html.len() as f64 / 1024.0);
+        eprintln!(
+            "HTML -> {}  ({:.1} KB)",
+            output_path.display(),
+            html.len() as f64 / 1024.0
+        );
         return Ok(());
     }
 
     // Quake-family demos (Q1/Q2/Q3) are a different format from HL2DEMO; route
     // them to the dedicated decoder, which emits the same HTML viewer.
-    if diff_path.is_some() && (quake::detect(&name_hint, &data).is_some() || goldsrc::is_goldsrc(&data)) {
-        eprintln!("  Note: --diff is currently supported only for Source (HL2DEMO) demos; ignoring");
+    if diff_path.is_some()
+        && (quake::detect(&name_hint, &data).is_some() || goldsrc::is_goldsrc(&data))
+    {
+        eprintln!(
+            "  Note: --diff is currently supported only for Source (HL2DEMO) demos; ignoring"
+        );
     }
     if let Some(kind) = quake::detect(&name_hint, &data) {
         // Resolve a matching .bsp beside the demo. The map name can arrive as a
         // bare stem or a `maps/foo.bsp` path, so normalise to the file stem.
-        let bsp_bytes: Option<Vec<u8>> = quake::parse(kind, &data, &name_hint)
-            .ok()
-            .and_then(|demo| {
-                let stem = Path::new(&demo.meta.map)
-                    .file_stem()
-                    .map(|s| s.to_string_lossy().into_owned())
-                    .unwrap_or(demo.meta.map);
-                find_bsp_file(dem_path, &stem)
-            })
-            .and_then(|p| {
-                eprintln!("  Found BSP: {}", p.file_name().unwrap_or_default().to_string_lossy());
-                std::fs::read(&p).ok()
-            });
+        let bsp_bytes: Option<Vec<u8>> = if let Some(bytes) = explicit_maps.first() {
+            Some(bytes.clone())
+        } else {
+            quake::parse(kind, &data, &name_hint)
+                .ok()
+                .and_then(|demo| {
+                    let stem = Path::new(&demo.meta.map)
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().into_owned())
+                        .unwrap_or(demo.meta.map);
+                    find_bsp_file(dem_path, &stem)
+                })
+                .and_then(|p| {
+                    eprintln!(
+                        "  Found BSP: {}",
+                        p.file_name().unwrap_or_default().to_string_lossy()
+                    );
+                    std::fs::read(&p).ok()
+                })
+        };
         let html = generate_quake_html(&data, kind, bsp_bytes.as_deref(), &name_hint)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
         let mut out_file = File::create(output_path)?;
         out_file.write_all(html.as_bytes())?;
-        eprintln!("HTML -> {}  ({:.1} KB)", output_path.display(), html.len() as f64 / 1024.0);
+        eprintln!(
+            "HTML -> {}  ({:.1} KB)",
+            output_path.display(),
+            html.len() as f64 / 1024.0
+        );
         return Ok(());
     }
 
     // GoldSrc (Half-Life 1 / CS 1.6 / DoD / CZ) HLDEMO container - recorder POV
     // + (if the map is alongside) the BSP overlay. Routed before HL2DEMO parse.
     if goldsrc::is_goldsrc(&data) {
-        let bsp_bytes: Option<Vec<u8>> = goldsrc::parse(&data)
-            .and_then(|m| find_bsp_file(dem_path, &m.map_name))
-            .and_then(|p| {
-                eprintln!("  Found BSP: {}", p.file_name().unwrap_or_default().to_string_lossy());
-                std::fs::read(&p).ok()
-            });
-        let html = generate_goldsrc_html(&data, bsp_bytes.as_deref(), &name_hint)
+        let auto_map = if explicit_maps.is_empty() {
+            goldsrc::parse(&data)
+                .and_then(|m| find_bsp_file(dem_path, &m.map_name))
+                .and_then(|p| {
+                    eprintln!(
+                        "  Found BSP: {}",
+                        p.file_name().unwrap_or_default().to_string_lossy()
+                    );
+                    std::fs::read(&p).ok()
+                })
+        } else {
+            None
+        };
+        let map_refs: Vec<&[u8]> = if explicit_maps.is_empty() {
+            auto_map.as_deref().into_iter().collect()
+        } else {
+            explicit_maps.iter().map(Vec::as_slice).collect()
+        };
+        let html = generate_goldsrc_html_multi(&data, &map_refs, &name_hint)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
         let mut out_file = File::create(output_path)?;
         out_file.write_all(html.as_bytes())?;
-        eprintln!("HTML -> {}  ({:.1} KB)", output_path.display(), html.len() as f64 / 1024.0);
+        eprintln!(
+            "HTML -> {}  ({:.1} KB)",
+            output_path.display(),
+            html.len() as f64 / 1024.0
+        );
         return Ok(());
     }
 
     // Resolve a BSP file alongside the demo and read it once here, so the
     // core never needs to touch the filesystem.
-    let header = parse_header(&data).ok_or_else(|| {
-        io::Error::new(io::ErrorKind::InvalidData, "not a valid HL2DEMO file")
-    })?;
-    let bsp_bytes: Option<Vec<u8>> = match find_bsp_file(dem_path, &header.map_name) {
-        Some(p) => {
-            eprintln!("  Found BSP: {}", p.file_name().unwrap_or_default().to_string_lossy());
-            let mut f = File::open(&p)?;
-            let mut buf = Vec::new();
-            f.read_to_end(&mut buf)?;
-            Some(buf)
-        }
-        None => {
-            eprintln!("  No BSP found alongside demo");
-            None
+    let header = parse_header(&data)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "not a valid HL2DEMO file"))?;
+    let bsp_bytes: Option<Vec<u8>> = if let Some(bytes) = explicit_maps.first() {
+        Some(bytes.clone())
+    } else {
+        match find_bsp_file(dem_path, &header.map_name) {
+            Some(p) => {
+                eprintln!(
+                    "  Found BSP: {}",
+                    p.file_name().unwrap_or_default().to_string_lossy()
+                );
+                let mut f = File::open(&p)?;
+                let mut buf = Vec::new();
+                f.read_to_end(&mut buf)?;
+                Some(buf)
+            }
+            None => {
+                eprintln!("  No BSP found alongside demo");
+                None
+            }
         }
     };
     let html = match diff_bytes.as_deref() {
         // --diff-split: side-by-side dual viewer (two full viewers, frame-locked).
         // Both demos are the same map, so demo 1's BSP serves both panes.
         Some(d2) if diff_split => generate_dual_html_string(
-            &data, bsp_bytes.as_deref(), &name_hint,
-            d2, bsp_bytes.as_deref(), &diff_name, jump_threshold,
+            &data,
+            bsp_bytes.as_deref(),
+            &name_hint,
+            d2,
+            bsp_bytes.as_deref(),
+            &diff_name,
+            jump_threshold,
         )?,
         // --diff: overlay demo 2's entities as translucent ghosts in one scene.
         Some(d2) => generate_html_string(
-            &data, bsp_bytes.as_deref(), &name_hint, jump_threshold, Some((d2, &diff_name)),
+            &data,
+            bsp_bytes.as_deref(),
+            &name_hint,
+            jump_threshold,
+            Some((d2, &diff_name)),
         )?,
-        None => generate_html_string(&data, bsp_bytes.as_deref(), &name_hint, jump_threshold, None)?,
+        None => generate_html_string(
+            &data,
+            bsp_bytes.as_deref(),
+            &name_hint,
+            jump_threshold,
+            None,
+        )?,
     };
     let mut out_file = File::create(output_path)?;
     out_file.write_all(html.as_bytes())?;
@@ -186,11 +277,15 @@ pub fn generate_dual_html_string(
     name_b: &str,
     jump_threshold: f32,
 ) -> io::Result<String> {
-    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
     let viewer_a = generate_html_string(demo_a, bsp_a, name_a, jump_threshold, None)?;
     let viewer_b = generate_html_string(demo_b, bsp_b, name_b, jump_threshold, None)?;
     // JS string-escape for the pane labels (the base64 blobs need no escaping).
-    let esc = |s: &str| s.replace('\\', "\\\\").replace('"', "\\\"").replace(['\n', '\r'], " ");
+    let esc = |s: &str| {
+        s.replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace(['\n', '\r'], " ")
+    };
     let html = DUAL_TEMPLATE
         .replace("__VIEWER_A__", &STANDARD.encode(viewer_a.as_bytes()))
         .replace("__VIEWER_B__", &STANDARD.encode(viewer_b.as_bytes()))
@@ -213,9 +308,8 @@ pub fn generate_html_string(
     jump_threshold: f32,
     diff: Option<(&[u8], &str)>,
 ) -> io::Result<String> {
-    let header = parse_header(data).ok_or_else(|| {
-        io::Error::new(io::ErrorKind::InvalidData, "not a valid HL2DEMO file")
-    })?;
+    let header = parse_header(data)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "not a valid HL2DEMO file"))?;
 
     // Compute tick rate from header (ticks / playback_time), fallback to 66 Hz
     let tick_rate = if header.playback_time > 0.0 && header.ticks > 0 {
@@ -228,7 +322,10 @@ pub fn generate_html_string(
     let mut all_cmds: Vec<SampledCmd> = Vec::new();
     let mut last_pitch = 0.0f32;
     let mut last_yaw = 0.0f32;
+    let mut last_fwd = 0.0f32;
+    let mut last_side = 0.0f32;
     let mut last_weapon: u32 = 0;
+    let mut last_buttons: u32 = 0;
     let mut console_cmds: Vec<(i32, String)> = Vec::new(); // (tick, cmd_string)
     let mut world_positions: Vec<(i32, f32, f32, f32)> = Vec::new();
 
@@ -258,120 +355,170 @@ pub fn generate_html_string(
         }
     }
 
-    // Parse usercmds
-    // net_protocol <= 7 (2004-era HL2/GMod9 engine) uses WriteBitAngle(16) for
-    // viewangles instead of WriteFloat(32) - our parser would produce NaN/garbage.
-    // Skip usercmd extraction for those demos; header/summary still work fine.
-    let usercmd_supported = header.net_protocol > 7;
-    if !usercmd_supported {
-        eprintln!("  Note: net_protocol={} (old engine) - usercmd format unsupported, skipping input parsing", header.net_protocol);
+    if header.net_protocol <= 7 {
+        eprintln!(
+            "  Note: net_protocol={} (old engine) - using 16-bit angle usercmd parser",
+            header.net_protocol
+        );
     }
 
-    if usercmd_supported {
-        let pkt_hdr = 5 + extra; // cmd(1)+tick(4)+[slot(1)]
-        let democmdinfo = SPLIT_SIZE * detect_splitscreen(&data, proto, &header.game_dir); // L4D = 4 slots
-        let mut offset = HEADER_SIZE;
-        while offset < data.len() {
-            if offset + 5 > data.len() { break; }
-            let cmd = data[offset];
-            let tick = le_i32(&data, offset + 1);
-            match cmd {
-                7 => break,
-                1 | 2 => {
-                    let p = offset + pkt_hdr;
-                    if p + democmdinfo + 12 > data.len() { break; }
-                    // democmdinfo layout: flags(4) + viewOrigin(12) + ...
-                    // Extract viewOrigin from cmd=2 (game packets only, not signon)
-                    if cmd == 2 && p + 16 <= data.len() {
-                        let x = le_f32(&data, p + 4);
-                        let y = le_f32(&data, p + 8);
-                        let z = le_f32(&data, p + 12);
-                        if x != 0.0 || y != 0.0 || z != 0.0 {
-                            world_positions.push((tick, x, y, z));
-                        }
-                    }
-                    let length = le_i32(&data, p + democmdinfo + 8);
-                    if length < 0 { break; }
-                    offset = p.saturating_add(democmdinfo + 12).saturating_add(length as usize);
-                }
-                3 => { offset += pkt_hdr; }
-                4 => {
-                    let p = offset + pkt_hdr;
-                    if p + 4 > data.len() { break; }
-                    let length = le_i32(&data, p);
-                    if length < 0 { break; }
-                    let length = length as usize;
-                    if p + 4 + length <= data.len() {
-                        let s = std::str::from_utf8(&data[p + 4..p + 4 + length])
-                            .unwrap_or("")
-                            .trim_matches('\0')
-                            .trim()
-                            .to_string();
-                        if !s.is_empty() {
-                            console_cmds.push((tick, s));
-                        }
-                    }
-                    offset = p.saturating_add(4).saturating_add(length);
-                }
-                5 => {
-                    let p = offset + pkt_hdr;
-                    if p + 8 > data.len() { break; }
-                    let out_seq = le_i32(&data, p);
-                    let length = le_i32(&data, p + 4);
-                    if length < 0 { break; }
-                    let next = p.saturating_add(8).saturating_add(length as usize);
-                    if next > data.len() { break; }
-                    let ucmd_bytes = &data[p + 8..next];
-                    if let Some(ucmd) = parse_usercmd(ucmd_bytes) {
-                        let cmd_num = ucmd.command_number.unwrap_or(out_seq as u32);
-                        let _ = cmd_num;
-                        if let Some(p) = ucmd.pitch { last_pitch = p; }
-                        if let Some(y) = ucmd.yaw { last_yaw = y; }
-                        if let Some(w) = ucmd.weaponselect { last_weapon = w; }
-                        all_cmds.push(SampledCmd {
-                            tick,
-                            pitch: last_pitch,
-                            yaw: last_yaw,
-                            fwd: ucmd.forwardmove.unwrap_or(0.0),
-                            side: ucmd.sidemove.unwrap_or(0.0),
-                            btns: ucmd.buttons.unwrap_or(0),
-                            weapon: last_weapon,
-                        });
-                    }
-                    offset = next;
-                }
-                // proto-4 (L4D-era enum) inserted DEM_CustomData at 8 and shifted
-                // DEM_StringTables to 9; proto-3 keeps StringTables at 8 and has no
-                // CustomData. CustomData is callbackIndex(4) + length(4) + data —
-                // reading its length as if it were a plain length-prefixed block
-                // (at p, not p+4) yields garbage and desyncs the walk. Portal 2
-                // demos DO carry a CustomData frame after signon, so the old
-                // uniform handling bailed right there, before any usercmd — which
-                // is why Portal 2 input came back empty. Skip CustomData correctly.
-                8 if proto > 3 => {
-                    let p = offset + pkt_hdr;
-                    if p + 8 > data.len() { break; }
-                    let length = le_i32(&data, p + 4);
-                    if length < 0 { break; }
-                    offset = p.saturating_add(8).saturating_add(length as usize).min(data.len());
-                }
-                // 6=DataTables (both), 8=StringTables (proto-3), 9=StringTables
-                // (proto-4). All plain length-prefixed blocks.
-                6 | 8 | 9 => {
-                    let p = offset + pkt_hdr;
-                    if p + 4 > data.len() { break; }
-                    let length = le_i32(&data, p);
-                    if length < 0 { break; }
-                    offset = p.saturating_add(4).saturating_add(length as usize).min(data.len());
-                }
-                _ => break,
-            }
+    let pkt_hdr = 5 + extra; // cmd(1)+tick(4)+[slot(1)]
+    let democmdinfo = SPLIT_SIZE * detect_splitscreen(&data, proto, &header.game_dir); // L4D = 4 slots
+    let mut offset = HEADER_SIZE;
+    while offset < data.len() {
+        if offset + 5 > data.len() {
+            break;
         }
-    } // end if usercmd_supported
+        let cmd = data[offset];
+        let tick = le_i32(&data, offset + 1);
+        match cmd {
+            7 => break,
+            1 | 2 => {
+                let p = offset + pkt_hdr;
+                if p + democmdinfo + 12 > data.len() {
+                    break;
+                }
+                // democmdinfo layout: flags(4) + viewOrigin(12) + ...
+                // Extract viewOrigin from cmd=2 (game packets only, not signon)
+                if cmd == 2 && p + 16 <= data.len() {
+                    let x = le_f32(&data, p + 4);
+                    let y = le_f32(&data, p + 8);
+                    let z = le_f32(&data, p + 12);
+                    if x != 0.0 || y != 0.0 || z != 0.0 {
+                        world_positions.push((tick, x, y, z));
+                    }
+                }
+                let length = le_i32(&data, p + democmdinfo + 8);
+                if length < 0 {
+                    break;
+                }
+                offset = p
+                    .saturating_add(democmdinfo + 12)
+                    .saturating_add(length as usize);
+            }
+            3 => {
+                offset += pkt_hdr;
+            }
+            4 => {
+                let p = offset + pkt_hdr;
+                if p + 4 > data.len() {
+                    break;
+                }
+                let length = le_i32(&data, p);
+                if length < 0 {
+                    break;
+                }
+                let length = length as usize;
+                if p + 4 + length <= data.len() {
+                    let s = std::str::from_utf8(&data[p + 4..p + 4 + length])
+                        .unwrap_or("")
+                        .trim_matches('\0')
+                        .trim()
+                        .to_string();
+                    if !s.is_empty() {
+                        console_cmds.push((tick, s));
+                    }
+                }
+                offset = p.saturating_add(4).saturating_add(length);
+            }
+            5 => {
+                let p = offset + pkt_hdr;
+                if p + 8 > data.len() {
+                    break;
+                }
+                let out_seq = le_i32(&data, p);
+                let length = le_i32(&data, p + 4);
+                if length < 0 {
+                    break;
+                }
+                let next = p.saturating_add(8).saturating_add(length as usize);
+                if next > data.len() {
+                    break;
+                }
+                let ucmd_bytes = &data[p + 8..next];
+                if let Some(ucmd) =
+                    parse_usercmd_for_demo(ucmd_bytes, header.net_protocol, &header.game_dir)
+                {
+                    let cmd_num = ucmd.command_number.unwrap_or(out_seq as u32);
+                    let _ = cmd_num;
+                    if let Some(p) = ucmd.pitch {
+                        last_pitch = p;
+                    }
+                    if let Some(y) = ucmd.yaw {
+                        last_yaw = y;
+                    }
+                    if let Some(f) = ucmd.forwardmove {
+                        last_fwd = f;
+                    }
+                    if let Some(s) = ucmd.sidemove {
+                        last_side = s;
+                    }
+                    if let Some(b) = ucmd.buttons {
+                        last_buttons = b;
+                    }
+                    if let Some(w) = ucmd.weaponselect {
+                        last_weapon = w;
+                    }
+                    all_cmds.push(SampledCmd {
+                        tick,
+                        pitch: last_pitch,
+                        yaw: last_yaw,
+                        fwd: last_fwd,
+                        side: last_side,
+                        btns: last_buttons,
+                        weapon: last_weapon,
+                    });
+                }
+                offset = next;
+            }
+            // proto-4 (L4D-era enum) inserted DEM_CustomData at 8 and shifted
+            // DEM_StringTables to 9; proto-3 keeps StringTables at 8 and has no
+            // CustomData. CustomData is callbackIndex(4) + length(4) + data :
+            // reading its length as if it were a plain length-prefixed block
+            // (at p, not p+4) yields garbage and desyncs the walk. Portal 2
+            // demos DO carry a CustomData frame after signon, so the old
+            // uniform handling bailed right there, before any usercmd. That is
+            // why Portal 2 input came back empty. Skip CustomData correctly.
+            8 if proto > 3 => {
+                let p = offset + pkt_hdr;
+                if p + 8 > data.len() {
+                    break;
+                }
+                let length = le_i32(&data, p + 4);
+                if length < 0 {
+                    break;
+                }
+                offset = p
+                    .saturating_add(8)
+                    .saturating_add(length as usize)
+                    .min(data.len());
+            }
+            // 6=DataTables (both), 8=StringTables (proto-3), 9=StringTables
+            // (proto-4). All plain length-prefixed blocks.
+            6 | 8 | 9 => {
+                let p = offset + pkt_hdr;
+                if p + 4 > data.len() {
+                    break;
+                }
+                let length = le_i32(&data, p);
+                if length < 0 {
+                    break;
+                }
+                offset = p
+                    .saturating_add(4)
+                    .saturating_add(length as usize)
+                    .min(data.len());
+            }
+            _ => break,
+        }
+    }
 
     eprintln!(
         "  map={}  client={}  duration={:.1}s  rows={}",
-        header.map_name, header.client_name, header.playback_time, all_cmds.len()
+        header.map_name,
+        header.client_name,
+        header.playback_time,
+        all_cmds.len()
     );
 
     // Parse game events
@@ -416,7 +563,15 @@ pub fn generate_html_string(
     if let Some(ref schemas) = schemas {
         for &(tick, start, end) in &game_packet_ticks {
             let payload = &data[start..end];
-            let evs = extract_events_from_payload(payload, tick, schemas, &display_ev, remap_msgs, user_msg_12bit, header.demo_protocol);
+            let evs = extract_events_from_payload(
+                payload,
+                tick,
+                schemas,
+                &display_ev,
+                remap_msgs,
+                user_msg_12bit,
+                header.demo_protocol,
+            );
             game_events.extend(evs);
         }
     }
@@ -425,7 +580,8 @@ pub fn generate_html_string(
     // bit-packed scanner above can't read. Decode them from the protobuf message
     // stream (same proto as CS2/Source 2; ids 25/30).
     if header.game_dir.eq_ignore_ascii_case("csgo") {
-        let csgo_evs = source::csgo::events::decode_events(&signon_payloads, &game_packet_ticks, &data);
+        let csgo_evs =
+            source::csgo::events::decode_events(&signon_payloads, &game_packet_ticks, &data);
         game_events.extend(csgo_evs);
     }
 
@@ -447,7 +603,8 @@ pub fn generate_html_string(
     eprintln!(" {} found", game_events.len());
 
     // Parse player info from DEM_STRINGTABLES
-    let (userinfo, _slot_to_uid) = parse_userinfo_from_demo(&data, header.demo_protocol, &header.game_dir);
+    let (userinfo, _slot_to_uid) =
+        parse_userinfo_from_demo(&data, header.demo_protocol, &header.game_dir);
     eprintln!("  Players: {}", userinfo.len());
 
     // BSP - caller supplies the bytes (or None). The pure-bytes core never
@@ -477,15 +634,18 @@ pub fn generate_html_string(
         idx_sample.push(n - 1);
     }
 
-    let sampled_cmds: Vec<SampledCmd> = idx_sample.iter().map(|&i| SampledCmd {
-        tick: all_cmds[i].tick,
-        pitch: all_cmds[i].pitch,
-        yaw: all_cmds[i].yaw,
-        fwd: all_cmds[i].fwd,
-        side: all_cmds[i].side,
-        btns: all_cmds[i].btns,
-        weapon: all_cmds[i].weapon,
-    }).collect();
+    let sampled_cmds: Vec<SampledCmd> = idx_sample
+        .iter()
+        .map(|&i| SampledCmd {
+            tick: all_cmds[i].tick,
+            pitch: all_cmds[i].pitch,
+            yaw: all_cmds[i].yaw,
+            fwd: all_cmds[i].fwd,
+            side: all_cmds[i].side,
+            btns: all_cmds[i].btns,
+            weapon: all_cmds[i].weapon,
+        })
+        .collect();
 
     // Compute life breaks on full cmds, then map to sampled indices
     let (life_breaks_full, tele_breaks_full) = compute_life_breaks(&all_cmds, &game_events);
@@ -519,10 +679,14 @@ pub fn generate_html_string(
     let setview_events = extract_svc_setview(&data, &game_packet_ticks);
     let switch_intervals = spectator_switch_intervals(&setview_events);
     if !switch_intervals.is_empty() {
-        eprintln!("  Spectator switches detected: {} interval(s)", switch_intervals.len());
+        eprintln!(
+            "  Spectator switches detected: {} interval(s)",
+            switch_intervals.len()
+        );
     }
     let view_switches_json = {
-        let parts: Vec<String> = switch_intervals.iter()
+        let parts: Vec<String> = switch_intervals
+            .iter()
             .map(|(s, e)| format!("[{},{}]", s, e))
             .collect();
         format!("[{}]", parts.join(","))
@@ -555,14 +719,27 @@ pub fn generate_html_string(
     html = html.replace("__LIFE_BREAKS__", &life_breaks_json);
     html = html.replace("__TELEPORT_BREAKS__", &tele_breaks_json);
     html = html.replace("__EVENTS__", &events_json);
-    html = html.replace("__WORLD_POSITIONS__", &world_positions_to_json(&world_positions));
+    html = html.replace(
+        "__WORLD_POSITIONS__",
+        &world_positions_to_json(&world_positions),
+    );
     html = html.replace("__BSP_VERTS__", &format!("\"{}\"", bsp_verts_b64));
     html = html.replace("__BSP_IDX__", &format!("\"{}\"", bsp_idx_b64));
     html = html.replace("__BSP_SPAWN__", &spawn_json);
     // Multi-player entity tracks - always extracted now. If the native decoder
     // can't make sense of the demo we fall back to empty objects so the
     // template still parses (legacy single-POV view will still render).
-    let (mut multi_tracks_json, mut multi_names_json, mut multi_life_json, multi_obs_json, mut multi_yaws_json, multi_weps_json, multi_wep_classes_json, primary_eid_json, view_angles_json) = {
+    let (
+        mut multi_tracks_json,
+        mut multi_names_json,
+        mut multi_life_json,
+        multi_obs_json,
+        mut multi_yaws_json,
+        multi_weps_json,
+        multi_wep_classes_json,
+        primary_eid_json,
+        view_angles_json,
+    ) = {
         eprint!("  Extracting multi-player tracks ...");
         io::stderr().flush().ok();
         match multi_player::extract_from_bytes(data) {
@@ -570,7 +747,7 @@ pub fn generate_html_string(
                 // Fallback name source. GOTV CS:GO demos ship no DEM_STRINGTABLES
                 // snapshot, but the CS:GO protobuf string-table decode
                 // (csgo::stringtables) now resolves their names directly from
-                // svc_*StringTable — including players connected before the
+                // svc_*StringTable: including players connected before the
                 // recording, which `player_connect` events can't cover. This
                 // backfill only fills any tracked slot still unnamed after that
                 // (it never overrides), so it's a no-op on every current test demo
@@ -581,11 +758,21 @@ pub fn generate_html_string(
                 let life_total: usize = data.life_states.values().map(|v| v.len()).sum();
                 let yaw_total: usize = data.yaws.values().map(|v| v.len()).sum();
                 let wep_total: usize = data.weapons.values().map(|v| v.len()).sum();
-                let primary_str = data.primary_entity
+                let primary_str = data
+                    .primary_entity
                     .map(|e| e.to_string())
                     .unwrap_or_else(|| "null".to_string());
-                eprintln!(" {} entities, {} samples, {} named, {} life transitions, {} yaw samples, {} weapon switches, {} weapon classes, primary={}",
-                    count, total, data.names.len(), life_total, yaw_total, wep_total, data.weapon_classes.len(), primary_str);
+                eprintln!(
+                    " {} entities, {} samples, {} named, {} life transitions, {} yaw samples, {} weapon switches, {} weapon classes, primary={}",
+                    count,
+                    total,
+                    data.names.len(),
+                    life_total,
+                    yaw_total,
+                    wep_total,
+                    data.weapon_classes.len(),
+                    primary_str
+                );
                 (
                     multi_tracks_to_json(&data),
                     multi_names_to_json(&data),
@@ -600,7 +787,17 @@ pub fn generate_html_string(
             }
             Err(e) => {
                 eprintln!(" failed: {}", e);
-                ("{}".to_string(), "{}".to_string(), "{}".to_string(), "{}".to_string(), "{}".to_string(), "{}".to_string(), "{}".to_string(), "null".to_string(), "[]".to_string())
+                (
+                    "{}".to_string(),
+                    "{}".to_string(),
+                    "{}".to_string(),
+                    "{}".to_string(),
+                    "{}".to_string(),
+                    "{}".to_string(),
+                    "{}".to_string(),
+                    "null".to_string(),
+                    "[]".to_string(),
+                )
             }
         }
     };
@@ -629,35 +826,60 @@ pub fn generate_html_string(
                 let pos_s = multi_player::subsample(&g.samples, 6000);
                 let pts: Vec<String> = pos_s
                     .iter()
-                    .map(|(t, x, y, z)| format!("[{},{},{},{}]", t + shift, json_f32(*x), json_f32(*y), json_f32(*z)))
+                    .map(|(t, x, y, z)| {
+                        format!(
+                            "[{},{},{},{}]",
+                            t + shift,
+                            json_f32(*x),
+                            json_f32(*y),
+                            json_f32(*z)
+                        )
+                    })
                     .collect();
-                multi_tracks_json = merge_json_obj(&multi_tracks_json, g.eid, &format!("[{}]", pts.join(",")));
+                multi_tracks_json =
+                    merge_json_obj(&multi_tracks_json, g.eid, &format!("[{}]", pts.join(",")));
                 let ystride = (g.yaws.len() / 6000).max(1);
-                let ypts: Vec<String> = g.yaws
+                let ypts: Vec<String> = g
+                    .yaws
                     .iter()
                     .step_by(ystride)
                     .map(|(t, y, p)| format!("[{},{:.1},{:.1}]", t + shift, y, p))
                     .collect();
-                multi_yaws_json = merge_json_obj(&multi_yaws_json, g.eid, &format!("[{}]", ypts.join(",")));
+                multi_yaws_json =
+                    merge_json_obj(&multi_yaws_json, g.eid, &format!("[{}]", ypts.join(",")));
                 let nm = format!(
                     "{{\"name\":\"{}\",\"steam_id\":\"\",\"user_id\":{},\"is_fake\":false,\"is_hltv\":false,\"aliases\":[\"{}\"]}}",
-                    escape_json_str(&g.name), g.eid, escape_json_str(&g.name),
+                    escape_json_str(&g.name),
+                    g.eid,
+                    escape_json_str(&g.name),
                 );
                 multi_names_json = merge_json_obj(&multi_names_json, g.eid, &nm);
                 if !g.life.is_empty() {
-                    let lpts: Vec<String> = g.life.iter().map(|(t, s)| format!("[{},{}]", t + shift, s)).collect();
-                    multi_life_json = merge_json_obj(&multi_life_json, g.eid, &format!("[{}]", lpts.join(",")));
+                    let lpts: Vec<String> = g
+                        .life
+                        .iter()
+                        .map(|(t, s)| format!("[{},{}]", t + shift, s))
+                        .collect();
+                    multi_life_json =
+                        merge_json_obj(&multi_life_json, g.eid, &format!("[{}]", lpts.join(",")));
                 }
             }
             eprintln!(
                 "  --diff: overlaid {} ghost{} from '{}' (tick shift {})",
-                ghosts.len(), if ghosts.len() == 1 { "" } else { "s" }, d2name, shift
+                ghosts.len(),
+                if ghosts.len() == 1 { "" } else { "s" },
+                d2name,
+                shift
             );
         }
     }
     let ghost_eids_json = format!(
         "[{}]",
-        ghost_eids.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(",")
+        ghost_eids
+            .iter()
+            .map(|e| e.to_string())
+            .collect::<Vec<_>>()
+            .join(",")
     );
     html = html.replace("__GHOST_EIDS__", &ghost_eids_json);
     html = html.replace("__ENTITY_TRACKS__", &multi_tracks_json);
@@ -678,7 +900,6 @@ pub fn generate_html_string(
     Ok(html)
 }
 
-
 /// Fallback name source: backfill from `player_connect` game events for any
 /// tracked slot still unnamed after the primary decoders. `player_connect`
 /// carries `name` + slot `index` + `userid`, and the tracked entity id is
@@ -695,12 +916,25 @@ fn backfill_names_from_connects(
         if ev.event != "player_connect" {
             continue;
         }
-        let (mut nm, mut index, mut uid): (Option<String>, Option<i32>, Option<i32>) = (None, None, None);
+        let (mut nm, mut index, mut uid): (Option<String>, Option<i32>, Option<i32>) =
+            (None, None, None);
         for f in &ev.fields {
             match f.name.as_str() {
-                "name" => if let EventValue::Str(s) = &f.value { nm = Some(s.clone()); },
-                "index" => if let EventValue::Int(n) = &f.value { index = Some(*n); },
-                "userid" => if let EventValue::Int(n) = &f.value { uid = Some(*n); },
+                "name" => {
+                    if let EventValue::Str(s) = &f.value {
+                        nm = Some(s.clone());
+                    }
+                }
+                "index" => {
+                    if let EventValue::Int(n) = &f.value {
+                        index = Some(*n);
+                    }
+                }
+                "userid" => {
+                    if let EventValue::Int(n) = &f.value {
+                        uid = Some(*n);
+                    }
+                }
                 _ => {}
             }
         }
@@ -715,13 +949,16 @@ fn backfill_names_from_connects(
         if names.get(&eid).is_some_and(|p| !p.name.is_empty()) {
             continue; // already named (e.g. POV demo via DEM_STRINGTABLES)
         }
-        names.insert(eid, PlayerMeta {
-            name: nm.clone(),
-            user_id: uid.unwrap_or(0).max(0) as u32,
-            steam_id: String::new(),
-            is_fake: false,
-            is_hltv: false,
-            aliases: vec![nm],
-        });
+        names.insert(
+            eid,
+            PlayerMeta {
+                name: nm.clone(),
+                user_id: uid.unwrap_or(0).max(0) as u32,
+                steam_id: String::new(),
+                is_fake: false,
+                is_hltv: false,
+                aliases: vec![nm],
+            },
+        );
     }
 }

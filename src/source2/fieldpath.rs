@@ -4,7 +4,7 @@
 // operations have fixed weights; a Huffman tree built from those weights maps
 // each bit-code to an operation that mutates a running field path. The tree
 // shape MUST match the encoder's, which means replicating Go's `container/heap`
-// pop order (weight asc, ties by higher value first) exactly — see `HeapBuilder`.
+// pop order (weight asc, ties by higher value first) exactly: see `HeapBuilder`.
 
 use super::bitreader::BitReader;
 use std::sync::OnceLock;
@@ -60,18 +60,23 @@ pub struct FieldPath {
     pub path: [i32; 7],
     pub last: usize,
     pub done: bool,
-    /// Set when `bump` ran off the end of the 7-slot buffer — distinguishes a
+    /// Set when `bump` ran off the end of the 7-slot buffer: distinguishes a
     /// desync abort from a clean `OP_FINISH` (both set `done`).
     pub overflow: bool,
 }
 
 impl FieldPath {
     fn new() -> Self {
-        FieldPath { path: [-1, 0, 0, 0, 0, 0, 0], last: 0, done: false, overflow: false }
+        FieldPath {
+            path: [-1, 0, 0, 0, 0, 0, 0],
+            last: 0,
+            done: false,
+            overflow: false,
+        }
     }
 
     /// Advance to the next path level. Returns false (and marks the path done)
-    /// if it would exceed the fixed 7-slot buffer — that only happens when the
+    /// if it would exceed the fixed 7-slot buffer: that only happens when the
     /// bitstream has already desynced upstream, so we abort this packet's
     /// field-path read rather than index out of bounds. See `read_field_paths`,
     /// which drops a `done` path instead of pushing it.
@@ -89,7 +94,9 @@ impl FieldPath {
     fn pop(&mut self, n: usize) {
         for _ in 0..n {
             self.path[self.last] = 0;
-            if self.last == 0 { break; }
+            if self.last == 0 {
+                break;
+            }
             self.last -= 1;
         }
     }
@@ -104,93 +111,219 @@ fn apply_op(op: usize, r: &mut BitReader, fp: &mut FieldPath) {
         2 => fp.path[last] += 3,
         3 => fp.path[last] += 4,
         4 => fp.path[last] += r.read_ubit_var_fp() as i32 + 5,
-        5 => { if !fp.bump() { return; } fp.path[fp.last] = 0; }
-        6 => { if !fp.bump() { return; } fp.path[fp.last] = r.read_ubit_var_fp() as i32; }
-        7 => { fp.path[last] += 1; if !fp.bump() { return; } fp.path[fp.last] = 0; }
-        8 => { fp.path[last] += 1; if !fp.bump() { return; } fp.path[fp.last] = r.read_ubit_var_fp() as i32; }
-        9 => { fp.path[last] += r.read_ubit_var_fp() as i32; if !fp.bump() { return; } fp.path[fp.last] = 0; }
+        5 => {
+            if !fp.bump() {
+                return;
+            }
+            fp.path[fp.last] = 0;
+        }
+        6 => {
+            if !fp.bump() {
+                return;
+            }
+            fp.path[fp.last] = r.read_ubit_var_fp() as i32;
+        }
+        7 => {
+            fp.path[last] += 1;
+            if !fp.bump() {
+                return;
+            }
+            fp.path[fp.last] = 0;
+        }
+        8 => {
+            fp.path[last] += 1;
+            if !fp.bump() {
+                return;
+            }
+            fp.path[fp.last] = r.read_ubit_var_fp() as i32;
+        }
+        9 => {
+            fp.path[last] += r.read_ubit_var_fp() as i32;
+            if !fp.bump() {
+                return;
+            }
+            fp.path[fp.last] = 0;
+        }
         10 => {
             fp.path[last] += r.read_ubit_var_fp() as i32 + 2;
-            if !fp.bump() { return; }
+            if !fp.bump() {
+                return;
+            }
             fp.path[fp.last] = r.read_ubit_var_fp() as i32 + 1;
         }
         11 => {
             fp.path[last] += r.read_bits(3) as i32 + 2;
-            if !fp.bump() { return; }
+            if !fp.bump() {
+                return;
+            }
             fp.path[fp.last] = r.read_bits(3) as i32 + 1;
         }
         12 => {
             fp.path[last] += r.read_bits(4) as i32 + 2;
-            if !fp.bump() { return; }
+            if !fp.bump() {
+                return;
+            }
             fp.path[fp.last] = r.read_bits(4) as i32 + 1;
         }
         13 => {
-            if !fp.bump() { return; } fp.path[fp.last] += r.read_ubit_var_fp() as i32;
-            if !fp.bump() { return; } fp.path[fp.last] += r.read_ubit_var_fp() as i32;
+            if !fp.bump() {
+                return;
+            }
+            fp.path[fp.last] += r.read_ubit_var_fp() as i32;
+            if !fp.bump() {
+                return;
+            }
+            fp.path[fp.last] += r.read_ubit_var_fp() as i32;
         }
         14 => {
-            if !fp.bump() { return; } fp.path[fp.last] = r.read_bits(5) as i32;
-            if !fp.bump() { return; } fp.path[fp.last] = r.read_bits(5) as i32;
+            if !fp.bump() {
+                return;
+            }
+            fp.path[fp.last] = r.read_bits(5) as i32;
+            if !fp.bump() {
+                return;
+            }
+            fp.path[fp.last] = r.read_bits(5) as i32;
         }
         15 => {
-            if !fp.bump() { return; } fp.path[fp.last] += r.read_ubit_var_fp() as i32;
-            if !fp.bump() { return; } fp.path[fp.last] += r.read_ubit_var_fp() as i32;
-            if !fp.bump() { return; } fp.path[fp.last] += r.read_ubit_var_fp() as i32;
+            if !fp.bump() {
+                return;
+            }
+            fp.path[fp.last] += r.read_ubit_var_fp() as i32;
+            if !fp.bump() {
+                return;
+            }
+            fp.path[fp.last] += r.read_ubit_var_fp() as i32;
+            if !fp.bump() {
+                return;
+            }
+            fp.path[fp.last] += r.read_ubit_var_fp() as i32;
         }
         16 => {
-            if !fp.bump() { return; } fp.path[fp.last] = r.read_bits(5) as i32;
-            if !fp.bump() { return; } fp.path[fp.last] = r.read_bits(5) as i32;
-            if !fp.bump() { return; } fp.path[fp.last] = r.read_bits(5) as i32;
+            if !fp.bump() {
+                return;
+            }
+            fp.path[fp.last] = r.read_bits(5) as i32;
+            if !fp.bump() {
+                return;
+            }
+            fp.path[fp.last] = r.read_bits(5) as i32;
+            if !fp.bump() {
+                return;
+            }
+            fp.path[fp.last] = r.read_bits(5) as i32;
         }
         17 => {
             fp.path[last] += 1;
-            if !fp.bump() { return; } fp.path[fp.last] += r.read_ubit_var_fp() as i32;
-            if !fp.bump() { return; } fp.path[fp.last] += r.read_ubit_var_fp() as i32;
+            if !fp.bump() {
+                return;
+            }
+            fp.path[fp.last] += r.read_ubit_var_fp() as i32;
+            if !fp.bump() {
+                return;
+            }
+            fp.path[fp.last] += r.read_ubit_var_fp() as i32;
         }
         18 => {
             fp.path[last] += 1;
-            if !fp.bump() { return; } fp.path[fp.last] += r.read_bits(5) as i32;
-            if !fp.bump() { return; } fp.path[fp.last] += r.read_bits(5) as i32;
+            if !fp.bump() {
+                return;
+            }
+            fp.path[fp.last] += r.read_bits(5) as i32;
+            if !fp.bump() {
+                return;
+            }
+            fp.path[fp.last] += r.read_bits(5) as i32;
         }
         19 => {
             fp.path[last] += 1;
-            if !fp.bump() { return; } fp.path[fp.last] += r.read_ubit_var_fp() as i32;
-            if !fp.bump() { return; } fp.path[fp.last] += r.read_ubit_var_fp() as i32;
-            if !fp.bump() { return; } fp.path[fp.last] += r.read_ubit_var_fp() as i32;
+            if !fp.bump() {
+                return;
+            }
+            fp.path[fp.last] += r.read_ubit_var_fp() as i32;
+            if !fp.bump() {
+                return;
+            }
+            fp.path[fp.last] += r.read_ubit_var_fp() as i32;
+            if !fp.bump() {
+                return;
+            }
+            fp.path[fp.last] += r.read_ubit_var_fp() as i32;
         }
         20 => {
             fp.path[last] += 1;
-            if !fp.bump() { return; } fp.path[fp.last] += r.read_bits(5) as i32;
-            if !fp.bump() { return; } fp.path[fp.last] += r.read_bits(5) as i32;
-            if !fp.bump() { return; } fp.path[fp.last] += r.read_bits(5) as i32;
+            if !fp.bump() {
+                return;
+            }
+            fp.path[fp.last] += r.read_bits(5) as i32;
+            if !fp.bump() {
+                return;
+            }
+            fp.path[fp.last] += r.read_bits(5) as i32;
+            if !fp.bump() {
+                return;
+            }
+            fp.path[fp.last] += r.read_bits(5) as i32;
         }
         21 => {
             fp.path[last] += r.read_ubit_var() as i32 + 2;
-            if !fp.bump() { return; } fp.path[fp.last] += r.read_ubit_var_fp() as i32;
-            if !fp.bump() { return; } fp.path[fp.last] += r.read_ubit_var_fp() as i32;
+            if !fp.bump() {
+                return;
+            }
+            fp.path[fp.last] += r.read_ubit_var_fp() as i32;
+            if !fp.bump() {
+                return;
+            }
+            fp.path[fp.last] += r.read_ubit_var_fp() as i32;
         }
         22 => {
             fp.path[last] += r.read_ubit_var() as i32 + 2;
-            if !fp.bump() { return; } fp.path[fp.last] += r.read_bits(5) as i32;
-            if !fp.bump() { return; } fp.path[fp.last] += r.read_bits(5) as i32;
+            if !fp.bump() {
+                return;
+            }
+            fp.path[fp.last] += r.read_bits(5) as i32;
+            if !fp.bump() {
+                return;
+            }
+            fp.path[fp.last] += r.read_bits(5) as i32;
         }
         23 => {
             fp.path[last] += r.read_ubit_var() as i32 + 2;
-            if !fp.bump() { return; } fp.path[fp.last] += r.read_ubit_var_fp() as i32;
-            if !fp.bump() { return; } fp.path[fp.last] += r.read_ubit_var_fp() as i32;
-            if !fp.bump() { return; } fp.path[fp.last] += r.read_ubit_var_fp() as i32;
+            if !fp.bump() {
+                return;
+            }
+            fp.path[fp.last] += r.read_ubit_var_fp() as i32;
+            if !fp.bump() {
+                return;
+            }
+            fp.path[fp.last] += r.read_ubit_var_fp() as i32;
+            if !fp.bump() {
+                return;
+            }
+            fp.path[fp.last] += r.read_ubit_var_fp() as i32;
         }
         24 => {
             fp.path[last] += r.read_ubit_var() as i32 + 2;
-            if !fp.bump() { return; } fp.path[fp.last] += r.read_bits(5) as i32;
-            if !fp.bump() { return; } fp.path[fp.last] += r.read_bits(5) as i32;
-            if !fp.bump() { return; } fp.path[fp.last] += r.read_bits(5) as i32;
+            if !fp.bump() {
+                return;
+            }
+            fp.path[fp.last] += r.read_bits(5) as i32;
+            if !fp.bump() {
+                return;
+            }
+            fp.path[fp.last] += r.read_bits(5) as i32;
+            if !fp.bump() {
+                return;
+            }
+            fp.path[fp.last] += r.read_bits(5) as i32;
         }
         25 => {
             let n = r.read_ubit_var() as i32;
             fp.path[last] += r.read_ubit_var() as i32;
             for _ in 0..n {
-                if !fp.bump() { return; }
+                if !fp.bump() {
+                    return;
+                }
                 fp.path[fp.last] += r.read_ubit_var_fp() as i32;
             }
         }
@@ -202,18 +335,46 @@ fn apply_op(op: usize, r: &mut BitReader, fp: &mut FieldPath) {
             }
             let count = r.read_ubit_var() as i32;
             for _ in 0..count {
-                if !fp.bump() { return; }
+                if !fp.bump() {
+                    return;
+                }
                 fp.path[fp.last] = r.read_ubit_var_fp() as i32;
             }
         }
-        27 => { fp.pop(1); fp.path[fp.last] += 1; }
-        28 => { fp.pop(1); fp.path[fp.last] += r.read_ubit_var_fp() as i32 + 1; }
-        29 => { fp.pop(fp.last); fp.path[0] += 1; }
-        30 => { fp.pop(fp.last); fp.path[0] += r.read_ubit_var_fp() as i32 + 1; }
-        31 => { fp.pop(fp.last); fp.path[0] += r.read_bits(3) as i32 + 1; }
-        32 => { fp.pop(fp.last); fp.path[0] += r.read_bits(6) as i32 + 1; }
-        33 => { let n = r.read_ubit_var_fp() as usize; fp.pop(n); fp.path[fp.last] += 1; }
-        34 => { let n = r.read_ubit_var_fp() as usize; fp.pop(n); fp.path[fp.last] += r.read_var_i32(); }
+        27 => {
+            fp.pop(1);
+            fp.path[fp.last] += 1;
+        }
+        28 => {
+            fp.pop(1);
+            fp.path[fp.last] += r.read_ubit_var_fp() as i32 + 1;
+        }
+        29 => {
+            fp.pop(fp.last);
+            fp.path[0] += 1;
+        }
+        30 => {
+            fp.pop(fp.last);
+            fp.path[0] += r.read_ubit_var_fp() as i32 + 1;
+        }
+        31 => {
+            fp.pop(fp.last);
+            fp.path[0] += r.read_bits(3) as i32 + 1;
+        }
+        32 => {
+            fp.pop(fp.last);
+            fp.path[0] += r.read_bits(6) as i32 + 1;
+        }
+        33 => {
+            let n = r.read_ubit_var_fp() as usize;
+            fp.pop(n);
+            fp.path[fp.last] += 1;
+        }
+        34 => {
+            let n = r.read_ubit_var_fp() as usize;
+            fp.pop(n);
+            fp.path[fp.last] += r.read_var_i32();
+        }
         35 => {
             let n = r.read_ubit_var_fp() as usize;
             fp.pop(n);
@@ -230,7 +391,9 @@ fn apply_op(op: usize, r: &mut BitReader, fp: &mut FieldPath) {
                 }
             }
         }
-        37 => { fp.path[fp.last.saturating_sub(1)] += 1; }
+        37 => {
+            fp.path[fp.last.saturating_sub(1)] += 1;
+        }
         38 => {
             for i in 0..=fp.last {
                 if r.read_bit() {
@@ -315,7 +478,10 @@ const NIL: usize = usize::MAX;
 
 fn build_tree() -> Tree {
     // Arena with a mutable internal-node child table; leaves placed at code ends.
-    let mut nodes: Vec<Node> = vec![Node::Internal { left: NIL, right: NIL }];
+    let mut nodes: Vec<Node> = vec![Node::Internal {
+        left: NIL,
+        right: NIL,
+    }];
     let root = 0usize;
 
     for &(op, code) in OP_CODES {
@@ -326,19 +492,32 @@ fn build_tree() -> Tree {
             let last = i == bytes.len() - 1;
             // Read current child.
             let child = match &nodes[cur] {
-                Node::Internal { left, right } => if go_right { *right } else { *left },
+                Node::Internal { left, right } => {
+                    if go_right {
+                        *right
+                    } else {
+                        *left
+                    }
+                }
                 Node::Leaf { .. } => NIL,
             };
             if last {
                 let leaf = nodes.len();
                 nodes.push(Node::Leaf { value: op });
                 if let Node::Internal { left, right } = &mut nodes[cur] {
-                    if go_right { *right = leaf } else { *left = leaf }
+                    if go_right {
+                        *right = leaf
+                    } else {
+                        *left = leaf
+                    }
                 }
             } else {
                 let next = if child == NIL {
                     let n = nodes.len();
-                    nodes.push(Node::Internal { left: NIL, right: NIL });
+                    nodes.push(Node::Internal {
+                        left: NIL,
+                        right: NIL,
+                    });
                     if let Node::Internal { left, right } = &mut nodes[cur] {
                         if go_right { *right = n } else { *left = n }
                     }
@@ -356,7 +535,7 @@ fn build_tree() -> Tree {
 
 /// Read one PacketEntities delta's worth of field paths from the bit stream.
 ///
-/// Returns `None` on a desync — either navigating into an absent Huffman branch
+/// Returns `None` on a desync: either navigating into an absent Huffman branch
 /// or a field path running past its 7-slot buffer. Both mean the bitstream is
 /// no longer aligned, so the caller must fail the whole packet rather than
 /// decode values against a corrupt cursor (which otherwise accumulates garbage
@@ -370,12 +549,16 @@ pub fn read_field_paths(r: &mut BitReader) -> Option<Vec<FieldPath>> {
     while !fp.done {
         let next = match &t.nodes[node] {
             Node::Internal { left, right } => {
-                if r.read_bit() { *right } else { *left }
+                if r.read_bit() {
+                    *right
+                } else {
+                    *left
+                }
             }
             Node::Leaf { .. } => node,
         };
         if next == NIL {
-            return None; // navigated into an absent branch — desync
+            return None; // navigated into an absent branch: desync
         }
 
         match &t.nodes[next] {
@@ -384,7 +567,12 @@ pub fn read_field_paths(r: &mut BitReader) -> Option<Vec<FieldPath>> {
                 node = t.root;
                 apply_op(op, r, &mut fp);
                 if !fp.done {
-                    paths.push(FieldPath { path: fp.path, last: fp.last, done: false, overflow: false });
+                    paths.push(FieldPath {
+                        path: fp.path,
+                        last: fp.last,
+                        done: false,
+                        overflow: false,
+                    });
                 }
             }
             Node::Internal { .. } => {
@@ -393,7 +581,7 @@ pub fn read_field_paths(r: &mut BitReader) -> Option<Vec<FieldPath>> {
         }
     }
     if fp.overflow {
-        return None; // field path ran past its buffer — desync
+        return None; // field path ran past its buffer: desync
     }
     Some(paths)
 }
@@ -408,7 +596,11 @@ mod tests {
     fn tree_shape() {
         let t = tree();
         assert!(matches!(t.nodes[t.root], Node::Internal { .. }));
-        let leaves = t.nodes.iter().filter(|n| matches!(n, Node::Leaf { .. })).count();
+        let leaves = t
+            .nodes
+            .iter()
+            .filter(|n| matches!(n, Node::Leaf { .. }))
+            .count();
         assert_eq!(leaves, 40);
     }
 
@@ -420,7 +612,13 @@ mod tests {
         let t = tree();
         fn depth_of(t: &Tree, node: usize, target: usize, d: usize) -> Option<usize> {
             match &t.nodes[node] {
-                Node::Leaf { value } => if *value == target { Some(d) } else { None },
+                Node::Leaf { value } => {
+                    if *value == target {
+                        Some(d)
+                    } else {
+                        None
+                    }
+                }
                 Node::Internal { left, right } => {
                     depth_of(t, *left, target, d + 1).or_else(|| depth_of(t, *right, target, d + 1))
                 }
@@ -439,13 +637,19 @@ mod tests {
     }
 
     // FieldPathEncodeFinish is the highest-weight op (25474) so it must get one
-    // of the shortest codes — at most 2 bits from the root.
+    // of the shortest codes: at most 2 bits from the root.
     #[test]
     fn finish_is_shallow() {
         let t = tree();
         fn depth_of(t: &Tree, node: usize, target: usize, d: usize) -> Option<usize> {
             match &t.nodes[node] {
-                Node::Leaf { value } => if *value == target { Some(d) } else { None },
+                Node::Leaf { value } => {
+                    if *value == target {
+                        Some(d)
+                    } else {
+                        None
+                    }
+                }
                 Node::Internal { left, right } => {
                     depth_of(t, *left, target, d + 1).or_else(|| depth_of(t, *right, target, d + 1))
                 }

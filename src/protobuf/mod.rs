@@ -1,7 +1,7 @@
 // A tiny, dependency-free protobuf *wire-format* reader.
 //
 // CS:GO (and every later Source / Source 2 title) wraps its net messages in
-// protobuf — `CSVCMsg_PacketEntities`, `CSVCMsg_SendTable`, … — instead of the
+// protobuf: `CSVCMsg_PacketEntities`, `CSVCMsg_SendTable`, …: instead of the
 // raw bit-packed `svc_*` framing the older engines use. To decode those we only
 // need to walk the protobuf *wire format*; we do **not** need generated message
 // structs, a schema compiler, or the `prost`/`protobuf` crates (which would
@@ -13,7 +13,7 @@
 // read a message field-by-field with `Reader::next_field` and pull typed values
 // off each `Field` via the `Value` helpers. Mapping field *numbers* to message
 // semantics (e.g. "field 1 of CSVCMsg_SendTable is `is_end`") lives with the
-// consumer in `source_demo`, not here — this layer stays schema-agnostic.
+// consumer in `source_demo`, not here: this layer stays schema-agnostic.
 //
 // Deliberately omitted (add only when a consumer needs them): groups (wire
 // types 3/4, deprecated since proto2) and packed-repeated *iteration* helpers
@@ -25,14 +25,14 @@ pub use reader::{Field, Reader, Value, WireType};
 
 /// Errors from walking a malformed or truncated protobuf buffer. Decoders turn
 /// these into a skipped message rather than aborting the whole demo, so the
-/// variants stay coarse — enough to log, not enough to need matching on.
+/// variants stay coarse: enough to log, not enough to need matching on.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
     /// Ran off the end of the buffer mid-field.
     Truncated,
     /// A varint spanned more than 10 bytes (can't fit in a u64).
     VarintOverflow,
-    /// Tag carried wire type 3 or 4 (start/end group) — unsupported.
+    /// Tag carried wire type 3 or 4 (start/end group): unsupported.
     UnsupportedWireType(u8),
 }
 

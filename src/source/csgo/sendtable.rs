@@ -18,9 +18,11 @@
 //   sendprop_t { 1:type 2:var_name 3:flags 4:priority 5:dt_name
 //                6:num_elements 7:low_value 8:high_value 9:num_bits }
 
-use super::super::datatable::{self, RawSendPropDef, RawSendTable, ServerClass, DataTables};
-use super::super::sendprop::{SendPropType, SPROP_EXCLUDE, SPROP_INSIDEARRAY, SPROP_NORMAL_OR_VARINT};
 use super::super::super::protobuf::Reader;
+use super::super::datatable::{self, DataTables, RawSendPropDef, RawSendTable, ServerClass};
+use super::super::sendprop::{
+    SPROP_EXCLUDE, SPROP_INSIDEARRAY, SPROP_NORMAL_OR_VARINT, SendPropType,
+};
 
 /// CS:GO's `SPROP_VARINT` sits at bit 19 in the modern flag layout (it post-dates
 /// the 16-bit TF2 space), so `normalize_portal2_flags` drops it. demoscope's int
@@ -39,7 +41,7 @@ pub fn parse(payload: &[u8]) -> Option<DataTables> {
     // Frame and decode CSVCMsg_SendTable messages until the is_end sentinel.
     loop {
         if reader.is_empty() {
-            return None; // ran out before the is_end table — malformed
+            return None; // ran out before the is_end table: malformed
         }
         let _msg_type = reader.read_varint().ok()?; // svc_SendTable (9); not enforced
         let size = reader.read_varint().ok()? as usize;
@@ -85,7 +87,14 @@ fn decode_send_table(body: &[u8]) -> Option<(RawSendTable, bool)> {
         }
     }
 
-    Some((RawSendTable { needs_decoder, name, props: bind_array_elements(raw_props) }, is_end))
+    Some((
+        RawSendTable {
+            needs_decoder,
+            name,
+            props: bind_array_elements(raw_props),
+        },
+        is_end,
+    ))
 }
 
 /// Decode one nested `sendprop_t` into a `RawSendPropDef`.
@@ -122,7 +131,7 @@ fn decode_prop(body: &[u8]) -> Option<RawSendPropDef> {
     }
 
     let prop_type = SendPropType::from_u8(type_raw as u8)?;
-    // CS:GO encodes flags in the modern (Alien Swarm) 19-bit layout — the same
+    // CS:GO encodes flags in the modern (Alien Swarm) 19-bit layout: the same
     // one the Portal 2 bit-packed path normalises to canonical TF2 positions.
     let mut flags = datatable::normalize_portal2_flags(raw_flags);
     if raw_flags & SPROP_VARINT_BIT19 != 0 {
@@ -153,7 +162,7 @@ fn decode_prop(body: &[u8]) -> Option<RawSendPropDef> {
 }
 
 /// Pair each Array prop with the `InsideArray` element definition that precedes
-/// it — mirrors the bit-packed `read_send_table` logic so flatten sees the same
+/// it: mirrors the bit-packed `read_send_table` logic so flatten sees the same
 /// shape regardless of wire format.
 fn bind_array_elements(raw_props: Vec<RawSendPropDef>) -> Vec<RawSendPropDef> {
     let mut array_element: Option<RawSendPropDef> = None;
@@ -188,7 +197,11 @@ fn read_server_classes(bytes: &[u8]) -> Option<Vec<ServerClass>> {
         pos = np;
         let (dt, np2) = read_cstr(bytes, pos)?;
         pos = np2;
-        classes.push(ServerClass { id, name, data_table: dt });
+        classes.push(ServerClass {
+            id,
+            name,
+            data_table: dt,
+        });
     }
     Some(classes)
 }
@@ -236,22 +249,48 @@ mod tests {
                 7 => break,
                 3 => {}
                 1 | 2 => {
-                    if offset + democmdinfo + 12 > data.len() { break; }
+                    if offset + democmdinfo + 12 > data.len() {
+                        break;
+                    }
                     let len = le_i32(offset + democmdinfo + 8);
-                    if len < 0 { break; }
+                    if len < 0 {
+                        break;
+                    }
                     offset += democmdinfo + 12 + len as usize;
                 }
-                4 => { if offset + 4 > data.len() { break; } offset += 4 + le_i32(offset).max(0) as usize; }
-                5 => { if offset + 8 > data.len() { break; } offset += 8 + le_i32(offset + 4).max(0) as usize; }
+                4 => {
+                    if offset + 4 > data.len() {
+                        break;
+                    }
+                    offset += 4 + le_i32(offset).max(0) as usize;
+                }
+                5 => {
+                    if offset + 8 > data.len() {
+                        break;
+                    }
+                    offset += 8 + le_i32(offset + 4).max(0) as usize;
+                }
                 6 => {
-                    if offset + 4 > data.len() { break; }
+                    if offset + 4 > data.len() {
+                        break;
+                    }
                     let len = le_i32(offset).max(0) as usize;
                     let start = offset + 4;
                     dt_payload = Some(&data[start..(start + len).min(data.len())]);
                     break;
                 }
-                8 => { if offset + 8 > data.len() { break; } offset += 8 + le_i32(offset + 4).max(0) as usize; }
-                9 => { if offset + 4 > data.len() { break; } offset += 4 + le_i32(offset).max(0) as usize; }
+                8 => {
+                    if offset + 8 > data.len() {
+                        break;
+                    }
+                    offset += 8 + le_i32(offset + 4).max(0) as usize;
+                }
+                9 => {
+                    if offset + 4 > data.len() {
+                        break;
+                    }
+                    offset += 4 + le_i32(offset).max(0) as usize;
+                }
                 _ => break,
             }
         }
@@ -261,26 +300,50 @@ mod tests {
 
         eprintln!(
             "\n=== CS:GO DataTables: {} send tables, {} server classes, {} flattened ===",
-            dt.tables.len(), dt.server_classes.len(), dt.flat_props.len()
+            dt.tables.len(),
+            dt.server_classes.len(),
+            dt.flat_props.len()
         );
         // Show a few recognisable classes + the player class's flat prop count.
         for c in &dt.server_classes {
-            if matches!(c.name.as_str(), "CCSPlayer" | "CWorld" | "CCSPlayerResource" | "CCSTeam") {
+            if matches!(
+                c.name.as_str(),
+                "CCSPlayer" | "CWorld" | "CCSPlayerResource" | "CCSTeam"
+            ) {
                 let n = dt.flat_props.get(&c.id).map(|p| p.len()).unwrap_or(0);
-                eprintln!("  id={:<4} {:<22} dt={:<26} flat_props={}", c.id, c.name, c.data_table, n);
+                eprintln!(
+                    "  id={:<4} {:<22} dt={:<26} flat_props={}",
+                    c.id, c.name, c.data_table, n
+                );
             }
         }
 
         // A real CS:GO table set has a couple hundred classes; the player class
         // must exist and flatten to a non-trivial prop list (m_vecOrigin lives there).
-        assert!(dt.server_classes.len() > 100, "too few classes: {}", dt.server_classes.len());
-        let player = dt.server_classes.iter().find(|c| c.name == "CCSPlayer")
+        assert!(
+            dt.server_classes.len() > 100,
+            "too few classes: {}",
+            dt.server_classes.len()
+        );
+        let player = dt
+            .server_classes
+            .iter()
+            .find(|c| c.name == "CCSPlayer")
             .expect("no CCSPlayer class");
-        let player_props = dt.flat_props.get(&player.id).expect("CCSPlayer not flattened");
-        assert!(player_props.len() > 50, "CCSPlayer flattened to only {} props", player_props.len());
+        let player_props = dt
+            .flat_props
+            .get(&player.id)
+            .expect("CCSPlayer not flattened");
+        assert!(
+            player_props.len() > 50,
+            "CCSPlayer flattened to only {} props",
+            player_props.len()
+        );
         // The networked origin prop should be somewhere in the flattened list.
         assert!(
-            player_props.iter().any(|p| p.name.contains("m_vecOrigin") || p.name == "m_cellX"),
+            player_props
+                .iter()
+                .any(|p| p.name.contains("m_vecOrigin") || p.name == "m_cellX"),
             "CCSPlayer flat props missing an origin prop"
         );
     }

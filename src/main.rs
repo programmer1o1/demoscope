@@ -33,12 +33,13 @@ mod util;
 
 // Re-export the byte-slice HTML entry points at the crate-module level so
 // `lib.rs` (which pulls this file in as `mod cli`) can reach them unchanged.
+pub(crate) use bsp::map_layers;
 pub use render::html::{
-    generate_dual_html_string, generate_goldsrc_html, generate_html_string, generate_quake_html,
-    generate_source2_html,
+    generate_dual_html_string, generate_goldsrc_html, generate_goldsrc_html_multi,
+    generate_html_string, generate_quake_html, generate_source2_html,
 };
 
-use self::header::{fmt_buttons, parse_header, parse_usercmd};
+use self::header::{fmt_buttons, parse_header, parse_usercmd_for_demo};
 use self::render::html::generate_html;
 use self::source::packets::detect_splitscreen;
 use self::util::bytes::{le_i32, read_cstring};
@@ -48,19 +49,28 @@ use self::util::constants::{
 };
 
 fn print_usage(prog: &str) {
-    eprintln!("Usage: {prog} <demo.dem> [--all] [--csv] [--json] [--summary] [--html [FILE]]");
+    eprintln!("Usage: {prog} <demo-file> [--all] [--csv] [--json] [--summary] [--html [FILE]]");
     eprintln!("       {prog} --check <demo.dem|dir>   decode self-check (exit 1 on any FAIL)");
     eprintln!();
     eprintln!("  --all      Print every packet (not just usercmds)");
     eprintln!("  --csv      Output usercmds as CSV");
     eprintln!("  --json     Output usercmds as JSON array");
     eprintln!("  --summary  Print header info and packet counts only");
-    eprintln!("  --html     Generate interactive 3D HTML visualization (always includes multi-player tracks)");
-    eprintln!("  --diff D       Overlay a second demo D's entities as translucent ghosts (same map; Source only)");
+    eprintln!(
+        "  --html     Generate interactive 3D HTML visualization (always includes multi-player tracks)"
+    );
+    eprintln!(
+        "  --diff D       Overlay a second demo D's entities as translucent ghosts (same map; Source only)"
+    );
     eprintln!("  --diff-split D Side-by-side dual viewer of this demo and D instead of an overlay");
-    eprintln!("  --jump-threshold N  Path-break distance in units (default: auto-derived from data)");
+    eprintln!(
+        "  --jump-threshold N  Path-break distance in units (default: auto-derived from data)"
+    );
+    eprintln!("  --map FILE           Add a BSP/VPK map layer (repeatable; HTML mode)");
     eprintln!();
-    eprintln!("Supports: TF2, CS:S, CS:GO, HL2, Portal, DOD, HL2DM, GMod, L4D, L4D2 (demo_protocol 2/3/4)");
+    eprintln!("HTML/check support: Source 1, Source 2, GoldSrc, and Quake 1-3 demos");
+    eprintln!("Text, CSV, and JSON packet output applies to Source 1 HL2DEMO/GMODEMO files");
+    eprintln!("Summary and HTML output support every decoded engine family");
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
@@ -77,8 +87,12 @@ fn main() -> io::Result<()> {
     // it works both interactively and as a CI regression gate. Accepts the path
     // either before or after the flag (`--check DIR` or `DIR --check`).
     if args.iter().any(|a| a == "--check") {
-        let target = args.iter().skip(1).find(|a| !a.starts_with("--"))
-            .cloned().unwrap_or_else(|| ".".to_string());
+        let target = args
+            .iter()
+            .skip(1)
+            .find(|a| !a.starts_with("--"))
+            .cloned()
+            .unwrap_or_else(|| ".".to_string());
         let fails = check::run(std::path::Path::new(&target))?;
         std::process::exit(if fails == 0 { 0 } else { 1 });
     }
@@ -93,7 +107,9 @@ fn main() -> io::Result<()> {
         if let Some(i) = args.iter().position(|a| a == "--jump-threshold") {
             if let Some(s) = args.get(i + 1) {
                 if let Ok(n) = s.parse::<f32>() {
-                    if n > 0.0 { v = n; }
+                    if n > 0.0 {
+                        v = n;
+                    }
                 }
             }
         }
@@ -122,7 +138,19 @@ fn main() -> io::Result<()> {
             .position(|a| a == flag)
             .and_then(|i| args.get(i + 1))
             .map(PathBuf::from);
-        return generate_html(dem_path, &output_path, jump_threshold, diff_path.as_deref(), split);
+        let map_paths: Vec<PathBuf> = args
+            .windows(2)
+            .filter(|pair| pair[0] == "--map")
+            .map(|pair| PathBuf::from(&pair[1]))
+            .collect();
+        return generate_html(
+            dem_path,
+            &output_path,
+            jump_threshold,
+            diff_path.as_deref(),
+            split,
+            &map_paths,
+        );
     }
 
     let show_all = args.iter().any(|a| a == "--all");
@@ -134,8 +162,116 @@ fn main() -> io::Result<()> {
     let mut data = Vec::new();
     file.read_to_end(&mut data)?;
 
+    // HTML mode has always auto-routed every supported engine family. Normal
+    // CLI mode now does the same for summaries instead of sending GoldSrc,
+    // Source 2, and Quake files through the HL2DEMO-only header parser.
+    let packet_output_requested = csv_mode || json_mode || show_all;
+    if goldsrc::is_goldsrc(&data) {
+        let meta = goldsrc::parse(&data).ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidData, "malformed GoldSrc HLDEMO file")
+        })?;
+        println!(
+            "╔══ {}",
+            Path::new(filename)
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+        );
+        println!("║  Format   : GoldSrc HLDEMO");
+        println!("║  Map      : {}", meta.map_name);
+        println!("║  Game     : {}", meta.game_dir);
+        println!(
+            "║  Protocols: demo={} net={}",
+            meta.demo_protocol, meta.net_protocol
+        );
+        println!(
+            "║  Length   : {:.2}s  frames={}",
+            meta.duration, meta.frame_count
+        );
+        println!("╚══ ({} bytes on disk)", data.len());
+        if packet_output_requested {
+            eprintln!(
+                "Note: packet/CSV/JSON output is currently Source 1-only; use --html for GoldSrc playback."
+            );
+        } else if !summary_only {
+            println!("\nUse --html to generate the interactive GoldSrc viewer.");
+        }
+        return Ok(());
+    }
+    if source2::is_source2(&data) {
+        let meta = source2::container::parse_meta(&data).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "malformed Source 2 PBDEMS2 file",
+            )
+        })?;
+        println!(
+            "╔══ {}",
+            Path::new(filename)
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+        );
+        println!("║  Format   : Source 2 PBDEMS2");
+        println!("║  Map      : {}", meta.map_name);
+        println!("║  Client   : {}", meta.client_name);
+        println!("║  Server   : {}", meta.server_name);
+        println!("║  Game     : {}", meta.game_directory);
+        println!(
+            "║  Protocol : {}  build={}",
+            meta.network_protocol, meta.build_num
+        );
+        println!(
+            "║  Length   : {:.2}s  ticks={}  frames={}",
+            meta.playback_time, meta.playback_ticks, meta.playback_frames
+        );
+        println!("╚══ ({} bytes on disk)", data.len());
+        if packet_output_requested {
+            eprintln!(
+                "Note: packet/CSV/JSON output is currently Source 1-only; use --html for Source 2 playback."
+            );
+        } else if !summary_only {
+            println!("\nUse --html to generate the interactive Source 2 viewer.");
+        }
+        return Ok(());
+    }
+    let name_hint = Path::new(filename)
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy();
+    if let Some(kind) = quake::detect(&name_hint, &data) {
+        let demo = quake::parse(kind, &data, &name_hint).map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("malformed Quake demo: {e}"),
+            )
+        })?;
+        let samples: usize = demo.mpd.tracks.values().map(Vec::len).sum();
+        println!("╔══ {name_hint}");
+        println!("║  Format   : {:?}", kind);
+        println!("║  Map      : {}", demo.meta.map);
+        println!("║  Client   : {}", demo.meta.client);
+        println!("║  Server   : {}", demo.meta.server);
+        println!("║  Protocol : {}", demo.meta.protocol);
+        println!(
+            "║  Length   : {:.2}s  tracks={}  samples={}",
+            demo.meta.duration,
+            demo.mpd.tracks.len(),
+            samples
+        );
+        println!("╚══ ({} bytes on disk)", data.len());
+        if packet_output_requested {
+            eprintln!(
+                "Note: packet/CSV/JSON output is currently Source 1-only; use --html for Quake playback."
+            );
+        } else if !summary_only {
+            println!("\nUse --html to generate the interactive Quake viewer.");
+        }
+        return Ok(());
+    }
+
     let header = parse_header(&data).unwrap_or_else(|| {
-        eprintln!("Error: not a valid HL2DEMO file (bad magic)");
+        eprintln!("Error: unsupported or corrupt demo format");
         std::process::exit(1);
     });
 
@@ -175,7 +311,8 @@ fn main() -> io::Result<()> {
     // demo_protocol > 3 adds a player_slot byte after cmd+tick
     let pkt_extra: usize = if header.demo_protocol > 3 { 1 } else { 0 };
     let ph = 5 + pkt_extra; // packet header size (cmd+tick+[slot])
-    let democmdinfo = SPLIT_SIZE * detect_splitscreen(&data, header.demo_protocol, &header.game_dir); // L4D = 4 slots
+    let democmdinfo =
+        SPLIT_SIZE * detect_splitscreen(&data, header.demo_protocol, &header.game_dir); // L4D = 4 slots
 
     // ── Packet loop ───────────────────────────────────────────────────────────
     let mut offset = HEADER_SIZE;
@@ -210,17 +347,29 @@ fn main() -> io::Result<()> {
             // ── Signon / Packet ───────────────────────────────────────────────
             DEM_SIGNON | DEM_PACKET => {
                 let base = offset + ph;
-                if base + democmdinfo + 12 > data.len() { break; }
+                if base + democmdinfo + 12 > data.len() {
+                    break;
+                }
                 let in_seq = le_i32(&data, base + democmdinfo);
                 let out_seq = le_i32(&data, base + democmdinfo + 4);
                 let length = le_i32(&data, base + democmdinfo + 8);
-                if length < 0 { break; }
+                if length < 0 {
+                    break;
+                }
                 let length = length as usize;
                 let next = base.saturating_add(democmdinfo + 12).saturating_add(length);
-                if next > data.len() { break; }
+                if next > data.len() {
+                    break;
+                }
                 if show_all && !csv_mode && !json_mode {
-                    let label = if cmd == DEM_SIGNON { "SIGNON " } else { "PACKET " };
-                    println!("[{pkt_num:>6}] {label} tick={tick:>7}  in={in_seq}  out={out_seq}  len={length}");
+                    let label = if cmd == DEM_SIGNON {
+                        "SIGNON "
+                    } else {
+                        "PACKET "
+                    };
+                    println!(
+                        "[{pkt_num:>6}] {label} tick={tick:>7}  in={in_seq}  out={out_seq}  len={length}"
+                    );
                 }
                 offset = next;
             }
@@ -234,12 +383,18 @@ fn main() -> io::Result<()> {
 
             DEM_CONSOLECMD => {
                 let p = offset + ph;
-                if p + 4 > data.len() { break; }
+                if p + 4 > data.len() {
+                    break;
+                }
                 let length = le_i32(&data, p);
-                if length < 0 { break; }
+                if length < 0 {
+                    break;
+                }
                 let length = length as usize;
                 let next = p.saturating_add(4).saturating_add(length);
-                if next > data.len() { break; }
+                if next > data.len() {
+                    break;
+                }
                 if !csv_mode && !json_mode {
                     let s = read_cstring(&data, p + 4, length);
                     println!("[{pkt_num:>6}] CONSOLE  tick={tick:>7}  \"{s}\"");
@@ -249,21 +404,24 @@ fn main() -> io::Result<()> {
 
             DEM_USERCMD => {
                 let p = offset + ph;
-                if p + 8 > data.len() { break; }
+                if p + 8 > data.len() {
+                    break;
+                }
                 let out_seq = le_i32(&data, p);
                 let length = le_i32(&data, p + 4);
-                if length < 0 { break; }
+                if length < 0 {
+                    break;
+                }
                 let length = length as usize;
                 let next = p.saturating_add(8).saturating_add(length);
-                if next > data.len() { break; }
+                if next > data.len() {
+                    break;
+                }
                 let ucmd_bytes = &data[p + 8..next];
                 offset = next;
 
-                // Skip usercmd parsing for old net protocols (garbage output)
-                if header.net_protocol <= 7 { pkt_num += 1; continue; }
-
                 usercmd_count += 1;
-                match parse_usercmd(ucmd_bytes) {
+                match parse_usercmd_for_demo(ucmd_bytes, header.net_protocol, &header.game_dir) {
                     Some(ucmd) => {
                         let cmd_num = ucmd.command_number.unwrap_or(out_seq as u32);
 
@@ -273,7 +431,8 @@ fn main() -> io::Result<()> {
                                 ucmd.pitch.map_or(String::new(), |v| format!("{v:.4}")),
                                 ucmd.yaw.map_or(String::new(), |v| format!("{v:.4}")),
                                 ucmd.roll.map_or(String::new(), |v| format!("{v:.4}")),
-                                ucmd.forwardmove.map_or(String::new(), |v| format!("{v:.2}")),
+                                ucmd.forwardmove
+                                    .map_or(String::new(), |v| format!("{v:.2}")),
                                 ucmd.sidemove.map_or(String::new(), |v| format!("{v:.2}")),
                                 ucmd.upmove.map_or(String::new(), |v| format!("{v:.2}")),
                                 ucmd.buttons.map_or(String::new(), |v| v.to_string()),
@@ -307,10 +466,7 @@ fn main() -> io::Result<()> {
                                 print!(",\"up\":{v:.2}");
                             }
                             if let Some(v) = ucmd.buttons {
-                                print!(
-                                    ",\"buttons\":{v},\"buttons_str\":\"{}\"",
-                                    fmt_buttons(v)
-                                );
+                                print!(",\"buttons\":{v},\"buttons_str\":\"{}\"", fmt_buttons(v));
                             }
                             if let Some(v) = ucmd.impulse {
                                 print!(",\"impulse\":{v}");
@@ -381,12 +537,18 @@ fn main() -> io::Result<()> {
 
             DEM_DATATABLES => {
                 let p = offset + ph;
-                if p + 4 > data.len() { break; }
+                if p + 4 > data.len() {
+                    break;
+                }
                 let length = le_i32(&data, p);
-                if length < 0 { break; }
+                if length < 0 {
+                    break;
+                }
                 let length = length as usize;
                 let next = p.saturating_add(4).saturating_add(length);
-                if next > data.len() { break; }
+                if next > data.len() {
+                    break;
+                }
                 if show_all && !csv_mode && !json_mode {
                     println!("[{pkt_num:>6}] DATATABLES tick={tick:>7}  len={length}");
                 }
@@ -399,12 +561,18 @@ fn main() -> io::Result<()> {
             // off all packets after the signon on Portal 2 / L4D demos).
             DEM_STRINGTABLES if header.demo_protocol > 3 => {
                 let p = offset + ph;
-                if p + 8 > data.len() { break; }
+                if p + 8 > data.len() {
+                    break;
+                }
                 let length = le_i32(&data, p + 4);
-                if length < 0 { break; }
+                if length < 0 {
+                    break;
+                }
                 let length = length as usize;
                 let next = p.saturating_add(8).saturating_add(length);
-                if next > data.len() { break; }
+                if next > data.len() {
+                    break;
+                }
                 if show_all && !csv_mode && !json_mode {
                     println!("[{pkt_num:>6}] CUSTOMDATA tick={tick:>7}  len={length}");
                 }
@@ -413,9 +581,13 @@ fn main() -> io::Result<()> {
 
             DEM_STRINGTABLES | DEM_STRINGTABLES_V2 => {
                 let p = offset + ph;
-                if p + 4 > data.len() { break; }
+                if p + 4 > data.len() {
+                    break;
+                }
                 let length = le_i32(&data, p);
-                if length < 0 { break; }
+                if length < 0 {
+                    break;
+                }
                 let length = length as usize;
                 if show_all && !csv_mode && !json_mode {
                     println!("[{pkt_num:>6}] STRTABLES  tick={tick:>7}  len={length}");
@@ -425,9 +597,7 @@ fn main() -> io::Result<()> {
 
             other => {
                 if !csv_mode && !json_mode {
-                    eprintln!(
-                        "Unknown cmd={other} at offset=0x{offset:x}, stopping."
-                    );
+                    eprintln!("Unknown cmd={other} at offset=0x{offset:x}, stopping.");
                 }
                 break;
             }
@@ -451,23 +621,11 @@ fn main() -> io::Result<()> {
         println!("╔══ Summary");
         println!("║  Packets parsed   : {pkt_num}");
         println!("║  Last tick seen   : {last_tick}");
-        println!(
-            "║  Signon           : {}",
-            counts[DEM_SIGNON as usize]
-        );
-        println!(
-            "║  Packet (game)    : {}",
-            counts[DEM_PACKET as usize]
-        );
-        println!(
-            "║  ConsoleCmd       : {}",
-            counts[DEM_CONSOLECMD as usize]
-        );
+        println!("║  Signon           : {}", counts[DEM_SIGNON as usize]);
+        println!("║  Packet (game)    : {}", counts[DEM_PACKET as usize]);
+        println!("║  ConsoleCmd       : {}", counts[DEM_CONSOLECMD as usize]);
         println!("║  UserCmd (inputs) : {usercmd_count}");
-        println!(
-            "║  DataTables       : {}",
-            counts[DEM_DATATABLES as usize]
-        );
+        println!("║  DataTables       : {}", counts[DEM_DATATABLES as usize]);
         println!(
             "║  StringTables     : {}",
             counts[DEM_STRINGTABLES as usize] + counts[DEM_STRINGTABLES_V2 as usize]

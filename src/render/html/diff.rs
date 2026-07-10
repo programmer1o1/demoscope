@@ -3,8 +3,8 @@
 // used to splice those ghosts into the host scene's track maps. Consumed by the
 // Source generator in the parent `html` module.
 
+use super::super::super::header::{parse_header, parse_usercmd_for_demo};
 use super::super::super::source::multi_player;
-use super::super::super::header::{parse_header, parse_usercmd};
 use super::super::super::source::packets::detect_splitscreen;
 use super::super::super::util::bytes::{le_f32, le_i32};
 use super::super::super::util::constants::{HEADER_SIZE, SPLIT_SIZE};
@@ -30,9 +30,6 @@ fn extract_recorder_path(data: &[u8]) -> (Vec<(i32, f32, f32, f32)>, Vec<(i32, f
         Some(h) => h,
         None => return (positions, yaws),
     };
-    if header.net_protocol <= 7 {
-        return (positions, yaws);
-    }
     let proto = header.demo_protocol;
     let extra: usize = if proto > 3 { 1 } else { 0 };
     let pkt_hdr = 5 + extra;
@@ -64,7 +61,9 @@ fn extract_recorder_path(data: &[u8]) -> (Vec<(i32, f32, f32, f32)>, Vec<(i32, f
                 if length < 0 {
                     break;
                 }
-                offset = p.saturating_add(democmdinfo + 12).saturating_add(length as usize);
+                offset = p
+                    .saturating_add(democmdinfo + 12)
+                    .saturating_add(length as usize);
             }
             3 => offset += pkt_hdr,
             4 => {
@@ -91,7 +90,11 @@ fn extract_recorder_path(data: &[u8]) -> (Vec<(i32, f32, f32, f32)>, Vec<(i32, f
                 if next > data.len() {
                     break;
                 }
-                if let Some(uc) = parse_usercmd(&data[p + 8..next]) {
+                if let Some(uc) = parse_usercmd_for_demo(
+                    &data[p + 8..next],
+                    header.net_protocol,
+                    &header.game_dir,
+                ) {
                     if let Some(pi) = uc.pitch {
                         last_pitch = pi;
                     }
@@ -175,4 +178,3 @@ pub(super) fn extract_ghosts(d2: &[u8], d2name: &str) -> Vec<Ghost> {
     }
     out
 }
-

@@ -1,131 +1,18 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="240" height="240" role="img" aria-label="demoscope">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" role="img" aria-labelledby="title desc">
+  <title id="title">Demoscope rich mark</title><desc id="desc">A luminous timeline aperture used for Demoscope artwork.</desc>
   <defs>
-    <clipPath id="apS"><circle cx="100" cy="100" r="78"/></clipPath>
-    <radialGradient id="glassS" cx="38%" cy="32%" r="80%">
-      <stop offset="0%" stop-color="#1b1b24"/><stop offset="60%" stop-color="#121218"/><stop offset="100%" stop-color="#0b0b0f"/>
-    </radialGradient>
-    <linearGradient id="traceS" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%" stop-color="#b9780f"/><stop offset="60%" stop-color="#ffb000"/><stop offset="100%" stop-color="#ffd24a"/>
-    </linearGradient>
-    <radialGradient id="beamS" cx="50%" cy="100%" r="100%">
-      <stop offset="0%" stop-color="#ffb000" stop-opacity="0.34"/><stop offset="70%" stop-color="#ffb000" stop-opacity="0.05"/><stop offset="100%" stop-color="#ffb000" stop-opacity="0"/>
-    </radialGradient>
-    <filter id="glowS" x="-30%" y="-30%" width="160%" height="160%">
-      <feGaussianBlur stdDeviation="1.7" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
-    </filter>
-    <radialGradient id="tilebg" cx="40%" cy="32%" r="85%"><stop offset="0%" stop-color="#16161d"/><stop offset="100%" stop-color="#0a0a0e"/></radialGradient>
+    <radialGradient id="bg"><stop stop-color="#202028"/><stop offset="1" stop-color="#08080b"/></radialGradient>
+    <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse"><path d="M20 0H0V20" fill="none" stroke="#ece9e2" stroke-opacity=".035"/></pattern>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="5"/></filter>
   </defs>
-  <rect x="4" y="4" width="232" height="232" rx="50" fill="url(#tilebg)" stroke="#2a2a34" stroke-width="2"/>
-  <g transform="translate(120,120) scale(1.02) translate(-100,-100)"><g>
-      <!-- glass + glow -->
-      <circle cx="100" cy="100" r="78" fill="url(#glassS)"/>
-      <g clip-path="url(#apS)" opacity="0.5">
-        <line x1="22" y1="100" x2="178" y2="100" stroke="#ece9e2" stroke-width="0.7" opacity="0.16"/>
-        <line x1="100" y1="22" x2="100" y2="178" stroke="#ece9e2" stroke-width="0.7" opacity="0.16"/>
-        <circle cx="100" cy="100" r="40" fill="none" stroke="#ece9e2" stroke-width="0.7" opacity="0.13"/>
-      </g>
-      <!-- radar sweep -->
-      <g clip-path="url(#apS)">
-        <g>
-          <animateTransform attributeName="transform" type="rotate" from="0 100 100" to="360 100 100" dur="6s" repeatCount="indefinite"/>
-          <g transform="rotate(-46 100 100)">
-            <path d="M100,100 L100,26 A74,74 0 0 1 152,48 Z" fill="url(#beamS)"/>
-            <line x1="100" y1="100" x2="100" y2="26" stroke="#ffb000" stroke-width="1.4" opacity="0.55"/>
-          </g>
-        </g>
-      </g>
-      <!-- bezel -->
-      <line x1="186.0" y1="100.0" x2="175.0" y2="100.0" stroke="#ece9e2" stroke-width="1.4" opacity="0.7"/>
-      <line x1="185.7" y1="107.5" x2="179.7" y2="107.0" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="184.7" y1="114.9" x2="178.8" y2="113.9" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="183.1" y1="122.3" x2="177.3" y2="120.7" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="180.8" y1="129.4" x2="175.2" y2="127.4" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="177.9" y1="136.3" x2="172.5" y2="133.8" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="174.5" y1="143.0" x2="165.0" y2="137.5" stroke="#ece9e2" stroke-width="1.4" opacity="0.7"/>
-      <line x1="170.4" y1="149.3" x2="165.5" y2="145.9" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="165.9" y1="155.3" x2="161.3" y2="151.4" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="160.8" y1="160.8" x2="156.6" y2="156.6" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="155.3" y1="165.9" x2="151.4" y2="161.3" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="149.3" y1="170.4" x2="145.9" y2="165.5" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="143.0" y1="174.5" x2="137.5" y2="165.0" stroke="#ece9e2" stroke-width="1.4" opacity="0.7"/>
-      <line x1="136.3" y1="177.9" x2="133.8" y2="172.5" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="129.4" y1="180.8" x2="127.4" y2="175.2" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="122.3" y1="183.1" x2="120.7" y2="177.3" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="114.9" y1="184.7" x2="113.9" y2="178.8" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="107.5" y1="185.7" x2="107.0" y2="179.7" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="100.0" y1="186.0" x2="100.0" y2="175.0" stroke="#ece9e2" stroke-width="1.4" opacity="0.7"/>
-      <line x1="92.5" y1="185.7" x2="93.0" y2="179.7" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="85.1" y1="184.7" x2="86.1" y2="178.8" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="77.7" y1="183.1" x2="79.3" y2="177.3" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="70.6" y1="180.8" x2="72.6" y2="175.2" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="63.7" y1="177.9" x2="66.2" y2="172.5" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="57.0" y1="174.5" x2="62.5" y2="165.0" stroke="#ece9e2" stroke-width="1.4" opacity="0.7"/>
-      <line x1="50.7" y1="170.4" x2="54.1" y2="165.5" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="44.7" y1="165.9" x2="48.6" y2="161.3" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="39.2" y1="160.8" x2="43.4" y2="156.6" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="34.1" y1="155.3" x2="38.7" y2="151.4" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="29.6" y1="149.3" x2="34.5" y2="145.9" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="25.5" y1="143.0" x2="35.0" y2="137.5" stroke="#ece9e2" stroke-width="1.4" opacity="0.7"/>
-      <line x1="22.1" y1="136.3" x2="27.5" y2="133.8" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="19.2" y1="129.4" x2="24.8" y2="127.4" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="16.9" y1="122.3" x2="22.7" y2="120.7" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="15.3" y1="114.9" x2="21.2" y2="113.9" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="14.3" y1="107.5" x2="20.3" y2="107.0" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="14.0" y1="100.0" x2="25.0" y2="100.0" stroke="#ece9e2" stroke-width="1.4" opacity="0.7"/>
-      <line x1="14.3" y1="92.5" x2="20.3" y2="93.0" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="15.3" y1="85.1" x2="21.2" y2="86.1" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="16.9" y1="77.7" x2="22.7" y2="79.3" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="19.2" y1="70.6" x2="24.8" y2="72.6" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="22.1" y1="63.7" x2="27.5" y2="66.2" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="25.5" y1="57.0" x2="35.0" y2="62.5" stroke="#ece9e2" stroke-width="1.4" opacity="0.7"/>
-      <line x1="29.6" y1="50.7" x2="34.5" y2="54.1" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="34.1" y1="44.7" x2="38.7" y2="48.6" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="39.2" y1="39.2" x2="43.4" y2="43.4" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="44.7" y1="34.1" x2="48.6" y2="38.7" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="50.7" y1="29.6" x2="54.1" y2="34.5" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="57.0" y1="25.5" x2="62.5" y2="35.0" stroke="#ece9e2" stroke-width="1.4" opacity="0.7"/>
-      <line x1="63.7" y1="22.1" x2="66.2" y2="27.5" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="70.6" y1="19.2" x2="72.6" y2="24.8" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="77.7" y1="16.9" x2="79.3" y2="22.7" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="85.1" y1="15.3" x2="86.1" y2="21.2" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="92.5" y1="14.3" x2="93.0" y2="20.3" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="100.0" y1="14.0" x2="100.0" y2="25.0" stroke="#ece9e2" stroke-width="1.4" opacity="0.7"/>
-      <line x1="107.5" y1="14.3" x2="107.0" y2="20.3" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="114.9" y1="15.3" x2="113.9" y2="21.2" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="122.3" y1="16.9" x2="120.7" y2="22.7" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="129.4" y1="19.2" x2="127.4" y2="24.8" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="136.3" y1="22.1" x2="133.8" y2="27.5" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="143.0" y1="25.5" x2="137.5" y2="35.0" stroke="#ece9e2" stroke-width="1.4" opacity="0.7"/>
-      <line x1="149.3" y1="29.6" x2="145.9" y2="34.5" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="155.3" y1="34.1" x2="151.4" y2="38.7" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="160.8" y1="39.2" x2="156.6" y2="43.4" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="165.9" y1="44.7" x2="161.3" y2="48.6" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="170.4" y1="50.7" x2="165.5" y2="54.1" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="174.5" y1="57.0" x2="165.0" y2="62.5" stroke="#ece9e2" stroke-width="1.4" opacity="0.7"/>
-      <line x1="177.9" y1="63.7" x2="172.5" y2="66.2" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="180.8" y1="70.6" x2="175.2" y2="72.6" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="183.1" y1="77.7" x2="177.3" y2="79.3" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="184.7" y1="85.1" x2="178.8" y2="86.1" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <line x1="185.7" y1="92.5" x2="179.7" y2="93.0" stroke="#ece9e2" stroke-width="0.8" opacity="0.32"/>
-      <circle cx="100" cy="100" r="88" fill="none" stroke="#ece9e2" stroke-width="3"/>
-      <circle cx="100" cy="100" r="78" fill="none" stroke="#ece9e2" stroke-width="1" opacity="0.4"/>
-      <!-- trajectory -->
-      <g clip-path="url(#apS)">
-        <polyline points="35,130 65,130 65,98 95,98 95,122 123,122 123,74 151,74" fill="none" stroke="url(#traceS)" stroke-width="3.4"
-          stroke-linejoin="round" stroke-linecap="round" filter="url(#glowS)"/>
-      <circle cx="65" cy="130" r="1.9" fill="#ffb000"/>
-      <circle cx="65" cy="98" r="1.9" fill="#ffb000"/>
-      <circle cx="95" cy="98" r="1.9" fill="#ffb000"/>
-      <circle cx="95" cy="122" r="1.9" fill="#ffb000"/>
-      <circle cx="123" cy="122" r="1.9" fill="#ffb000"/>
-      <circle cx="123" cy="74" r="1.9" fill="#ffb000"/>
-        <circle cx="35" cy="130" r="3.2" fill="#0e0e12" stroke="#ece9e2" stroke-width="1.8"/>
-        <path d="M166,74 L152,68.5 L155,74 L152,79.5 Z" fill="#ffd24a" filter="url(#glowS)"/>
-        <circle cx="151" cy="74" r="3" fill="#ffd24a"/>
-        <circle cx="151" cy="74" r="4" fill="none" stroke="#ffb000" stroke-width="1.4" opacity="0.9">
-          <animate attributeName="r" values="4;12;4" dur="2.2s" repeatCount="indefinite"/>
-          <animate attributeName="opacity" values="0.9;0;0.9" dur="2.2s" repeatCount="indefinite"/>
-        </circle>
-      </g>
-    </g></g>
+  <rect x="3" y="3" width="234" height="234" rx="48" fill="url(#bg)" stroke="#2a2a34" stroke-width="3"/>
+  <rect x="4" y="4" width="232" height="232" rx="47" fill="url(#grid)"/>
+  <path d="M70 153h34v-28h36V95h63" fill="none" stroke="#ffb000" stroke-width="12" opacity=".13" filter="url(#glow)"/>
+  <g transform="translate(20 20) scale(2)">
+    <circle cx="50" cy="50" r="43" fill="none" stroke="#ece9e2" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="56 11" transform="rotate(-3 50 50)"/>
+    <circle cx="50" cy="50" r="35" fill="none" stroke="#ece9e2" opacity=".14"/>
+    <path d="M25 66H42V52H60V37H91" fill="none" stroke="#ffb000" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="25" cy="66" r="4" fill="#0e0e12" stroke="#ece9e2" stroke-width="2"/><circle cx="42" cy="52" r="2.5" fill="#ffd24a"/><circle cx="60" cy="37" r="2.5" fill="#ffd24a"/>
+    <path d="m88 31 9 6-9 6z" fill="#ffb000"/>
+  </g>
 </svg>

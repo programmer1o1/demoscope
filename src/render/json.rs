@@ -12,20 +12,29 @@ pub(crate) fn json_f32(v: f32) -> String {
     // strip trailing zeros after decimal point
     let s = s.trim_end_matches('0');
     let s = s.trim_end_matches('.');
-    if s.is_empty() || s == "-" { "0".to_string() } else { s.to_string() }
+    if s.is_empty() || s == "-" {
+        "0".to_string()
+    } else {
+        s.to_string()
+    }
 }
 
 pub(crate) fn cmds_to_json(cmds: &[SampledCmd]) -> String {
-    let items: Vec<String> = cmds.iter().map(|c| {
-        format!("[{},{},{},{},{},{},{}]",
-            c.tick,
-            json_f32(c.pitch),
-            json_f32(c.yaw),
-            json_f32(c.fwd),
-            json_f32(c.side),
-            c.btns,
-            c.weapon)
-    }).collect();
+    let items: Vec<String> = cmds
+        .iter()
+        .map(|c| {
+            format!(
+                "[{},{},{},{},{},{},{}]",
+                c.tick,
+                json_f32(c.pitch),
+                json_f32(c.yaw),
+                json_f32(c.fwd),
+                json_f32(c.side),
+                c.btns,
+                c.weapon
+            )
+        })
+        .collect();
     format!("[{}]", items.join(","))
 }
 
@@ -49,36 +58,53 @@ pub(crate) fn escape_json_str(s: &str) -> String {
 }
 
 pub(crate) fn events_to_json(events: &[GameEvent]) -> String {
-    let items: Vec<String> = events.iter().map(|ev| {
-        let mut fields = format!(
-            "{{\"event\":\"{}\",\"tick\":{}",
-            escape_json_str(&ev.event),
-            ev.tick
-        );
-        for f in &ev.fields {
-            let val_str = match &f.value {
-                EventValue::Str(s) => format!("\"{}\"", escape_json_str(s)),
-                EventValue::Float(v) => json_f32(*v),
-                EventValue::Int(v) => v.to_string(),
-                EventValue::Bool(b) => if *b { "true".to_string() } else { "false".to_string() },
-                EventValue::Null => "null".to_string(),
-            };
-            fields.push_str(&format!(",\"{}\":{}", escape_json_str(&f.name), val_str));
-        }
-        fields.push('}');
-        fields
-    }).collect();
+    let items: Vec<String> = events
+        .iter()
+        .map(|ev| {
+            let mut fields = format!(
+                "{{\"event\":\"{}\",\"tick\":{}",
+                escape_json_str(&ev.event),
+                ev.tick
+            );
+            for f in &ev.fields {
+                let val_str = match &f.value {
+                    EventValue::Str(s) => format!("\"{}\"", escape_json_str(s)),
+                    EventValue::Float(v) => json_f32(*v),
+                    EventValue::Int(v) => v.to_string(),
+                    EventValue::Bool(b) => {
+                        if *b {
+                            "true".to_string()
+                        } else {
+                            "false".to_string()
+                        }
+                    }
+                    EventValue::Null => "null".to_string(),
+                };
+                fields.push_str(&format!(",\"{}\":{}", escape_json_str(&f.name), val_str));
+            }
+            fields.push('}');
+            fields
+        })
+        .collect();
     format!("[{}]", items.join(","))
 }
 
 pub(crate) fn breaks_to_json(breaks: &[usize]) -> String {
-    format!("[{}]", breaks.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(","))
+    format!(
+        "[{}]",
+        breaks
+            .iter()
+            .map(|v| v.to_string())
+            .collect::<Vec<_>>()
+            .join(",")
+    )
 }
 
 pub(crate) fn world_positions_to_json(positions: &[(i32, f32, f32, f32)]) -> String {
-    let items: Vec<String> = positions.iter().map(|(t, x, y, z)| {
-        format!("[{},{},{},{}]", t, json_f32(*x), json_f32(*y), json_f32(*z))
-    }).collect();
+    let items: Vec<String> = positions
+        .iter()
+        .map(|(t, x, y, z)| format!("[{},{},{},{}]", t, json_f32(*x), json_f32(*y), json_f32(*z)))
+        .collect();
     format!("[{}]", items.join(","))
 }
 
@@ -108,7 +134,12 @@ pub(crate) fn meta_to_json(
 }
 
 pub(crate) fn spawn_to_json(spawn: [f32; 3]) -> String {
-    format!("[{},{},{}]", json_f32(spawn[0]), json_f32(spawn[1]), json_f32(spawn[2]))
+    format!(
+        "[{},{},{}]",
+        json_f32(spawn[0]),
+        json_f32(spawn[1]),
+        json_f32(spawn[2])
+    )
 }
 
 pub(crate) fn multi_tracks_to_json(data: &multi_player::MultiPlayerData) -> String {
@@ -126,24 +157,37 @@ pub(crate) fn multi_tracks_to_json(data: &multi_player::MultiPlayerData) -> Stri
     eids.extend(data.life_states.keys().copied());
     eids.extend(data.names.keys().copied());
 
-    let mut entries: Vec<String> = eids.into_iter().map(|eid| {
-        let empty = Vec::new();
-        let samples = data.tracks.get(&eid).unwrap_or(&empty);
-        let reduced = multi_player::subsample(samples, TARGET_POINTS);
-        let pts: Vec<String> = reduced.iter()
-            .map(|(t, x, y, z)| format!("[{},{},{},{}]", t, json_f32(*x), json_f32(*y), json_f32(*z)))
-            .collect();
-        format!("\"{}\":[{}]", eid, pts.join(","))
-    }).collect();
+    let mut entries: Vec<String> = eids
+        .into_iter()
+        .map(|eid| {
+            let empty = Vec::new();
+            let samples = data.tracks.get(&eid).unwrap_or(&empty);
+            let reduced = multi_player::subsample(samples, TARGET_POINTS);
+            let pts: Vec<String> = reduced
+                .iter()
+                .map(|(t, x, y, z)| {
+                    format!("[{},{},{},{}]", t, json_f32(*x), json_f32(*y), json_f32(*z))
+                })
+                .collect();
+            format!("\"{}\":[{}]", eid, pts.join(","))
+        })
+        .collect();
     entries.sort();
     format!("{{{}}}", entries.join(","))
 }
 
 pub(crate) fn multi_life_states_to_json(data: &multi_player::MultiPlayerData) -> String {
-    let mut entries: Vec<String> = data.life_states.iter().map(|(eid, states)| {
-        let pts: Vec<String> = states.iter().map(|(t, s)| format!("[{},{}]", t, s)).collect();
-        format!("\"{}\":[{}]", eid, pts.join(","))
-    }).collect();
+    let mut entries: Vec<String> = data
+        .life_states
+        .iter()
+        .map(|(eid, states)| {
+            let pts: Vec<String> = states
+                .iter()
+                .map(|(t, s)| format!("[{},{}]", t, s))
+                .collect();
+            format!("\"{}\":[{}]", eid, pts.join(","))
+        })
+        .collect();
     entries.sort();
     format!("{{{}}}", entries.join(","))
 }
@@ -151,20 +195,34 @@ pub(crate) fn multi_life_states_to_json(data: &multi_player::MultiPlayerData) ->
 pub(crate) fn multi_observer_modes_to_json(data: &multi_player::MultiPlayerData) -> String {
     // Per-entity observer-mode transitions: entity_id → [[tick, mode], ...].
     // mode 0 = playing; non-zero = spectating. Same shape as life-states.
-    let mut entries: Vec<String> = data.observer_modes.iter().map(|(eid, states)| {
-        let pts: Vec<String> = states.iter().map(|(t, m)| format!("[{},{}]", t, m)).collect();
-        format!("\"{}\":[{}]", eid, pts.join(","))
-    }).collect();
+    let mut entries: Vec<String> = data
+        .observer_modes
+        .iter()
+        .map(|(eid, states)| {
+            let pts: Vec<String> = states
+                .iter()
+                .map(|(t, m)| format!("[{},{}]", t, m))
+                .collect();
+            format!("\"{}\":[{}]", eid, pts.join(","))
+        })
+        .collect();
     entries.sort();
     format!("{{{}}}", entries.join(","))
 }
 
 pub(crate) fn multi_weapons_to_json(data: &multi_player::MultiPlayerData) -> String {
     // Per-player active-weapon stream: entity_id → [[tick, weapon_eid], ...].
-    let mut entries: Vec<String> = data.weapons.iter().map(|(eid, w)| {
-        let pts: Vec<String> = w.iter().map(|(t, wid)| format!("[{},{}]", t, wid)).collect();
-        format!("\"{}\":[{}]", eid, pts.join(","))
-    }).collect();
+    let mut entries: Vec<String> = data
+        .weapons
+        .iter()
+        .map(|(eid, w)| {
+            let pts: Vec<String> = w
+                .iter()
+                .map(|(t, wid)| format!("[{},{}]", t, wid))
+                .collect();
+            format!("\"{}\":[{}]", eid, pts.join(","))
+        })
+        .collect();
     entries.sort();
     format!("{{{}}}", entries.join(","))
 }
@@ -172,10 +230,21 @@ pub(crate) fn multi_weapons_to_json(data: &multi_player::MultiPlayerData) -> Str
 pub(crate) fn multi_weapon_classes_to_json(data: &multi_player::MultiPlayerData) -> String {
     // weapon_eid → class name; strip the "CTF" prefix and lowercase to look
     // tidy in the UI (`CTFRocketLauncher` → `rocketlauncher`).
-    let mut entries: Vec<String> = data.weapon_classes.iter().map(|(eid, name)| {
-        let trimmed = name.strip_prefix("CTFWeapon").or_else(|| name.strip_prefix("CTF")).unwrap_or(name);
-        format!("\"{}\":\"{}\"", eid, escape_json_str(&trimmed.to_lowercase()))
-    }).collect();
+    let mut entries: Vec<String> = data
+        .weapon_classes
+        .iter()
+        .map(|(eid, name)| {
+            let trimmed = name
+                .strip_prefix("CTFWeapon")
+                .or_else(|| name.strip_prefix("CTF"))
+                .unwrap_or(name);
+            format!(
+                "\"{}\":\"{}\"",
+                eid,
+                escape_json_str(&trimmed.to_lowercase())
+            )
+        })
+        .collect();
     entries.sort();
     format!("{{{}}}", entries.join(","))
 }
@@ -186,19 +255,30 @@ pub(crate) fn multi_yaws_to_json(data: &multi_player::MultiPlayerData) -> String
     // proper WSAD reconstruction. Drop deg-fractions to 1 decimal to shave
     // bytes since the panel rounds to 90° quadrants anyway.
     const TARGET: usize = 1500;
-    let mut entries: Vec<String> = data.yaws.iter().map(|(eid, ys)| {
-        let stride = if ys.len() > TARGET { (ys.len() + TARGET - 1) / TARGET } else { 1 };
-        // [tick, yaw, pitch] - pitch (3rd element) drives the first-person
-        // camera on proto-4 demos; older JS consumers read only [0]/[1].
-        let mut pts: Vec<String> = ys.iter().step_by(stride)
-            .map(|(t, y, p)| format!("[{},{:.1},{:.1}]", t, y, p)).collect();
-        if stride > 1 {
-            if let Some(last) = ys.last() {
-                pts.push(format!("[{},{:.1},{:.1}]", last.0, last.1, last.2));
+    let mut entries: Vec<String> = data
+        .yaws
+        .iter()
+        .map(|(eid, ys)| {
+            let stride = if ys.len() > TARGET {
+                (ys.len() + TARGET - 1) / TARGET
+            } else {
+                1
+            };
+            // [tick, yaw, pitch] - pitch (3rd element) drives the first-person
+            // camera on proto-4 demos; older JS consumers read only [0]/[1].
+            let mut pts: Vec<String> = ys
+                .iter()
+                .step_by(stride)
+                .map(|(t, y, p)| format!("[{},{:.1},{:.1}]", t, y, p))
+                .collect();
+            if stride > 1 {
+                if let Some(last) = ys.last() {
+                    pts.push(format!("[{},{:.1},{:.1}]", last.0, last.1, last.2));
+                }
             }
-        }
-        format!("\"{}\":[{}]", eid, pts.join(","))
-    }).collect();
+            format!("\"{}\":[{}]", eid, pts.join(","))
+        })
+        .collect();
     entries.sort();
     format!("{{{}}}", entries.join(","))
 }
@@ -209,9 +289,16 @@ pub(crate) fn view_angles_to_json(data: &multi_player::MultiPlayerData) -> Strin
     // demos with no usercmds. Keep generous resolution; this is the whole point.
     const TARGET: usize = 6000;
     let v = &data.view_angles;
-    let stride = if v.len() > TARGET { (v.len() + TARGET - 1) / TARGET } else { 1 };
-    let mut pts: Vec<String> = v.iter().step_by(stride)
-        .map(|(t, p, y)| format!("[{},{:.2},{:.2}]", t, p, y)).collect();
+    let stride = if v.len() > TARGET {
+        (v.len() + TARGET - 1) / TARGET
+    } else {
+        1
+    };
+    let mut pts: Vec<String> = v
+        .iter()
+        .step_by(stride)
+        .map(|(t, p, y)| format!("[{},{:.2},{:.2}]", t, p, y))
+        .collect();
     if stride > 1 {
         if let Some(last) = v.last() {
             pts.push(format!("[{},{:.2},{:.2}]", last.0, last.1, last.2));
@@ -245,7 +332,7 @@ pub(crate) fn multi_names_to_json(data: &multi_player::MultiPlayerData) -> Strin
 
 pub(crate) fn escape_html(s: &str) -> String {
     s.replace('&', "&amp;")
-     .replace('<', "&lt;")
-     .replace('>', "&gt;")
-     .replace('"', "&quot;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }

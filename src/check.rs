@@ -7,13 +7,13 @@
 // Exit code is non-zero if any demo FAILs, so it doubles as a CI gate.
 //
 // Health tiers:
-//   PASS — decoded and produced player tracks.
-//   WARN — decoded with tracks, but with a soft concern (e.g. Source 2 packet
+//   PASS: decoded and produced player tracks.
+//   WARN: decoded with tracks, but with a soft concern (e.g. Source 2 packet
 //          decode failures: the file still yields tracks, but some packets
-//          desynced — worth surfacing, not a hard break).
-//   FAIL — panicked, errored, or produced zero tracks.
+//          desynced: worth surfacing, not a hard break).
+//   FAIL: panicked, errored, or produced zero tracks.
 
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Status {
@@ -43,10 +43,27 @@ pub struct DemoHealth {
 }
 
 impl DemoHealth {
+    fn warn(name: &str, format: &'static str, note: impl Into<String>) -> Self {
+        DemoHealth {
+            name: name.to_string(),
+            format,
+            tracks: 0,
+            samples: 0,
+            named: 0,
+            note: note.into(),
+            status: Status::Warn,
+        }
+    }
+
     fn fail(name: &str, format: &'static str, note: impl Into<String>) -> Self {
         DemoHealth {
-            name: name.to_string(), format, tracks: 0, samples: 0, named: 0,
-            note: note.into(), status: Status::Fail,
+            name: name.to_string(),
+            format,
+            tracks: 0,
+            samples: 0,
+            named: 0,
+            note: note.into(),
+            status: Status::Fail,
         }
     }
 }
@@ -55,7 +72,7 @@ impl DemoHealth {
 /// viewer's `parse_demo_to_html`) and return its decode health. Never panics:
 /// a panic inside a decoder is caught and reported as a FAIL.
 pub fn check_demo(bytes: &[u8], name_hint: &str) -> DemoHealth {
-    // Source 2 (PBDEMS2: CS2 / Dota 2 / Deadlock) — unambiguous magic, checked
+    // Source 2 (PBDEMS2: CS2 / Dota 2 / Deadlock): unambiguous magic, checked
     // first so the Quake `.dem` route can't swallow it.
     if super::source2::is_source2(bytes) {
         return guard(name_hint, "source2", || {
@@ -65,7 +82,12 @@ pub fn check_demo(bytes: &[u8], name_hint: &str) -> DemoHealth {
             let tracks = t.tracks.len();
             let samples = t.tracks.values().map(|v| v.len()).sum();
             let named = t.names.values().filter(|n| !n.is_empty()).count();
-            let note = format!("{} ok / {} failed packets, {} events", t.pe_ok, t.pe_fail, t.events.len());
+            let note = format!(
+                "{} ok / {} failed packets, {} events",
+                t.pe_ok,
+                t.pe_fail,
+                t.events.len()
+            );
             let status = if tracks == 0 {
                 Status::Fail
             } else if t.pe_fail > 0 {
@@ -73,23 +95,56 @@ pub fn check_demo(bytes: &[u8], name_hint: &str) -> DemoHealth {
             } else {
                 Status::Pass
             };
-            DemoHealth { name: name_hint.to_string(), format: "source2", tracks, samples, named, note, status }
+            DemoHealth {
+                name: name_hint.to_string(),
+                format: "source2",
+                tracks,
+                samples,
+                named,
+                note,
+                status,
+            }
         });
     }
 
-    // Quake family (Q1/Q2/Q3) — matched by extension+content; returns None for
+    // Quake family (Q1/Q2/Q3): matched by extension+content; returns None for
     // HL2DEMO so Source 1 demos fall through.
     if let Some(kind) = super::quake::detect(name_hint, bytes) {
-        return guard(name_hint, "quake", || match super::quake::parse(kind, bytes, name_hint) {
-            Ok(d) => {
-                let tracks = d.mpd.tracks.len();
-                let samples = d.mpd.tracks.values().map(|v| v.len()).sum();
-                let named = d.mpd.names.values().filter(|n| !n.name.is_empty()).count();
-                let status = if tracks == 0 { Status::Fail } else { Status::Pass };
-                DemoHealth { name: name_hint.to_string(), format: "quake", tracks, samples, named,
-                    note: format!("{:?} {}", kind, d.meta.map), status }
+        // QuakeWorld is deliberately detected so users receive a precise
+        // compatibility message, but its extension-negotiated .qwd/.mvd stream
+        // is not decoded yet. This is a known product boundary, not a decoder
+        // regression, so the health harness reports WARN instead of making the
+        // supported-format release gate fail.
+        if kind == super::quake::QuakeKind::QwMvd {
+            return DemoHealth::warn(
+                name_hint,
+                "quake",
+                "QuakeWorld .qwd/.mvd is detected but not decoded yet; NetQuake .dem is supported",
+            );
+        }
+        return guard(name_hint, "quake", || {
+            match super::quake::parse(kind, bytes, name_hint) {
+                Ok(d) => {
+                    let tracks = d.mpd.tracks.len();
+                    let samples = d.mpd.tracks.values().map(|v| v.len()).sum();
+                    let named = d.mpd.names.values().filter(|n| !n.name.is_empty()).count();
+                    let status = if tracks == 0 {
+                        Status::Fail
+                    } else {
+                        Status::Pass
+                    };
+                    DemoHealth {
+                        name: name_hint.to_string(),
+                        format: "quake",
+                        tracks,
+                        samples,
+                        named,
+                        note: format!("{:?} {}", kind, d.meta.map),
+                        status,
+                    }
+                }
+                Err(e) => DemoHealth::fail(name_hint, "quake", e.to_string()),
             }
-            Err(e) => DemoHealth::fail(name_hint, "quake", e.to_string()),
         });
     }
 
@@ -102,34 +157,59 @@ pub fn check_demo(bytes: &[u8], name_hint: &str) -> DemoHealth {
             let ents = super::goldsrc::entities::extract_entities(bytes, &meta);
             let tracks = ents.tracks.len();
             let samples = ents.tracks.values().map(|v| v.len()).sum();
-            let status = if tracks == 0 { Status::Fail } else { Status::Pass };
-            DemoHealth { name: name_hint.to_string(), format: "goldsrc", tracks, samples, named: 0,
-                note: format!("map {}", meta.map_name), status }
+            let status = if tracks == 0 {
+                Status::Fail
+            } else {
+                Status::Pass
+            };
+            DemoHealth {
+                name: name_hint.to_string(),
+                format: "goldsrc",
+                tracks,
+                samples,
+                named: 0,
+                note: format!("map {}", meta.map_name),
+                status,
+            }
         });
     }
 
     // Source 1 (HL2DEMO: TF2 / CS:S / CS:GO / Portal 2 / L4D / GMod …).
-    guard(name_hint, "source1", || match super::source::multi_player::extract_from_bytes(bytes) {
-        Ok(d) => {
-            let tracks = d.tracks.len();
-            let samples = d.tracks.values().map(|v| v.len()).sum();
-            let named = d.names.values().filter(|n| !n.name.is_empty()).count();
-            // 0 tracks is ambiguous: it can mean a decode gap, OR a recording that
-            // was started and stopped instantly (decodes cleanly but has no
-            // gameplay). The header tick count tells them apart — an empty
-            // recording carries ~0 ticks, so 0 tracks there is correct, not a fail.
-            let ticks = super::header::parse_header(bytes).map(|h| h.ticks).unwrap_or(0);
-            let (status, note) = if tracks > 0 {
-                (Status::Pass, String::new())
-            } else if ticks <= 1 {
-                (Status::Pass, format!("no gameplay, {ticks} ticks"))
-            } else {
-                (Status::Fail, format!("0 tracks despite {ticks} ticks"))
-            };
-            DemoHealth { name: name_hint.to_string(), format: "source1", tracks, samples, named, note, status }
-        }
-        Err(e) => DemoHealth::fail(name_hint, "source1", e.to_string()),
-    })
+    guard(
+        name_hint,
+        "source1",
+        || match super::source::multi_player::extract_from_bytes(bytes) {
+            Ok(d) => {
+                let tracks = d.tracks.len();
+                let samples = d.tracks.values().map(|v| v.len()).sum();
+                let named = d.names.values().filter(|n| !n.name.is_empty()).count();
+                // 0 tracks is ambiguous: it can mean a decode gap, OR a recording that
+                // was started and stopped instantly (decodes cleanly but has no
+                // gameplay). The header tick count tells them apart: an empty
+                // recording carries ~0 ticks, so 0 tracks there is correct, not a fail.
+                let ticks = super::header::parse_header(bytes)
+                    .map(|h| h.ticks)
+                    .unwrap_or(0);
+                let (status, note) = if tracks > 0 {
+                    (Status::Pass, String::new())
+                } else if ticks <= 1 {
+                    (Status::Pass, format!("no gameplay, {ticks} ticks"))
+                } else {
+                    (Status::Fail, format!("0 tracks despite {ticks} ticks"))
+                };
+                DemoHealth {
+                    name: name_hint.to_string(),
+                    format: "source1",
+                    tracks,
+                    samples,
+                    named,
+                    note,
+                    status,
+                }
+            }
+            Err(e) => DemoHealth::fail(name_hint, "source1", e.to_string()),
+        },
+    )
 }
 
 /// Run `f`, converting a panic into a FAIL verdict instead of unwinding out of
@@ -141,7 +221,18 @@ fn guard(name: &str, format: &'static str, f: impl FnOnce() -> DemoHealth) -> De
     }
 }
 
-/// Sweep a file or directory of `.dem` files, printing one health row each.
+fn is_supported_demo_path(path: &std::path::Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| {
+            matches!(
+                ext.to_ascii_lowercase().as_str(),
+                "dem" | "dm2" | "dm_66" | "dm_67" | "dm_68"
+            )
+        })
+}
+
+/// Sweep a supported demo file or directory, printing one health row each.
 /// Returns the number of FAILs (0 = everything healthy), which the CLI maps to
 /// the process exit code.
 pub fn run(path: &std::path::Path) -> std::io::Result<usize> {
@@ -149,7 +240,7 @@ pub fn run(path: &std::path::Path) -> std::io::Result<usize> {
     if path.is_dir() {
         for entry in std::fs::read_dir(path)? {
             let p = entry?.path();
-            if p.extension().is_some_and(|e| e.eq_ignore_ascii_case("dem")) {
+            if is_supported_demo_path(&p) {
                 files.push(p);
             }
         }
@@ -159,14 +250,21 @@ pub fn run(path: &std::path::Path) -> std::io::Result<usize> {
     }
 
     if files.is_empty() {
-        eprintln!("no .dem files found under {}", path.display());
+        eprintln!("no supported demo files found under {}", path.display());
         return Ok(0);
     }
 
-    println!("{:<6} {:<8} {:>6} {:>9} {:>6}  demo", "status", "format", "tracks", "samples", "named");
+    println!(
+        "{:<6} {:<8} {:>6} {:>9} {:>6}  demo",
+        "status", "format", "tracks", "samples", "named"
+    );
     let (mut pass, mut warn, mut fail) = (0usize, 0usize, 0usize);
     for f in &files {
-        let name = f.file_name().and_then(|s| s.to_str()).unwrap_or("?").to_string();
+        let name = f
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("?")
+            .to_string();
         let h = match std::fs::read(f) {
             Ok(bytes) => check_demo(&bytes, &name),
             Err(e) => DemoHealth::fail(&name, "io", format!("read error: {e}")),
@@ -176,11 +274,28 @@ pub fn run(path: &std::path::Path) -> std::io::Result<usize> {
             Status::Warn => warn += 1,
             Status::Fail => fail += 1,
         }
-        println!("{:<6} {:<8} {:>6} {:>9} {:>6}  {}{}",
-            h.status.tag(), h.format, h.tracks, h.samples, h.named, h.name,
-            if h.note.is_empty() { String::new() } else { format!("  ({})", h.note) });
+        println!(
+            "{:<6} {:<8} {:>6} {:>9} {:>6}  {}{}",
+            h.status.tag(),
+            h.format,
+            h.tracks,
+            h.samples,
+            h.named,
+            h.name,
+            if h.note.is_empty() {
+                String::new()
+            } else {
+                format!("  ({})", h.note)
+            }
+        );
     }
-    println!("\n{} demos: {} pass, {} warn, {} fail", files.len(), pass, warn, fail);
+    println!(
+        "\n{} demos: {} pass, {} warn, {} fail",
+        files.len(),
+        pass,
+        warn,
+        fail
+    );
     Ok(fail)
 }
 
@@ -188,13 +303,46 @@ pub fn run(path: &std::path::Path) -> std::io::Result<usize> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn directory_discovery_covers_supported_extensions() {
+        for name in ["match.dem", "match.dm2", "match.dm_66", "match.dm_68"] {
+            assert!(is_supported_demo_path(std::path::Path::new(name)), "{name}");
+        }
+        for name in ["match.dm_71", "match.dm_91", "map.bsp", "notes.txt"] {
+            assert!(
+                !is_supported_demo_path(std::path::Path::new(name)),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn known_unsupported_quakeworld_is_a_warning() {
+        for name in ["match.qwd", "match.mvd"] {
+            let h = check_demo(b"placeholder", name);
+            assert_eq!(h.format, "quake");
+            assert_eq!(h.status, Status::Warn, "{name}");
+            assert!(h.note.contains("not decoded yet"), "{name}");
+        }
+    }
+
     // Garbage / truncated input must degrade to a FAIL verdict, never panic out
-    // of the harness — that safety is the whole point of `guard`.
+    // of the harness: that safety is the whole point of `guard`.
     #[test]
     fn garbage_input_fails_cleanly() {
-        for bytes in [&b""[..], &b"not a demo"[..], &[0xff; 64][..], &b"HL2DEMO\0"[..]] {
+        for bytes in [
+            &b""[..],
+            &b"not a demo"[..],
+            &[0xff; 64][..],
+            &b"HL2DEMO\0"[..],
+        ] {
             let h = check_demo(bytes, "junk.dem");
-            assert_eq!(h.status, Status::Fail, "expected FAIL for {} bytes", bytes.len());
+            assert_eq!(
+                h.status,
+                Status::Fail,
+                "expected FAIL for {} bytes",
+                bytes.len()
+            );
         }
     }
 

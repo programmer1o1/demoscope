@@ -5,7 +5,7 @@
 // the exact same bit-packed payload `parse_entity_updates` already decodes for
 // the proto-4 family (Portal 2 / L4D). So once we pull the bytes (and the
 // `updated_entries` / `is_delta` header fields) out of the protobuf envelope,
-// the heavy lifting is the shared decoder — CS:GO is a proto-4 engine, so the
+// the heavy lifting is the shared decoder: CS:GO is a proto-4 engine, so the
 // `read_ubit_int` entity-index encoding and `CDeltaBitsReader` prop-index path
 // are bit-for-bit what it uses.
 //
@@ -18,13 +18,17 @@
 // present in the message. The networked origin is sent on entry and changes
 // often, so position tracks come through without baseline reconstruction.
 
-use super::super::datatable::DataTables;
-use super::super::packetentities::{parse_entity_updates, EntityWorld};
 use super::super::super::protobuf::Reader;
+use super::super::datatable::DataTables;
+use super::super::packetentities::{EntityWorld, parse_entity_updates};
 
 /// Decode one `CSVCMsg_PacketEntities` body into `world`. Returns `None` if the
 /// protobuf envelope is malformed or the inner bitstream desyncs.
-pub fn decode_packet_entities(body: &[u8], world: &mut EntityWorld, data: &DataTables) -> Option<()> {
+pub fn decode_packet_entities(
+    body: &[u8],
+    world: &mut EntityWorld,
+    data: &DataTables,
+) -> Option<()> {
     let mut r = Reader::new(body);
     let mut updated_entries: i32 = 0;
     let mut is_delta = false;
@@ -63,9 +67,9 @@ pub fn decode_packet_entities(body: &[u8], world: &mut EntityWorld, data: &DataT
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use super::super::message::{scan_payload, MsgKind};
+    use super::super::message::{MsgKind, scan_payload};
     use super::super::sendtable;
+    use super::*;
 
     // End-to-end Phase 3: build DataTables, decode every PacketEntities across a
     // real demo, and confirm the bitstream holds (no desync) + CCSPlayer entities
@@ -81,7 +85,10 @@ mod tests {
     fn csgo_real_entities() {
         let path = match std::env::var("CSGO_DEMO") {
             Ok(p) => p,
-            Err(_) => { eprintln!("[skip] set CSGO_DEMO to run against a real demo"); return; }
+            Err(_) => {
+                eprintln!("[skip] set CSGO_DEMO to run against a real demo");
+                return;
+            }
         };
         let data = std::fs::read(&path).expect("read CSGO_DEMO");
         assert!(&data[0..8] == b"HL2DEMO\0");
@@ -103,9 +110,13 @@ mod tests {
                 7 => break,
                 3 => {}
                 1 | 2 => {
-                    if offset + democmdinfo + 12 > data.len() { break; }
+                    if offset + democmdinfo + 12 > data.len() {
+                        break;
+                    }
                     let len = le_i32(offset + democmdinfo + 8);
-                    if len < 0 { break; }
+                    if len < 0 {
+                        break;
+                    }
                     let start = offset + democmdinfo + 12;
                     let end = (start + len as usize).min(data.len());
                     if let (Some(dt), Some(w)) = (tables.as_ref(), world.as_mut()) {
@@ -120,10 +131,22 @@ mod tests {
                     }
                     offset = end;
                 }
-                4 => { if offset + 4 > data.len() { break; } offset += 4 + le_i32(offset).max(0) as usize; }
-                5 => { if offset + 8 > data.len() { break; } offset += 8 + le_i32(offset + 4).max(0) as usize; }
+                4 => {
+                    if offset + 4 > data.len() {
+                        break;
+                    }
+                    offset += 4 + le_i32(offset).max(0) as usize;
+                }
+                5 => {
+                    if offset + 8 > data.len() {
+                        break;
+                    }
+                    offset += 8 + le_i32(offset + 4).max(0) as usize;
+                }
                 6 => {
-                    if offset + 4 > data.len() { break; }
+                    if offset + 4 > data.len() {
+                        break;
+                    }
                     let len = le_i32(offset).max(0) as usize;
                     let start = offset + 4;
                     let dt = sendtable::parse(&data[start..(start + len).min(data.len())])
@@ -132,20 +155,46 @@ mod tests {
                     tables = Some(dt);
                     offset = start + len;
                 }
-                8 => { if offset + 8 > data.len() { break; } offset += 8 + le_i32(offset + 4).max(0) as usize; }
-                9 => { if offset + 4 > data.len() { break; } offset += 4 + le_i32(offset).max(0) as usize; }
+                8 => {
+                    if offset + 8 > data.len() {
+                        break;
+                    }
+                    offset += 8 + le_i32(offset + 4).max(0) as usize;
+                }
+                9 => {
+                    if offset + 4 > data.len() {
+                        break;
+                    }
+                    offset += 4 + le_i32(offset).max(0) as usize;
+                }
                 _ => break,
             }
         }
 
         let dt = tables.expect("no DataTables");
         let w = world.expect("no world");
-        let player_class = dt.server_classes.iter().find(|c| c.name == "CCSPlayer").unwrap().id;
+        let player_class = dt
+            .server_classes
+            .iter()
+            .find(|c| c.name == "CCSPlayer")
+            .unwrap()
+            .id;
 
         // Inspect the CCSPlayer entities we ended up with.
-        let players: Vec<_> = w.entities.values().filter(|e| e.class_id == player_class).collect();
-        eprintln!("\n=== CS:GO entities: {} PacketEntities ok, {} failed ===", ok, fail);
-        eprintln!("    {} total entities, {} CCSPlayer", w.entities.len(), players.len());
+        let players: Vec<_> = w
+            .entities
+            .values()
+            .filter(|e| e.class_id == player_class)
+            .collect();
+        eprintln!(
+            "\n=== CS:GO entities: {} PacketEntities ok, {} failed ===",
+            ok, fail
+        );
+        eprintln!(
+            "    {} total entities, {} CCSPlayer",
+            w.entities.len(),
+            players.len()
+        );
         let flat = dt.flat_props.get(&player_class).unwrap();
         if let Some(p) = players.first() {
             for (idx, val) in p.props.iter() {
@@ -159,8 +208,12 @@ mod tests {
         eprintln!("    decode success rate: {:.1}%", rate * 100.0);
 
         // The bitstream must hold across the whole demo and player entities must
-        // populate — a single desync corrupts every later delta.
-        assert!(rate > 0.95, "PacketEntities decode rate only {:.1}% — entity decode desyncs", rate * 100.0);
+        // populate: a single desync corrupts every later delta.
+        assert!(
+            rate > 0.95,
+            "PacketEntities decode rate only {:.1}%: entity decode desyncs",
+            rate * 100.0
+        );
         assert!(!players.is_empty(), "no CCSPlayer entities decoded");
     }
 }

@@ -105,7 +105,11 @@ pub struct ByteReader<'a> {
 
 impl<'a> ByteReader<'a> {
     pub fn new(data: &'a [u8]) -> Self {
-        ByteReader { data, pos: 0, overflow: false }
+        ByteReader {
+            data,
+            pos: 0,
+            overflow: false,
+        }
     }
     pub fn remaining(&self) -> usize {
         self.data.len().saturating_sub(self.pos)
@@ -133,13 +137,17 @@ impl<'a> ByteReader<'a> {
         self.read_u8() as i8
     }
     pub fn read_u16(&mut self) -> u16 {
-        self.take(2).map(|b| u16::from_le_bytes([b[0], b[1]])).unwrap_or(0)
+        self.take(2)
+            .map(|b| u16::from_le_bytes([b[0], b[1]]))
+            .unwrap_or(0)
     }
     pub fn read_i16(&mut self) -> i16 {
         self.read_u16() as i16
     }
     pub fn read_u32(&mut self) -> u32 {
-        self.take(4).map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]])).unwrap_or(0)
+        self.take(4)
+            .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+            .unwrap_or(0)
     }
     pub fn read_i32(&mut self) -> i32 {
         self.read_u32() as i32
@@ -261,9 +269,7 @@ impl TrackBuilder {
                 )
             })
             .collect();
-        let primary = self
-            .primary
-            .or_else(|| self.tracks.keys().min().copied());
+        let primary = self.primary.or_else(|| self.tracks.keys().min().copied());
         MultiPlayerData {
             map,
             server,

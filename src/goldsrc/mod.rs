@@ -55,7 +55,7 @@ use super::util::bytes::{le_f32, le_i32, read_cstring};
 // own submodule; its public surface is re-exported so callers keep using
 // `goldsrc::extract_entities` / `goldsrc::GoldSrcEntities` unchanged.
 pub(crate) mod entities;
-pub(crate) use entities::{extract_entities, GoldSrcEntities};
+pub(crate) use entities::{GoldSrcEntities, extract_entities};
 
 pub(crate) const GOLDSRC_MAGIC: &[u8; 8] = b"HLDEMO\0\0";
 const GOLDSRC_HEADER_SIZE: usize = 544;
@@ -248,25 +248,32 @@ pub(crate) fn extract_camera(data: &[u8], meta: &GoldSrcMeta) -> Vec<CamSample> 
                 let z = gf32(data, body + NM_VIEWORG + 8);
                 let pitch = gf32(data, body + NM_VIEWANGLES);
                 let yaw = gf32(data, body + NM_VIEWANGLES + 4);
-                if x.is_finite() && y.is_finite() && z.is_finite()
-                    && x.abs() < 100_000.0 && y.abs() < 100_000.0 && z.abs() < 100_000.0
+                if x.is_finite()
+                    && y.is_finite()
+                    && z.is_finite()
+                    && x.abs() < 100_000.0
+                    && y.abs() < 100_000.0
+                    && z.abs() < 100_000.0
                 {
                     cam.push((time, x, y, z, pitch, yaw));
                 }
                 p = body + NM_FIXED + ml as usize;
             }
-            2 => p = body,                                  // DemoStart
-            3 => p = body + 64,                             // ConsoleCommand
-            4 => p = body + 32,                             // ClientData
-            5 => break,                                     // NextSection - end
-            6 => p = body + 76,                             // Event
-            7 => p = body + 8,                              // WeaponAnim
+            2 => p = body,      // DemoStart
+            3 => p = body + 64, // ConsoleCommand
+            4 => p = body + 32, // ClientData
+            5 => break,         // NextSection - end
+            6 => p = body + 76, // Event
+            7 => p = body + 8,  // WeaponAnim
             8 => {
                 // Sound: channel(4) + length_bytes(4+N) + 16
                 let sl = gi32(data, body + 4);
                 if !(0..=8192).contains(&sl) {
                     match resync(p) {
-                        Some(np) => { p = np; continue; }
+                        Some(np) => {
+                            p = np;
+                            continue;
+                        }
                         None => break,
                     }
                 }
@@ -277,7 +284,10 @@ pub(crate) fn extract_camera(data: &[u8], meta: &GoldSrcMeta) -> Vec<CamSample> 
                 let ln = gi32(data, body);
                 if !(0..=2_000_000).contains(&ln) {
                     match resync(p) {
-                        Some(np) => { p = np; continue; }
+                        Some(np) => {
+                            p = np;
+                            continue;
+                        }
                         None => break,
                     }
                 }
@@ -288,4 +298,3 @@ pub(crate) fn extract_camera(data: &[u8], meta: &GoldSrcMeta) -> Vec<CamSample> 
     }
     cam
 }
-

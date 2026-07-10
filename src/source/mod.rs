@@ -19,9 +19,9 @@ pub mod bitreader;
 pub mod csgo;
 pub mod datatable;
 pub mod packetentities;
+pub mod player_tracks;
 pub mod sendprop;
 pub mod stringtable;
-pub mod player_tracks;
 
 // Source-engine packet processing that was previously at the crate root but is
 // only ever used on the Source path: the demo packet walker (`packets`), game

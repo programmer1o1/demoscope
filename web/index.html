@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>demoscope — in-browser demo scope</title>
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiIgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByb2xlPSJpbWciIGFyaWEtbGFiZWw9ImRlbW9zY29wZSI+CiAgPHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iNyIgZmlsbD0iIzBlMGUxMiIvPgogIDxjaXJjbGUgY3g9IjE2IiBjeT0iMTYiIHI9IjEwLjUiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2VjZTllMiIgc3Ryb2tlLXdpZHRoPSIxLjciLz4KICA8Y2xpcFBhdGggaWQ9ImFmdiI+PGNpcmNsZSBjeD0iMTYiIGN5PSIxNiIgcj0iOS42Ii8+PC9jbGlwUGF0aD4KICA8ZyBjbGlwLXBhdGg9InVybCgjYWZ2KSI+CiAgICA8cG9seWxpbmUgcG9pbnRzPSIxMSwyMiAxMSwxMyAxOS41LDEzIiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmIwMDAiIHN0cm9rZS13aWR0aD0iMi40IiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICAgIDxwYXRoIGQ9Ik0yNCwxMyBMMTksMTAgTDIxLDEzIEwxOSwxNiBaIiBmaWxsPSIjZmZiMDAwIi8+CiAgPC9nPgo8L3N2Zz4K">
+<title>Demoscope: game demo viewer</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+CiAgPHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iNyIgZmlsbD0iIzBlMGUxMiIvPgogIDxjaXJjbGUgY3g9IjE2IiBjeT0iMTYiIHI9IjEyIiBmaWxsPSJub25lIiBzdHJva2U9IiNlY2U5ZTIiIHN0cm9rZS13aWR0aD0iMS41IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1kYXNoYXJyYXk9IjE2IDQiIHRyYW5zZm9ybT0icm90YXRlKC01IDE2IDE2KSIvPgogIDxwYXRoIGQ9Ik04IDIxaDV2LTVoNXYtNWg4IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmIwMDAiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+CiAgPGNpcmNsZSBjeD0iOCIgY3k9IjIxIiByPSIxLjciIGZpbGw9IiNlY2U5ZTIiLz48cGF0aCBkPSJtMjQgOCA1IDMtNSAzeiIgZmlsbD0iI2ZmYjAwMCIvPgo8L3N2Zz4K">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -18,12 +18,13 @@
 }
 * { box-sizing:border-box; }
 html, body { margin:0; height:100%; }
+button, input { font:inherit; }
 body {
   background:var(--bg); color:var(--text); font-family:var(--font-display);
   font-size:15px; line-height:1.5; overflow:hidden; -webkit-font-smoothing:antialiased;
 }
 
-/* Quiet atmosphere — just a soft amber glow + grain */
+/* Quiet atmosphere: just a soft amber glow + grain */
 .bg-layer { position:fixed; inset:0; pointer-events:none; z-index:0; }
 .bg-glow {
   background:radial-gradient(720px 520px at 50% 32%, rgba(255,176,0,0.07), transparent 70%);
@@ -67,11 +68,11 @@ main.hero {
 .tagline b { color:var(--text); font-weight:600; }
 .tagline .fam { color:var(--accent-dim); font-family:var(--font-mono); font-size:13px; letter-spacing:.02em; }
 
-/* The intake — the one focal element */
+/* The intake: the one focal element */
 #drop {
   position:relative; width:min(560px,92vw);
   display:flex; flex-direction:column; align-items:center; gap:14px;
-  padding:34px 30px; cursor:pointer; user-select:none;
+  padding:34px 30px; user-select:none;
   background:radial-gradient(140% 130% at 50% 0%, rgba(255,176,0,0.04), transparent 62%), var(--panel);
   border:1px solid var(--border); border-radius:6px;
   transition:border-color .18s, background .18s, box-shadow .18s, transform .18s;
@@ -98,6 +99,9 @@ main.hero {
 }
 #drop button#pick:hover { filter:brightness(1.08); }
 #drop button#pick:active { transform:translateY(1px); }
+#drop button#pick:focus-visible, #again:focus-visible, .topbar a:focus-visible {
+  outline:2px solid var(--accent); outline-offset:3px;
+}
 #drop .hint {
   font-family:var(--font-mono); font-size:11px; line-height:1.7; color:var(--muted);
   border-top:1px solid var(--line); padding-top:13px; width:100%;
@@ -142,6 +146,16 @@ main.hero {
 @keyframes tracein { from{stroke-dashoffset:240} to{stroke-dashoffset:0} }
 .trace { stroke-dasharray:240; animation:tracein 1.3s ease-out .25s forwards; }
 @media (prefers-reduced-motion:reduce){ .reveal,.trace{animation:none;opacity:1;stroke-dashoffset:0} .bg-glow{animation:none} }
+@media (max-width:640px) {
+  .topbar { padding:12px 16px; }
+  main.hero { justify-content:flex-start; gap:20px; padding-top:8vh; }
+  .mark { width:50px; height:50px; }
+  .wordmark { font-size:clamp(38px,14vw,54px); }
+  .tagline br { display:none; }
+  #drop { width:100%; padding:28px 20px; }
+  .note { flex-wrap:wrap; justify-content:center; }
+  #status { padding:9px 16px; }
+}
 </style>
 </head>
 <body>
@@ -158,50 +172,37 @@ main.hero {
 
   <main class="hero">
     <div class="brand reveal d2">
-      <!-- Scope mark -->
+      <!-- Timeline aperture mark -->
       <svg class="mark" viewBox="0 0 100 100" aria-label="demoscope">
-        <defs>
-          <clipPath id="ap"><circle cx="50" cy="50" r="39.5"/></clipPath>
-          <filter id="gl" x="-40%" y="-40%" width="180%" height="180%">
-            <feGaussianBlur stdDeviation="1.6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
-          </filter>
-        </defs>
-        <circle cx="50" cy="50" r="41" fill="none" stroke="#ece9e2" stroke-width="2.4"/>
-        <circle cx="50" cy="50" r="44.5" fill="none" stroke="#ece9e2" stroke-width="1" opacity="0.28"/>
-        <g stroke="#ece9e2" stroke-width="2" stroke-linecap="round" opacity="0.85">
-          <line x1="50" y1="1.5" x2="50" y2="6.5"/><line x1="50" y1="93.5" x2="50" y2="98.5"/>
-          <line x1="1.5" y1="50" x2="6.5" y2="50"/><line x1="93.5" y1="50" x2="98.5" y2="50"/>
-        </g>
-        <g clip-path="url(#ap)">
-          <polyline class="trace" points="34,60 50,60 50,40 62,40" fill="none" stroke="#ffb000"
-            stroke-width="3.2" stroke-linejoin="round" stroke-linecap="round" filter="url(#gl)"/>
-          <circle cx="50" cy="60" r="1.7" fill="#ffb000"/>
-          <circle cx="50" cy="40" r="1.7" fill="#ffb000"/>
-          <circle cx="34" cy="60" r="3.1" fill="#0e0e12" stroke="#ece9e2" stroke-width="1.8"/>
-          <path d="M70,40 L61,35.6 L63.3,40 L61,44.4 Z" fill="#ffb000" filter="url(#gl)"/>
-        </g>
+        <circle cx="50" cy="50" r="43" fill="none" stroke="#ece9e2" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="56 11" transform="rotate(-3 50 50)"/>
+        <circle cx="50" cy="50" r="35" fill="none" stroke="#ece9e2" stroke-width="1" opacity=".14"/>
+        <path class="trace" d="M25 66H42V52H60V37H91" fill="none" stroke="#ffb000" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="25" cy="66" r="4" fill="#0e0e12" stroke="#ece9e2" stroke-width="2"/>
+        <circle cx="42" cy="52" r="2.5" fill="#ffd24a"/><circle cx="60" cy="37" r="2.5" fill="#ffd24a"/>
+        <path d="m88 31 9 6-9 6z" fill="#ffb000"/>
       </svg>
       <h1 class="wordmark">demoscope<span class="dot">.</span></h1>
     </div>
 
     <p class="tagline reveal d3">
-      Read any game demo right in your browser — positions, inputs, kills and map geometry,
-      decoded into one viewer.<br><span class="fam">Source · Source 2 · GoldSrc · Quake</span>
+      Explore game demos right in your browser: positions, inputs, kills and map geometry,
+      decoded into one viewer.<br><span class="fam">Source 1 · Source 2 · GoldSrc · Quake</span>
     </p>
 
-    <label id="drop" class="reveal d3">
+    <div id="drop" class="reveal d3">
       <span class="tick tl"></span><span class="tick tr"></span><span class="tick bl"></span><span class="tick br"></span>
-      <div class="msg">Drop a <b>.dem</b> file</div>
-      <button type="button" id="pick">browse files…</button>
+      <div class="msg">Drop demo files here</div>
+      <button type="button" id="pick">Browse files</button>
       <div class="hint">
-        Optional: add a <b>.bsp</b> / <b>.vpk</b> for the 3D map · drop a <b>second demo</b> to diff · <span class="kbd">Esc</span> to reset.
+        Optional: add one or more <b>.bsp</b> maps / a <b>.vpk</b> · add a <b>second demo</b> to compare · <span class="kbd">Esc</span> to reset.
+        <br>Quake 1 support currently covers NetQuake <b>.dem</b>; QuakeWorld <b>.qwd</b> and <b>.mvd</b> are detected but not decoded yet.
         <input type="file" id="file" accept=".dem,.dm2,.dm_68,.dm_67,.dm_66,.mvd,.qwd,.bsp,.vpk" multiple>
       </div>
-    </label>
+    </div>
 
     <div class="note reveal d4">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="1.5"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
-      100% local — files never leave your machine
+      100% local: files never leave your machine
       <span class="sep">·</span> pure-Rust + WebAssembly
     </div>
   </main>
@@ -222,11 +223,30 @@ const viewer  = document.getElementById('viewer');
 const again   = document.getElementById('again');
 const verTag  = document.getElementById('version-tag');
 
-// Track the BSP across loads so the user can drop them one at a time.
+// Track map layers across loads so the user can drop them one at a time.
 let pendingBsp = null;
 let pendingBspName = '';
+let pendingMaps = [];
 // First demo, carried so a later second demo overlays as a diff ghost.
 let pendingDemo = null;
+
+function bundleMapLayers(layers) {
+  if (layers.length === 0) return null;
+  if (layers.length === 1) return layers[0].bytes;
+  const total = 12 + layers.reduce((n, layer) => n + 4 + layer.bytes.length, 0);
+  const out = new Uint8Array(total);
+  out.set([68, 77, 65, 80, 66, 83, 80, 0], 0); // "DMAPBSP\0"
+  const view = new DataView(out.buffer);
+  view.setUint32(8, layers.length, true);
+  let offset = 12;
+  for (const layer of layers) {
+    view.setUint32(offset, layer.bytes.length, true);
+    offset += 4;
+    out.set(layer.bytes, offset);
+    offset += layer.bytes.length;
+  }
+  return out;
+}
 
 function log(msg, cls) {
   const line = document.createElement('div');
@@ -242,7 +262,7 @@ async function boot() {
   log('Loading WASM…');
   await init();
   verTag.textContent = 'wasm v' + version();
-  log('Ready. Drop a .dem file.', 'ok');
+  log('Ready. Drop a supported demo file.', 'ok');
 }
 
 function showViewer(html) {
@@ -274,6 +294,7 @@ function resetToPicker() {
   hideViewer();
   pendingBsp = null;
   pendingBspName = '';
+  pendingMaps = [];
   pendingDemo = null;
   clearStatus();
   log('Ready.', 'ok');
@@ -309,10 +330,14 @@ async function handleFiles(fileList) {
     // type. CS2 map paks are large, so this can be a few hundred MB.
     else if (name.endsWith('.bsp') || name.endsWith('.vpk')) {
       const buf = new Uint8Array(await f.arrayBuffer());
-      pendingBsp = buf;
-      pendingBspName = f.name;
+      const existing = pendingMaps.findIndex(layer => layer.name.toLowerCase() === name);
+      const layer = { name: f.name, bytes: buf };
+      if (existing >= 0) pendingMaps[existing] = layer;
+      else pendingMaps.push(layer);
+      pendingBsp = bundleMapLayers(pendingMaps);
+      pendingBspName = pendingMaps.map(layer => layer.name).join(', ');
       const kind = name.endsWith('.vpk') ? 'CS2 map pak' : 'BSP';
-      log(`${kind} ready: ${f.name} (${(buf.length / 1024 / 1024).toFixed(1)} MB)`, 'ok');
+      log(`${kind} ready: ${f.name} (${(buf.length / 1024 / 1024).toFixed(1)} MB) · ${pendingMaps.length} map layer${pendingMaps.length === 1 ? '' : 's'}`, 'ok');
     }
   }
   // A second demo (this drop, or carried from a previous one) becomes the diff

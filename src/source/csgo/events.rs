@@ -1,6 +1,6 @@
 // CS:GO protobuf game events.
 //
-// CS:GO wraps its game events in protobuf — `CSVCMsg_GameEventList` (id 30,
+// CS:GO wraps its game events in protobuf: `CSVCMsg_GameEventList` (id 30,
 // the descriptor: eventid → name + ordered key names) and `CSVCMsg_GameEvent`
 // (id 25, an instance carrying values in descriptor-key order). The bit-packed
 // `svc_GameEvent` scanner used for older Source 1 games (`events::extract_*`)
@@ -8,26 +8,55 @@
 //
 // These protos are byte-for-byte identical to Source 2's
 // `CMsgSource1LegacyGameEvent*`, so this is a near-verbatim port of the decoder
-// in `src/source2/parser.rs` — only the message ids differ.
+// in `src/source2/parser.rs`: only the message ids differ.
 
 use std::collections::HashMap;
 
-use super::message::{scan_payload, MsgKind};
-use super::super::events::{EventField, EventValue, GameEvent};
 use super::super::super::protobuf::Reader;
+use super::super::events::{EventField, EventValue, GameEvent};
+use super::message::{MsgKind, scan_payload};
 
 /// Gameplay-significant events to keep (the stream also carries high-spam events
 /// like weapon_fire / player_footstep that would bloat the timeline).
 const KEEP_EVENTS: &[&str] = &[
-    "player_death", "player_hurt", "player_blind", "player_spawn", "player_team",
-    "player_connect", "player_connect_full", "player_disconnect",
-    "bomb_planted", "bomb_defused", "bomb_exploded", "bomb_beginplant", "bomb_begindefuse",
-    "bomb_dropped", "bomb_pickup", "bomb_abortplant", "bomb_abortdefuse",
-    "round_start", "round_end", "round_mvp", "round_freeze_end", "round_officially_ended",
-    "round_prestart", "round_poststart", "round_announce_match_start", "cs_win_panel_round",
-    "hostage_rescued", "hostage_killed", "hostage_hurt", "hostage_follows",
-    "smokegrenade_detonate", "flashbang_detonate", "hegrenade_detonate", "molotov_detonate",
-    "inferno_startburn", "decoy_started", "item_pickup", "weapon_zoom",
+    "player_death",
+    "player_hurt",
+    "player_blind",
+    "player_spawn",
+    "player_team",
+    "player_connect",
+    "player_connect_full",
+    "player_disconnect",
+    "bomb_planted",
+    "bomb_defused",
+    "bomb_exploded",
+    "bomb_beginplant",
+    "bomb_begindefuse",
+    "bomb_dropped",
+    "bomb_pickup",
+    "bomb_abortplant",
+    "bomb_abortdefuse",
+    "round_start",
+    "round_end",
+    "round_mvp",
+    "round_freeze_end",
+    "round_officially_ended",
+    "round_prestart",
+    "round_poststart",
+    "round_announce_match_start",
+    "cs_win_panel_round",
+    "hostage_rescued",
+    "hostage_killed",
+    "hostage_hurt",
+    "hostage_follows",
+    "smokegrenade_detonate",
+    "flashbang_detonate",
+    "hegrenade_detonate",
+    "molotov_detonate",
+    "inferno_startburn",
+    "decoy_started",
+    "item_pickup",
+    "weapon_zoom",
 ];
 
 /// Decode CS:GO game events from the signon + game-packet protobuf message
@@ -84,14 +113,24 @@ fn parse_list(body: &[u8], descriptors: &mut HashMap<i32, (String, Vec<String>)>
                 while let Ok(Some(ff)) = dr.next_field() {
                     match ff.number {
                         1 => eventid = ff.value.as_i32().unwrap_or(0),
-                        2 => name = ff.value.as_str().map(|s| s.into_owned()).unwrap_or_default(),
+                        2 => {
+                            name = ff
+                                .value
+                                .as_str()
+                                .map(|s| s.into_owned())
+                                .unwrap_or_default()
+                        }
                         3 => {
                             if let Some(kb) = ff.value.as_bytes() {
                                 let mut kr = Reader::new(kb);
                                 let mut kn = String::new();
                                 while let Ok(Some(kf)) = kr.next_field() {
                                     if kf.number == 2 {
-                                        kn = kf.value.as_str().map(|s| s.into_owned()).unwrap_or_default();
+                                        kn = kf
+                                            .value
+                                            .as_str()
+                                            .map(|s| s.into_owned())
+                                            .unwrap_or_default();
                                     }
                                 }
                                 keys.push(kn);
@@ -142,7 +181,11 @@ fn parse_event(
         .zip(values.into_iter())
         .map(|(name, value)| EventField { name, value })
         .collect();
-    Some(GameEvent { event: name, tick, fields })
+    Some(GameEvent {
+        event: name,
+        tick,
+        fields,
+    })
 }
 
 /// One CSVCMsg_GameEvent.key_t → EventValue (only the populated val_* is sent).

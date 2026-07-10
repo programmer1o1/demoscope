@@ -2,7 +2,7 @@
 //
 // Where older Source ships svc_CreateStringTable / svc_UpdateStringTable as
 // hand-rolled bit-packed messages (decoded inline in `player_tracks::scan`),
-// CS:GO wraps the *envelope* in protobuf — but the entry payload inside the
+// CS:GO wraps the *envelope* in protobuf, but the entry payload inside the
 // `string_data` field is still the same engine bit-stream. So this module:
 //
 //   1. parses the protobuf envelope (CSVCMsg_CreateStringTable /
@@ -10,24 +10,24 @@
 //   2. walks the bit-packed entry stream in `string_data` exactly as the engine's
 //      `CNetworkStringTable::ParseUpdate` does.
 //
-// We only act on the `userinfo` table — its per-entry userdata is the
+// We only act on the `userinfo` table: its per-entry userdata is the
 // `player_info_s` blob that carries names / steam_ids / user_ids. Every other
 // table is still recorded (name + params) so that an UpdateStringTable's numeric
-// `table_id` — which is just the table's creation order — resolves correctly.
+// `table_id`, which is just the table's creation order: resolves correctly.
 //
 // This is what lifts CS:GO from "names as of the DEM_STRINGTABLES snapshot" to
 // live mid-demo updates: late joiners, reconnects, and in-game renames.
 
 use std::collections::HashMap;
 
-use super::super::bitreader::BitReader;
-use super::super::stringtable::{parse_player_info_blob, PlayerInfo};
 use super::super::super::protobuf::Reader;
+use super::super::bitreader::BitReader;
+use super::super::stringtable::{PlayerInfo, parse_player_info_blob};
 
-/// SUBSTRING_BITS in the engine — width of the "bytes to copy from history"
+/// SUBSTRING_BITS in the engine: width of the "bytes to copy from history"
 /// field when an entry string is delta-coded against an earlier one.
 const SUBSTRING_BITS: u32 = 5;
-/// MAX_USERDATA_BITS — width of the per-entry userdata byte count when the table
+/// MAX_USERDATA_BITS: width of the per-entry userdata byte count when the table
 /// is *not* fixed-size.
 const MAX_USERDATA_BITS: u32 = 14;
 
@@ -68,8 +68,12 @@ impl StringTables {
         });
         if is_userinfo {
             decode_userinfo_entries(
-                c.string_data, c.num_entries, entry_bits,
-                c.user_data_fixed_size, c.user_data_size_bits, names,
+                c.string_data,
+                c.num_entries,
+                entry_bits,
+                c.user_data_fixed_size,
+                c.user_data_size_bits,
+                names,
             );
         }
     }
@@ -78,13 +82,19 @@ impl StringTables {
     /// table named by `table_id`; only `userinfo` changes touch `names`.
     pub fn handle_update(&mut self, body: &[u8], names: &mut HashMap<u32, PlayerInfo>) {
         let Some(u) = parse_update(body) else { return };
-        let Some(meta) = self.tables.get(u.table_id as usize) else { return };
+        let Some(meta) = self.tables.get(u.table_id as usize) else {
+            return;
+        };
         if meta.name != "userinfo" {
             return;
         }
         decode_userinfo_entries(
-            u.string_data, u.num_changed_entries, meta.entry_bits,
-            meta.user_data_fixed_size, meta.user_data_size_bits, names,
+            u.string_data,
+            u.num_changed_entries,
+            meta.entry_bits,
+            meta.user_data_fixed_size,
+            meta.user_data_size_bits,
+            names,
         );
     }
 }
@@ -121,7 +131,14 @@ fn parse_create(body: &[u8]) -> Option<Create<'_>> {
     if max_entries == 0 {
         return None;
     }
-    Some(Create { name, max_entries, num_entries, user_data_fixed_size, user_data_size_bits, string_data })
+    Some(Create {
+        name,
+        max_entries,
+        num_entries,
+        user_data_fixed_size,
+        user_data_size_bits,
+        string_data,
+    })
 }
 
 /// Parsed `CSVCMsg_UpdateStringTable` envelope.
@@ -145,7 +162,11 @@ fn parse_update(body: &[u8]) -> Option<Update<'_>> {
             _ => {}
         }
     }
-    Some(Update { table_id, num_changed_entries, string_data })
+    Some(Update {
+        table_id,
+        num_changed_entries,
+        string_data,
+    })
 }
 
 /// Walk the bit-packed entry stream of the userinfo table and merge each changed
@@ -153,7 +174,7 @@ fn parse_update(body: &[u8]) -> Option<Update<'_>> {
 ///
 /// Mirrors `CNetworkStringTable::ParseUpdate`: per entry, an optional absolute
 /// index (else last+1), an optional (possibly history-delta-coded) name string,
-/// then optional userdata — fixed-width or a 14-bit-counted byte run. We don't
+/// then optional userdata: fixed-width or a 14-bit-counted byte run. We don't
 /// reconstruct the name string (the userinfo entry name is just the slot index);
 /// we only advance the cursor past it correctly to reach the userdata blob.
 fn decode_userinfo_entries(
@@ -247,7 +268,7 @@ fn decode_userinfo_entries(
 }
 
 /// Read `n_bits` from `br` and pack them into bytes (8 bits per byte, low bits
-/// first — the engine's `ReadBits` byte order). A trailing partial byte keeps
+/// first: the engine's `ReadBits` byte order). A trailing partial byte keeps
 /// whatever bits remain. Returns `None` if the stream runs short.
 fn read_bits_as_bytes(br: &mut BitReader, n_bits: u32) -> Option<Vec<u8>> {
     let mut out = Vec::with_capacity((n_bits as usize).div_ceil(8));
@@ -262,14 +283,10 @@ fn read_bits_as_bytes(br: &mut BitReader, n_bits: u32) -> Option<Vec<u8>> {
     Some(out)
 }
 
-/// floor(log2(n)) for n >= 1 — the engine's entry-index bit width for a table of
+/// floor(log2(n)) for n >= 1: the engine's entry-index bit width for a table of
 /// `n` max entries (always a power of two).
 fn log2(n: u32) -> u32 {
-    if n <= 1 {
-        0
-    } else {
-        31 - n.leading_zeros()
-    }
+    if n <= 1 { 0 } else { 31 - n.leading_zeros() }
 }
 
 #[cfg(test)]
@@ -307,7 +324,7 @@ mod tests {
     }
 
     /// A 344-byte CS:GO `player_info_s` blob (16-byte version+xuid prefix, name at
-    /// offset 16, big-endian user_id after name[128], steam_id after that) — the
+    /// offset 16, big-endian user_id after name[128], steam_id after that): the
     /// layout `parse_player_info_blob` auto-detects for CS:GO.
     fn csgo_player_blob(name: &str, uid: u32, steam: &str) -> Vec<u8> {
         let mut b = vec![0u8; 344];
@@ -425,7 +442,11 @@ mod tests {
         let mut wrong = Vec::new();
         push_varint_field(&mut wrong, 1, 0); // downloadables
         push_varint_field(&mut wrong, 2, 1);
-        push_len_field(&mut wrong, 3, &one_entry_string_data(&csgo_player_blob("Ghost", 1, "x")));
+        push_len_field(
+            &mut wrong,
+            3,
+            &one_entry_string_data(&csgo_player_blob("Ghost", 1, "x")),
+        );
         tables.handle_update(&wrong, &mut names);
         assert_eq!(names.get(&1).unwrap().name, "Latecomer"); // unchanged
     }

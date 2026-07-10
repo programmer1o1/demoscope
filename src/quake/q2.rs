@@ -144,7 +144,9 @@ pub fn parse(data: &[u8]) -> Result<QuakeDemo, Box<dyn Error>> {
                     playernum = m.read_i16() as i32;
                     map = m.read_string();
                     if dbg {
-                        eprintln!("[q2] serverdata proto={protocol} playernum={playernum} map={map}");
+                        eprintln!(
+                            "[q2] serverdata proto={protocol} playernum={playernum} map={map}"
+                        );
                     }
                 }
                 SVC_CONFIGSTRING => {
@@ -187,7 +189,9 @@ pub fn parse(data: &[u8]) -> Result<QuakeDemo, Box<dyn Error>> {
                     }
                 }
                 // These can also appear standalone; handle defensively.
-                SVC_PLAYERINFO => parse_playerinfo(&mut m, max_frame, playernum, &mut tb, &mut pm_type),
+                SVC_PLAYERINFO => {
+                    parse_playerinfo(&mut m, max_frame, playernum, &mut tb, &mut pm_type)
+                }
                 SVC_PACKETENTITIES | SVC_DELTAPACKETENTITIES => {
                     parse_packet_entities(&mut m, max_frame, &mut ents, &mut tb)
                 }
@@ -218,11 +222,21 @@ pub fn parse(data: &[u8]) -> Result<QuakeDemo, Box<dyn Error>> {
                     // layout can desync the stream, so decode it properly.
                     let flags = m.read_u8();
                     let _soundnum = m.read_u8();
-                    if flags & 0x01 != 0 { m.read_u8(); } // volume
-                    if flags & 0x02 != 0 { m.read_u8(); } // attenuation
-                    if flags & 0x10 != 0 { m.read_u8(); } // offset
-                    if flags & 0x08 != 0 { m.read_i16(); } // entity+channel
-                    if flags & 0x04 != 0 { m.skip(6); } // position (3 coords)
+                    if flags & 0x01 != 0 {
+                        m.read_u8();
+                    } // volume
+                    if flags & 0x02 != 0 {
+                        m.read_u8();
+                    } // attenuation
+                    if flags & 0x10 != 0 {
+                        m.read_u8();
+                    } // offset
+                    if flags & 0x08 != 0 {
+                        m.read_i16();
+                    } // entity+channel
+                    if flags & 0x04 != 0 {
+                        m.skip(6);
+                    } // position (3 coords)
                 }
                 SVC_DOWNLOAD => {
                     let size = m.read_i16();
@@ -309,13 +323,25 @@ fn parse_entity_bits(m: &mut ByteReader) -> (u16, u32) {
 
 /// CL_ParseDelta: apply the present fields to an entity state in wire order.
 fn parse_delta(m: &mut ByteReader, bits: u32, st: &mut EntState) {
-    if bits & U_MODEL != 0 { m.read_u8(); }
-    if bits & U_MODEL2 != 0 { m.read_u8(); }
-    if bits & U_MODEL3 != 0 { m.read_u8(); }
-    if bits & U_MODEL4 != 0 { m.read_u8(); }
+    if bits & U_MODEL != 0 {
+        m.read_u8();
+    }
+    if bits & U_MODEL2 != 0 {
+        m.read_u8();
+    }
+    if bits & U_MODEL3 != 0 {
+        m.read_u8();
+    }
+    if bits & U_MODEL4 != 0 {
+        m.read_u8();
+    }
 
-    if bits & U_FRAME8 != 0 { m.read_u8(); }
-    if bits & U_FRAME16 != 0 { m.read_i16(); }
+    if bits & U_FRAME8 != 0 {
+        m.read_u8();
+    }
+    if bits & U_FRAME16 != 0 {
+        m.read_i16();
+    }
 
     if (bits & U_SKIN8 != 0) && (bits & U_SKIN16 != 0) {
         m.read_i32();
@@ -341,18 +367,38 @@ fn parse_delta(m: &mut ByteReader, bits: u32, st: &mut EntState) {
         m.read_i16();
     }
 
-    if bits & U_ORIGIN1 != 0 { st.origin[0] = m.read_coord_q2(); }
-    if bits & U_ORIGIN2 != 0 { st.origin[1] = m.read_coord_q2(); }
-    if bits & U_ORIGIN3 != 0 { st.origin[2] = m.read_coord_q2(); }
+    if bits & U_ORIGIN1 != 0 {
+        st.origin[0] = m.read_coord_q2();
+    }
+    if bits & U_ORIGIN2 != 0 {
+        st.origin[1] = m.read_coord_q2();
+    }
+    if bits & U_ORIGIN3 != 0 {
+        st.origin[2] = m.read_coord_q2();
+    }
 
-    if bits & U_ANGLE1 != 0 { st.angles[0] = m.read_angle8(); }
-    if bits & U_ANGLE2 != 0 { st.angles[1] = m.read_angle8(); }
-    if bits & U_ANGLE3 != 0 { st.angles[2] = m.read_angle8(); }
+    if bits & U_ANGLE1 != 0 {
+        st.angles[0] = m.read_angle8();
+    }
+    if bits & U_ANGLE2 != 0 {
+        st.angles[1] = m.read_angle8();
+    }
+    if bits & U_ANGLE3 != 0 {
+        st.angles[2] = m.read_angle8();
+    }
 
-    if bits & U_OLDORIGIN != 0 { m.skip(6); }
-    if bits & U_SOUND != 0 { m.read_u8(); }
-    if bits & U_EVENT != 0 { m.read_u8(); }
-    if bits & U_SOLID != 0 { m.read_i16(); }
+    if bits & U_OLDORIGIN != 0 {
+        m.skip(6);
+    }
+    if bits & U_SOUND != 0 {
+        m.read_u8();
+    }
+    if bits & U_EVENT != 0 {
+        m.read_u8();
+    }
+    if bits & U_SOLID != 0 {
+        m.read_i16();
+    }
 }
 
 /// CL_ParseTEnt: temp entities carry no track data, but their layout is
@@ -421,7 +467,13 @@ fn parse_packet_entities(
         // Sample on movement or first sight, so the path captures motion
         // without spamming a point per stationary entity per frame.
         if had_origin || first {
-            tb.pos(number as u32, frame, st.origin[0], st.origin[1], st.origin[2]);
+            tb.pos(
+                number as u32,
+                frame,
+                st.origin[0],
+                st.origin[1],
+                st.origin[2],
+            );
             tb.yaw(number as u32, frame, st.angles[1], st.angles[0]);
         }
     }
@@ -437,7 +489,9 @@ fn parse_playerinfo(
 ) {
     let flags = m.read_u16();
 
-    if flags & PS_M_TYPE != 0 { *pm_type = m.read_u8() as i32; }
+    if flags & PS_M_TYPE != 0 {
+        *pm_type = m.read_u8() as i32;
+    }
 
     let mut origin = None;
     if flags & PS_M_ORIGIN != 0 {
@@ -447,13 +501,25 @@ fn parse_playerinfo(
         let z = m.read_i16() as f32 * 0.125;
         origin = Some([x, y, z]);
     }
-    if flags & PS_M_VELOCITY != 0 { m.skip(6); }
-    if flags & PS_M_TIME != 0 { m.read_u8(); }
-    if flags & PS_M_FLAGS != 0 { m.read_u8(); }
-    if flags & PS_M_GRAVITY != 0 { m.read_i16(); }
-    if flags & PS_M_DELTA_ANGLES != 0 { m.skip(6); }
+    if flags & PS_M_VELOCITY != 0 {
+        m.skip(6);
+    }
+    if flags & PS_M_TIME != 0 {
+        m.read_u8();
+    }
+    if flags & PS_M_FLAGS != 0 {
+        m.read_u8();
+    }
+    if flags & PS_M_GRAVITY != 0 {
+        m.read_i16();
+    }
+    if flags & PS_M_DELTA_ANGLES != 0 {
+        m.skip(6);
+    }
 
-    if flags & PS_VIEWOFFSET != 0 { m.skip(3); }
+    if flags & PS_VIEWOFFSET != 0 {
+        m.skip(3);
+    }
 
     let mut viewangles = None;
     if flags & PS_VIEWANGLES != 0 {
@@ -462,13 +528,25 @@ fn parse_playerinfo(
         let _roll = m.read_angle16();
         viewangles = Some((pitch, yaw));
     }
-    if flags & PS_KICKANGLES != 0 { m.skip(3); }
+    if flags & PS_KICKANGLES != 0 {
+        m.skip(3);
+    }
 
-    if flags & PS_WEAPONINDEX != 0 { m.read_u8(); }
-    if flags & PS_WEAPONFRAME != 0 { m.read_u8(); }
-    if flags & PS_BLEND != 0 { m.skip(4); }
-    if flags & PS_FOV != 0 { m.read_u8(); }
-    if flags & PS_RDFLAGS != 0 { m.read_u8(); }
+    if flags & PS_WEAPONINDEX != 0 {
+        m.read_u8();
+    }
+    if flags & PS_WEAPONFRAME != 0 {
+        m.read_u8();
+    }
+    if flags & PS_BLEND != 0 {
+        m.skip(4);
+    }
+    if flags & PS_FOV != 0 {
+        m.read_u8();
+    }
+    if flags & PS_RDFLAGS != 0 {
+        m.read_u8();
+    }
 
     // stats bitmask: i32 then a short per set bit.
     let statbits = m.read_i32() as u32;

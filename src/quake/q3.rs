@@ -42,7 +42,16 @@ struct Node {
 
 impl Default for Node {
     fn default() -> Self {
-        Node { left: NIL, right: NIL, parent: NIL, next: NIL, prev: NIL, head: NIL, weight: 0, symbol: 0 }
+        Node {
+            left: NIL,
+            right: NIL,
+            parent: NIL,
+            next: NIL,
+            prev: NIL,
+            head: NIL,
+            weight: 0,
+            symbol: 0,
+        }
     }
 }
 
@@ -112,12 +121,20 @@ impl Huff {
         let par1 = self.nodes[n1].parent;
         let par2 = self.nodes[n2].parent;
         if par1 != NIL {
-            if self.nodes[par1].left == n1 { self.nodes[par1].left = n2; } else { self.nodes[par1].right = n2; }
+            if self.nodes[par1].left == n1 {
+                self.nodes[par1].left = n2;
+            } else {
+                self.nodes[par1].right = n2;
+            }
         } else {
             self.tree = n2;
         }
         if par2 != NIL {
-            if self.nodes[par2].left == n2 { self.nodes[par2].left = n1; } else { self.nodes[par2].right = n1; }
+            if self.nodes[par2].left == n2 {
+                self.nodes[par2].left = n1;
+            } else {
+                self.nodes[par2].right = n1;
+            }
         } else {
             self.tree = n1;
         }
@@ -132,20 +149,34 @@ impl Huff {
         let t = self.nodes[n1].prev;
         self.nodes[n1].prev = self.nodes[n2].prev;
         self.nodes[n2].prev = t;
-        if self.nodes[n1].next == n1 { self.nodes[n1].next = n2; }
-        if self.nodes[n2].next == n2 { self.nodes[n2].next = n1; }
+        if self.nodes[n1].next == n1 {
+            self.nodes[n1].next = n2;
+        }
+        if self.nodes[n2].next == n2 {
+            self.nodes[n2].next = n1;
+        }
         let nn = self.nodes[n1].next;
-        if nn != NIL { self.nodes[nn].prev = n1; }
+        if nn != NIL {
+            self.nodes[nn].prev = n1;
+        }
         let nn = self.nodes[n2].next;
-        if nn != NIL { self.nodes[nn].prev = n2; }
+        if nn != NIL {
+            self.nodes[nn].prev = n2;
+        }
         let pp = self.nodes[n1].prev;
-        if pp != NIL { self.nodes[pp].next = n1; }
+        if pp != NIL {
+            self.nodes[pp].next = n1;
+        }
         let pp = self.nodes[n2].prev;
-        if pp != NIL { self.nodes[pp].next = n2; }
+        if pp != NIL {
+            self.nodes[pp].next = n2;
+        }
     }
 
     fn increment(&mut self, node: usize) {
-        if node == NIL { return; }
+        if node == NIL {
+            return;
+        }
         let nxt = self.nodes[node].next;
         if nxt != NIL && self.nodes[nxt].weight == self.nodes[node].weight {
             let lnode = self.ppnodes[self.nodes[node].head];
@@ -275,9 +306,15 @@ impl Huff {
                 return 0;
             }
             let b = get_bit(data, bit);
-            node = if b != 0 { self.nodes[node].right } else { self.nodes[node].left };
+            node = if b != 0 {
+                self.nodes[node].right
+            } else {
+                self.nodes[node].left
+            };
         }
-        if node == NIL { return 0; }
+        if node == NIL {
+            return 0;
+        }
         self.nodes[node].symbol
     }
 }
@@ -285,7 +322,11 @@ impl Huff {
 #[inline]
 fn get_bit(data: &[u8], bit: &mut usize) -> u32 {
     let idx = *bit >> 3;
-    let t = if idx < data.len() { (data[idx] >> (*bit & 7)) & 1 } else { 0 };
+    let t = if idx < data.len() {
+        (data[idx] >> (*bit & 7)) & 1
+    } else {
+        0
+    };
     *bit += 1;
     t as u32
 }
@@ -302,7 +343,13 @@ struct Msg<'a> {
 
 impl<'a> Msg<'a> {
     fn new(data: &'a [u8], huff: &'a Huff) -> Self {
-        Msg { data, bit: 0, cursize_bits: data.len() * 8, huff, overflow: false }
+        Msg {
+            data,
+            bit: 0,
+            cursize_bits: data.len() * 8,
+            huff,
+            overflow: false,
+        }
     }
 
     fn read_bits(&mut self, bits: i32) -> i32 {
@@ -324,7 +371,10 @@ impl<'a> Msg<'a> {
         if bits != 0 {
             let mut i = 0;
             while i < bits {
-                let get = self.huff.offset_receive(self.data, &mut self.bit, self.cursize_bits) as u32;
+                let get = self
+                    .huff
+                    .offset_receive(self.data, &mut self.bit, self.cursize_bits)
+                    as u32;
                 value |= get << (i + nbits);
                 i += 8;
                 if self.bit > self.cursize_bits {
@@ -362,7 +412,11 @@ impl<'a> Msg<'a> {
                 break;
             }
             // Q3 sanitises high-bit and '%' to '.'.
-            let ch = if c > 127 || c == b'%' as i32 { b'.' } else { c as u8 };
+            let ch = if c > 127 || c == b'%' as i32 {
+                b'.'
+            } else {
+                c as u8
+            };
             out.push(ch);
             if out.len() > 8192 {
                 break;
@@ -494,25 +548,33 @@ fn read_delta_playerstate(m: &mut Msg, ps: &mut [u32; 48]) {
         if m.read_bits(1) != 0 {
             let bits = m.read_bits(16);
             for i in 0..16 {
-                if bits & (1 << i) != 0 { m.read_short(); }
+                if bits & (1 << i) != 0 {
+                    m.read_short();
+                }
             }
         }
         if m.read_bits(1) != 0 {
             let bits = m.read_bits(16);
             for i in 0..16 {
-                if bits & (1 << i) != 0 { m.read_short(); }
+                if bits & (1 << i) != 0 {
+                    m.read_short();
+                }
             }
         }
         if m.read_bits(1) != 0 {
             let bits = m.read_bits(16);
             for i in 0..16 {
-                if bits & (1 << i) != 0 { m.read_short(); }
+                if bits & (1 << i) != 0 {
+                    m.read_short();
+                }
             }
         }
         if m.read_bits(1) != 0 {
             let bits = m.read_bits(16);
             for i in 0..16 {
-                if bits & (1 << i) != 0 { m.read_long(); }
+                if bits & (1 << i) != 0 {
+                    m.read_long();
+                }
             }
         }
     }
@@ -592,7 +654,13 @@ pub fn parse(data: &[u8], name: &str) -> Result<QuakeDemo, Box<dyn Error>> {
                     handle_server_command(&s, &mut configstrings);
                 }
                 SVC_GAMESTATE => {
-                    parse_gamestate(&mut m, &mut configstrings, &mut baselines, &mut client_num, dbg);
+                    parse_gamestate(
+                        &mut m,
+                        &mut configstrings,
+                        &mut baselines,
+                        &mut client_num,
+                        dbg,
+                    );
                 }
                 SVC_SNAPSHOT => {
                     parse_snapshot(
@@ -624,7 +692,10 @@ pub fn parse(data: &[u8], name: &str) -> Result<QuakeDemo, Box<dyn Error>> {
     }
 
     // Map + player names from configstrings.
-    let serverinfo = configstrings.get(&CS_SERVERINFO).cloned().unwrap_or_default();
+    let serverinfo = configstrings
+        .get(&CS_SERVERINFO)
+        .cloned()
+        .unwrap_or_default();
     let map = info_value(&serverinfo, "mapname");
     let server = info_value(&serverinfo, "sv_hostname");
     for i in 0..MAX_CLIENTS {
@@ -663,7 +734,10 @@ pub fn parse(data: &[u8], name: &str) -> Result<QuakeDemo, Box<dyn Error>> {
     let meta = QuakeMeta {
         map: map.clone(),
         server,
-        client: tb.primary.and_then(|p| tb.names.get(&p).cloned()).unwrap_or_default(),
+        client: tb
+            .primary
+            .and_then(|p| tb.names.get(&p).cloned())
+            .unwrap_or_default(),
         game: "quake3".to_string(),
         protocol,
         duration,
@@ -728,7 +802,11 @@ fn parse_gamestate(
     *client_num = m.read_long();
     let _checksum_feed = m.read_long();
     if dbg {
-        eprintln!("[q3] gamestate: clientNum={client_num} configstrings={} baselines={}", configstrings.len(), baselines.len());
+        eprintln!(
+            "[q3] gamestate: clientNum={client_num} configstrings={} baselines={}",
+            configstrings.len(),
+            baselines.len()
+        );
     }
 }
 

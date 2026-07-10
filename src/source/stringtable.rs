@@ -36,7 +36,9 @@ pub struct StringTablesParse {
 pub fn parse_userinfo(payload: &[u8]) -> Option<StringTablesParse> {
     let mut br = BitReader::new(payload);
     let num_tables = br.read_bits(8)? as usize;
-    if num_tables == 0 || num_tables > 64 { return None; }
+    if num_tables == 0 || num_tables > 64 {
+        return None;
+    }
     let mut out = std::collections::HashMap::new();
     let mut table_names = Vec::with_capacity(num_tables);
     for _ in 0..num_tables {
@@ -51,17 +53,23 @@ pub fn parse_userinfo(payload: &[u8]) -> Option<StringTablesParse> {
             let has_ud = br.read_bool()?;
             if has_ud {
                 let ud_len = br.read_bits(16)? as usize;
-                if ud_len > 65535 { return None; }
+                if ud_len > 65535 {
+                    return None;
+                }
                 if is_userinfo && ud_len >= 36 {
                     let mut bytes = vec![0u8; ud_len];
-                    for i in 0..ud_len { bytes[i] = br.read_byte()?; }
+                    for i in 0..ud_len {
+                        bytes[i] = br.read_byte()?;
+                    }
                     if let Some(pi) = parse_player_info_blob(&bytes) {
                         let entity_id = (slot as u32) + 1;
                         out.insert(entity_id, pi);
                     }
                     continue;
                 } else {
-                    for _ in 0..ud_len { br.read_byte()?; }
+                    for _ in 0..ud_len {
+                        br.read_byte()?;
+                    }
                 }
             }
             // No fallback for entries without player_info_t - tf-demo-parser
@@ -77,13 +85,21 @@ pub fn parse_userinfo(payload: &[u8]) -> Option<StringTablesParse> {
                 let hud = br.read_bool()?;
                 if hud {
                     let l = br.read_bits(16)? as usize;
-                    for _ in 0..l { br.read_byte()?; }
+                    for _ in 0..l {
+                        br.read_byte()?;
+                    }
                 }
             }
         }
     }
-    if out.is_empty() && table_names.is_empty() { None }
-    else { Some(StringTablesParse { players: out, table_names }) }
+    if out.is_empty() && table_names.is_empty() {
+        None
+    } else {
+        Some(StringTablesParse {
+            players: out,
+            table_names,
+        })
+    }
 }
 
 /// Parse a `player_info_s` userdata blob. The struct's layout differs by engine
@@ -110,7 +126,17 @@ pub fn parse_userinfo(payload: &[u8]) -> Option<StringTablesParse> {
 /// proto-4 family without needing to know the exact game.
 pub fn parse_player_info_blob(bytes: &[u8]) -> Option<PlayerInfo> {
     if std::env::var("DUMP_USERINFO").is_ok() {
-        let ascii: String = bytes.iter().take(120).map(|&b| if (0x20..0x7f).contains(&b) { b as char } else { '.' }).collect();
+        let ascii: String = bytes
+            .iter()
+            .take(120)
+            .map(|&b| {
+                if (0x20..0x7f).contains(&b) {
+                    b as char
+                } else {
+                    '.'
+                }
+            })
+            .collect();
         eprintln!("[UINFO] len={} ascii=\"{}\"", bytes.len(), ascii);
     }
     let printable = |b: u8| b.is_ascii_graphic() || b == b' ';
@@ -122,27 +148,53 @@ pub fn parse_player_info_blob(bytes: &[u8]) -> Option<PlayerInfo> {
     // printable name. Bias toward 16 for the large CS:GO blob, where offset 8 can
     // land mid-xuid on a stray printable byte.
     let candidates: &[usize] = if csgo { &[16, 8, 0] } else { &[0, 8, 16] };
-    let name_off = candidates.iter().copied()
-        .find(|&off| bytes.len() >= off + name_len + 4 && bytes.get(off).is_some_and(|&b| printable(b)))
+    let name_off = candidates
+        .iter()
+        .copied()
+        .find(|&off| {
+            bytes.len() >= off + name_len + 4 && bytes.get(off).is_some_and(|&b| printable(b))
+        })
         .unwrap_or(0);
     let at = |o: usize| name_off + o;
-    if bytes.len() < at(name_len) + 4 { return None; }
+    if bytes.len() < at(name_len) + 4 {
+        return None;
+    }
     // user_id sits right after the name field; CS:GO writes integers big-endian.
-    let uid_bytes = [bytes[at(name_len)], bytes[at(name_len) + 1], bytes[at(name_len) + 2], bytes[at(name_len) + 3]];
-    let uid = if csgo { u32::from_be_bytes(uid_bytes) } else { u32::from_le_bytes(uid_bytes) };
+    let uid_bytes = [
+        bytes[at(name_len)],
+        bytes[at(name_len) + 1],
+        bytes[at(name_len) + 2],
+        bytes[at(name_len) + 3],
+    ];
+    let uid = if csgo {
+        u32::from_be_bytes(uid_bytes)
+    } else {
+        u32::from_le_bytes(uid_bytes)
+    };
     // is_fake / is_hltv offsets are only mapped for the name[32] layout.
     let is_fake = !csgo && bytes.len() > at(108) && bytes[at(108)] != 0;
     let is_hltv = !csgo && bytes.len() > at(109) && bytes[at(109)] != 0;
-    let name_end = bytes[at(0)..at(name_len)].iter().position(|&b| b == 0).unwrap_or(name_len);
+    let name_end = bytes[at(0)..at(name_len)]
+        .iter()
+        .position(|&b| b == 0)
+        .unwrap_or(name_len);
     let actual_name = String::from_utf8_lossy(&bytes[at(0)..at(0) + name_end]).into_owned();
-    if actual_name.is_empty() { return None; }
+    if actual_name.is_empty() {
+        return None;
+    }
     // guid / steam_id is the null-terminated string right after user_id.
     let guid_off = at(name_len) + 4;
     let steam_id: String = bytes[guid_off..(guid_off + 33).min(bytes.len())]
-        .iter().take_while(|&&b| b != 0)
-        .map(|&b| b as char).collect();
+        .iter()
+        .take_while(|&&b| b != 0)
+        .map(|&b| b as char)
+        .collect();
     Some(PlayerInfo {
         aliases: vec![actual_name.clone()],
-        name: actual_name, user_id: uid, steam_id, is_fake, is_hltv,
+        name: actual_name,
+        user_id: uid,
+        steam_id,
+        is_fake,
+        is_hltv,
     })
 }

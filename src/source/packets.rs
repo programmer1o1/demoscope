@@ -41,9 +41,13 @@ pub(crate) fn detect_splitscreen(data: &[u8], demo_protocol: i32, game_dir: &str
         let pkt_start = HEADER_SIZE + pkt_hdr;
         for n in [4, 2, 1] {
             let len_off = pkt_start + SPLIT_SIZE * n + 8;
-            if len_off + 4 > data.len() { continue; }
+            if len_off + 4 > data.len() {
+                continue;
+            }
             let length = le_i32(data, len_off);
-            if length <= 0 { continue; }
+            if length <= 0 {
+                continue;
+            }
             let payload_end = len_off.saturating_add(4).saturating_add(length as usize);
             if (length as usize) < (data.len() - pkt_start) && payload_end < data.len() {
                 return n;
@@ -53,7 +57,11 @@ pub(crate) fn detect_splitscreen(data: &[u8], demo_protocol: i32, game_dir: &str
     1
 }
 
-pub(crate) fn iterate_demo_packets(data: &[u8], demo_protocol: i32, game_dir: &str) -> Vec<DemoPacketInfo> {
+pub(crate) fn iterate_demo_packets(
+    data: &[u8],
+    demo_protocol: i32,
+    game_dir: &str,
+) -> Vec<DemoPacketInfo> {
     // demo_protocol > 3 (L4D, Portal 2, CS:GO, …) adds a player_slot byte after cmd+tick
     let extra: usize = if demo_protocol > 3 { 1 } else { 0 };
     let pkt_hdr = 5 + extra;
@@ -64,49 +72,94 @@ pub(crate) fn iterate_demo_packets(data: &[u8], demo_protocol: i32, game_dir: &s
     let mut offset = HEADER_SIZE;
 
     while offset < data.len() {
-        if offset + 5 > data.len() { break; }
+        if offset + 5 > data.len() {
+            break;
+        }
         let cmd = data[offset];
         let tick = le_i32(data, offset + 1);
         offset += pkt_hdr;
 
         match cmd {
             3 => {
-                packets.push(DemoPacketInfo { cmd, tick, payload_start: offset, payload_end: offset });
+                packets.push(DemoPacketInfo {
+                    cmd,
+                    tick,
+                    payload_start: offset,
+                    payload_end: offset,
+                });
             }
             7 => {
-                packets.push(DemoPacketInfo { cmd, tick, payload_start: offset, payload_end: offset });
+                packets.push(DemoPacketInfo {
+                    cmd,
+                    tick,
+                    payload_start: offset,
+                    payload_end: offset,
+                });
                 break;
             }
             1 | 2 => {
-                if offset + preamble > data.len() { break; }
+                if offset + preamble > data.len() {
+                    break;
+                }
                 // A negative length is desync garbage (and would overflow usize
                 // on the add in a debug build); treat it as end-of-stream.
                 let length = le_i32(data, offset + democmdinfo + 8);
-                if length < 0 { break; }
+                if length < 0 {
+                    break;
+                }
                 let payload_start = offset + preamble;
                 let payload_end = payload_start.saturating_add(length as usize);
-                if payload_end > data.len() { break; }
-                packets.push(DemoPacketInfo { cmd, tick, payload_start, payload_end });
+                if payload_end > data.len() {
+                    break;
+                }
+                packets.push(DemoPacketInfo {
+                    cmd,
+                    tick,
+                    payload_start,
+                    payload_end,
+                });
                 offset = payload_end;
             }
             4 => {
                 // ConsoleCmd
-                if offset + 4 > data.len() { break; }
+                if offset + 4 > data.len() {
+                    break;
+                }
                 let length = le_i32(data, offset);
-                if length < 0 { break; }
+                if length < 0 {
+                    break;
+                }
                 let next = offset.saturating_add(4).saturating_add(length as usize);
-                if next > data.len() { break; }
+                if next > data.len() {
+                    break;
+                }
                 offset = next;
-                packets.push(DemoPacketInfo { cmd, tick, payload_start: offset, payload_end: offset });
+                packets.push(DemoPacketInfo {
+                    cmd,
+                    tick,
+                    payload_start: offset,
+                    payload_end: offset,
+                });
             }
             5 => {
                 // UserCmd
-                if offset + 8 > data.len() { break; }
+                if offset + 8 > data.len() {
+                    break;
+                }
                 let length = le_i32(data, offset + 4);
-                if length < 0 { break; }
+                if length < 0 {
+                    break;
+                }
                 let next = offset.saturating_add(8).saturating_add(length as usize);
-                if next > data.len() { break; }
-                packets.push(DemoPacketInfo { cmd, tick, payload_start: offset, payload_end: offset });
+                if next > data.len() {
+                    break;
+                }
+                packets.push(DemoPacketInfo {
+                    cmd,
+                    tick,
+                    payload_start: offset,
+                    payload_end: offset,
+                });
                 offset = next;
             }
             8 if demo_protocol > 3 => {
@@ -116,22 +169,44 @@ pub(crate) fn iterate_demo_packets(data: &[u8], demo_protocol: i32, game_dir: &s
                 // desyncs the whole walk (this dropped every game packet on
                 // Portal 2, which emits a CustomData right after the signon).
                 // Matches the cmd-99 handler in player_tracks::scan.
-                if offset + 8 > data.len() { break; }
+                if offset + 8 > data.len() {
+                    break;
+                }
                 let length = le_i32(data, offset + 4);
-                if length < 0 { break; }
+                if length < 0 {
+                    break;
+                }
                 let next = offset.saturating_add(8).saturating_add(length as usize);
-                if next > data.len() { break; }
-                packets.push(DemoPacketInfo { cmd, tick, payload_start: offset, payload_end: offset });
+                if next > data.len() {
+                    break;
+                }
+                packets.push(DemoPacketInfo {
+                    cmd,
+                    tick,
+                    payload_start: offset,
+                    payload_end: offset,
+                });
                 offset = next;
             }
             6 | 8 | 9 => {
                 // 6=DataTables, 8=StringTables(proto-3), 9=StringTables(proto-4)
-                if offset + 4 > data.len() { break; }
+                if offset + 4 > data.len() {
+                    break;
+                }
                 let length = le_i32(data, offset);
-                if length < 0 { break; }
+                if length < 0 {
+                    break;
+                }
                 let next = offset.saturating_add(4).saturating_add(length as usize);
-                if next > data.len() { break; }
-                packets.push(DemoPacketInfo { cmd, tick, payload_start: offset, payload_end: offset });
+                if next > data.len() {
+                    break;
+                }
+                packets.push(DemoPacketInfo {
+                    cmd,
+                    tick,
+                    payload_start: offset,
+                    payload_end: offset,
+                });
                 offset = next;
             }
             _ => break,
@@ -141,7 +216,11 @@ pub(crate) fn iterate_demo_packets(data: &[u8], demo_protocol: i32, game_dir: &s
     packets
 }
 
-pub(crate) fn parse_userinfo_from_demo(data: &[u8], proto: i32, game_dir: &str) -> (HashMap<i32, (String, bool)>, HashMap<usize, i32>) {
+pub(crate) fn parse_userinfo_from_demo(
+    data: &[u8],
+    proto: i32,
+    game_dir: &str,
+) -> (HashMap<i32, (String, bool)>, HashMap<usize, i32>) {
     let extra: usize = if proto > 3 { 1 } else { 0 };
     let pkt_hdr = 5 + extra;
     let democmdinfo = SPLIT_SIZE * detect_splitscreen(data, proto, game_dir); // L4D = 4 slots
@@ -150,29 +229,45 @@ pub(crate) fn parse_userinfo_from_demo(data: &[u8], proto: i32, game_dir: &str) 
     let mut slot_to_uid: HashMap<usize, i32> = HashMap::new();
 
     while offset < data.len() {
-        if offset + 5 > data.len() { break; }
+        if offset + 5 > data.len() {
+            break;
+        }
         let cmd = data[offset];
         offset += pkt_hdr;
 
         match cmd {
             7 => break,
             1 | 2 => {
-                if offset + democmdinfo + 12 > data.len() { break; }
+                if offset + democmdinfo + 12 > data.len() {
+                    break;
+                }
                 let length = le_i32(data, offset + democmdinfo + 8);
-                if length < 0 { break; }
-                offset = offset.saturating_add(democmdinfo + 12).saturating_add(length as usize);
+                if length < 0 {
+                    break;
+                }
+                offset = offset
+                    .saturating_add(democmdinfo + 12)
+                    .saturating_add(length as usize);
             }
             3 => {}
             4 => {
-                if offset + 4 > data.len() { break; }
+                if offset + 4 > data.len() {
+                    break;
+                }
                 let length = le_i32(data, offset);
-                if length < 0 { break; }
+                if length < 0 {
+                    break;
+                }
                 offset = offset.saturating_add(4).saturating_add(length as usize);
             }
             5 => {
-                if offset + 8 > data.len() { break; }
+                if offset + 8 > data.len() {
+                    break;
+                }
                 let length = le_i32(data, offset + 4);
-                if length < 0 { break; }
+                if length < 0 {
+                    break;
+                }
                 offset = offset.saturating_add(8).saturating_add(length as usize);
             }
             8 if proto > 3 => {
@@ -180,21 +275,33 @@ pub(crate) fn parse_userinfo_from_demo(data: &[u8], proto: i32, game_dir: &str) 
                 // table - skip its 8-byte header cleanly so the walk stays
                 // aligned and the real userinfo (cmd 9) is reached. (StringTables
                 // moved to cmd 9 in the proto-4 enum.)
-                if offset + 8 > data.len() { break; }
+                if offset + 8 > data.len() {
+                    break;
+                }
                 let length = le_i32(data, offset + 4);
-                if length < 0 { break; }
+                if length < 0 {
+                    break;
+                }
                 offset = offset.saturating_add(8).saturating_add(length as usize);
             }
             // StringTables is cmd 8 (old enum: Portal 2/Orange Box proto-3) or
             // cmd 9 (new enum: L4D/CS:GO proto-4). userinfo lives in that block.
             6 | 8 | 9 => {
-                if offset + 4 > data.len() { break; }
+                if offset + 4 > data.len() {
+                    break;
+                }
                 let length = le_i32(data, offset);
-                if length < 0 { break; }
+                if length < 0 {
+                    break;
+                }
                 let payload_start = offset + 4;
-                let payload_end = payload_start.saturating_add(length as usize).min(data.len());
+                let payload_end = payload_start
+                    .saturating_add(length as usize)
+                    .min(data.len());
                 if (cmd == 8 || cmd == 9) && payload_end > payload_start {
-                    if let Some((m, s)) = try_parse_userinfo_tables(&data[payload_start..payload_end]) {
+                    if let Some((m, s)) =
+                        try_parse_userinfo_tables(&data[payload_start..payload_end])
+                    {
                         result.extend(m);
                         slot_to_uid.extend(s);
                     }
@@ -208,17 +315,23 @@ pub(crate) fn parse_userinfo_from_demo(data: &[u8], proto: i32, game_dir: &str) 
 }
 
 // (name, is_fake)  - is_fake = player_info_t.fakeplayer (offset 124)
-fn try_parse_userinfo_tables(payload: &[u8]) -> Option<(HashMap<i32, (String, bool)>, HashMap<usize, i32>)> {
+fn try_parse_userinfo_tables(
+    payload: &[u8],
+) -> Option<(HashMap<i32, (String, bool)>, HashMap<usize, i32>)> {
     let mut br = BitReader::new(payload);
     let num_tables = br.read_bits(8)? as usize;
-    if num_tables == 0 || num_tables > 64 { return None; }
+    if num_tables == 0 || num_tables > 64 {
+        return None;
+    }
     let mut result = HashMap::new();
     let mut slot_to_uid: HashMap<usize, i32> = HashMap::new();
 
     for _t in 0..num_tables {
         let table_name = br.read_cstring_any(64)?;
         let num_strings = br.read_bits(16)? as usize;
-        if num_strings > 4096 { return None; }
+        if num_strings > 4096 {
+            return None;
+        }
         let is_userinfo = table_name == "userinfo";
 
         for slot in 0..num_strings {
@@ -228,17 +341,29 @@ fn try_parse_userinfo_tables(payload: &[u8]) -> Option<(HashMap<i32, (String, bo
             let mut is_fake = false;
             if has_ud {
                 let ud_len = br.read_bits(16)? as usize;
-                if ud_len > 8192 { return None; }
+                if ud_len > 8192 {
+                    return None;
+                }
                 if is_userinfo && ud_len >= 52 {
                     let mut bytes = vec![0u8; ud_len];
-                    for i in 0..ud_len { bytes[i] = br.read_bits(8)? as u8; }
+                    for i in 0..ud_len {
+                        bytes[i] = br.read_bits(8)? as u8;
+                    }
                     // player_info_t: version(8)+xuid(8)+name(32)=48, userID(4) at 48
-                    uid = Some(i32::from_le_bytes([bytes[48], bytes[49], bytes[50], bytes[51]]));
+                    uid = Some(i32::from_le_bytes([
+                        bytes[48], bytes[49], bytes[50], bytes[51],
+                    ]));
                     // fakeplayer at offset 124 (after guid[33]+pad+friendsID+friendsName)
-                    if ud_len > 124 { is_fake = bytes[124] != 0; }
+                    if ud_len > 124 {
+                        is_fake = bytes[124] != 0;
+                    }
                     // actual player name is at bytes[16..48] (after version+xuid), null-terminated
-                    let name_end = bytes[16..48.min(ud_len)].iter().position(|&b| b == 0).unwrap_or(32);
-                    let actual_name = String::from_utf8_lossy(&bytes[16..16 + name_end]).into_owned();
+                    let name_end = bytes[16..48.min(ud_len)]
+                        .iter()
+                        .position(|&b| b == 0)
+                        .unwrap_or(32);
+                    let actual_name =
+                        String::from_utf8_lossy(&bytes[16..16 + name_end]).into_owned();
                     if !actual_name.is_empty() {
                         let id = uid.unwrap_or(slot as i32 + 1);
                         if id > 0 {
@@ -248,7 +373,9 @@ fn try_parse_userinfo_tables(payload: &[u8]) -> Option<(HashMap<i32, (String, bo
                     }
                     continue;
                 } else {
-                    for _ in 0..ud_len { br.read_bits(8)?; }
+                    for _ in 0..ud_len {
+                        br.read_bits(8)?;
+                    }
                 }
             }
             if is_userinfo && !player_name.is_empty() {
@@ -268,27 +395,40 @@ fn try_parse_userinfo_tables(payload: &[u8]) -> Option<(HashMap<i32, (String, bo
                 let hud = br.read_bits(1)? != 0;
                 if hud {
                     let l = br.read_bits(16)? as usize;
-                    for _ in 0..l { br.read_bits(8)?; }
+                    for _ in 0..l {
+                        br.read_bits(8)?;
+                    }
                 }
             }
         }
     }
-    if result.is_empty() { None } else { Some((result, slot_to_uid)) }
+    if result.is_empty() {
+        None
+    } else {
+        Some((result, slot_to_uid))
+    }
 }
 
 // ── svc_SetView extraction ────────────────────────────────────────────────────
 // Parses each game-packet payload looking for svc_SetView (net message type 17
 // in TF2's demo protocol, immediately after net_Tick type 3). Returns
 // (tick, entity_index) pairs for every packet where svc_SetView was found.
-pub(crate) fn extract_svc_setview(data: &[u8], game_packet_ticks: &[(i32, usize, usize)]) -> Vec<(i32, u16)> {
+pub(crate) fn extract_svc_setview(
+    data: &[u8],
+    game_packet_ticks: &[(i32, usize, usize)],
+) -> Vec<(i32, u16)> {
     let mut results = Vec::new();
     for &(tick, payload_start, payload_end) in game_packet_ticks {
-        if payload_end <= payload_start { continue; }
+        if payload_end <= payload_start {
+            continue;
+        }
         let payload = &data[payload_start..payload_end];
         let total_bits = payload.len() * 8;
 
         let read_bits = |pos: usize, n: usize| -> Option<u32> {
-            if pos + n > total_bits { return None; }
+            if pos + n > total_bits {
+                return None;
+            }
             let mut v = 0u32;
             for i in 0..n {
                 let bi = (pos + i) >> 3;
@@ -299,13 +439,21 @@ pub(crate) fn extract_svc_setview(data: &[u8], game_packet_ticks: &[(i32, usize,
 
         let mut bit_pos = 0usize;
         for _ in 0..15 {
-            if bit_pos + 6 > total_bits { break; }
-            let msg_type = match read_bits(bit_pos, 6) { Some(t) => t as u8, None => break };
+            if bit_pos + 6 > total_bits {
+                break;
+            }
+            let msg_type = match read_bits(bit_pos, 6) {
+                Some(t) => t as u8,
+                None => break,
+            };
             bit_pos += 6;
             match msg_type {
-                0 => {}                  // net_NOP - no data
-                3 => { bit_pos += 64; } // net_Tick - skip 64 bits
-                17 => {                  // svc_SetView - 12-bit entity index
+                0 => {} // net_NOP - no data
+                3 => {
+                    bit_pos += 64;
+                } // net_Tick - skip 64 bits
+                17 => {
+                    // svc_SetView - 12-bit entity index
                     if let Some(entity) = read_bits(bit_pos, 12) {
                         results.push((tick, entity as u16));
                     }
@@ -323,26 +471,41 @@ pub(crate) fn extract_svc_setview(data: &[u8], game_packet_ticks: &[(i32, usize,
 // spectator was watching a non-primary entity. The primary entity is the one
 // seen in the most svc_SetView events.
 pub(crate) fn spectator_switch_intervals(setview_events: &[(i32, u16)]) -> Vec<(i32, i32)> {
-    if setview_events.len() < 5 { return vec![]; }
+    if setview_events.len() < 5 {
+        return vec![];
+    }
     let mut counts = std::collections::HashMap::<u16, usize>::new();
-    for &(_, e) in setview_events { *counts.entry(e).or_insert(0) += 1; }
-    let primary = counts.into_iter().max_by_key(|&(_, c)| c).map(|(e, _)| e).unwrap_or(0);
+    for &(_, e) in setview_events {
+        *counts.entry(e).or_insert(0) += 1;
+    }
+    let primary = counts
+        .into_iter()
+        .max_by_key(|&(_, c)| c)
+        .map(|(e, _)| e)
+        .unwrap_or(0);
 
     let mut intervals: Vec<(i32, i32)> = Vec::new();
     let mut switch_start: Option<i32> = None;
     let mut cur_entity: Option<u16> = None;
 
     for &(tick, entity) in setview_events {
-        if cur_entity == Some(entity) { continue; }
+        if cur_entity == Some(entity) {
+            continue;
+        }
         if let (Some(start), Some(prev)) = (switch_start, cur_entity) {
-            if prev != primary { intervals.push((start, tick)); }
+            if prev != primary {
+                intervals.push((start, tick));
+            }
         }
         switch_start = Some(tick);
         cur_entity = Some(entity);
     }
     if let (Some(start), Some(e)) = (switch_start, cur_entity) {
         if e != primary {
-            let end = setview_events.last().map(|&(t, _)| t + 1).unwrap_or(start + 1);
+            let end = setview_events
+                .last()
+                .map(|&(t, _)| t + 1)
+                .unwrap_or(start + 1);
             intervals.push((start, end));
         }
     }
