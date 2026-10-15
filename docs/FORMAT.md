@@ -1,4 +1,8 @@
-# Demo format reference
+# Source 1 demo format reference
+
+Covers the Source 1 `HL2DEMO` container (Garry's Mod 13+ uses the same layout
+under the magic `GMODEMO\0`). GoldSrc, Source 2 and Quake demos are different
+formats; see [COMPATIBILITY.md](COMPATIBILITY.md) and [ARCHITECTURE.md](ARCHITECTURE.md).
 
 Magic: `HL2DEMO\0`
 
@@ -75,7 +79,7 @@ Each field is preceded by a 1-bit **has-flag**; if 0 the field is unchanged from
 
 ## Proto-4 SendTable / PacketEntities wire format (Portal 2 engine)
 
-Reference for porting the entity decode to other proto-4 games. Verified against `engine.dll` for Portal 2; **the values below may differ on L4D - confirm with a bit-trace.** Implemented in `src/source_demo/{datatable,packetentities,sendprop}.rs`.
+Reference for porting the entity decode to other proto-4 games. Verified against `engine.dll` for Portal 2; **L4D differs in places** (L4D1 uses 16-bit flags with no priority byte, and both L4D games use a 6-bit `m_nBits`; see [PROTO4.md](PROTO4.md)). Implemented in `src/source/{datatable,packetentities,sendprop}.rs`.
 
 **SendProp definition** (`DEM_DATATABLES`, per prop):
 ```

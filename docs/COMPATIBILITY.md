@@ -1,58 +1,70 @@
 # Compatibility
 
+## At a glance
+
+| Engine family | Games | Per-player tracks | Map overlay | Details |
+|---------------|-------|:-:|---|---------|
+| Source 1 (`HL2DEMO`, `GMODEMO`) | TF2, HL2 family, CS:S, CS:GO, DoD:S, Portal, Portal 2, Stanley Parable, L4D1/2, GMod | ✅ | VBSP `.bsp` (incl. LZMA lumps) | [Source-family formats](#source-family-formats) |
+| Source 2 (`PBDEMS2`) | CS2, Dota 2, Deadlock | ✅ | CS2 `.vpk` collision mesh | [Source-family formats](#source-family-formats) |
+| GoldSrc (`HLDEMO`) | Half-Life 1, CS 1.6, DoD, Condition Zero | ✅ | v30 `.bsp`, multiple maps | [GoldSrc](#goldsrc-hldemo) |
+| Quake (`.dem`, `.mvd`, `.qwd`, `.dm2`, `.dm_66`-`.dm_68`) | Quake 1, QuakeWorld, Quake 2, Quake 3 Arena | ✅ | Q1 / Q2 / Q3 `.bsp` | [Quake family](#quake-family) |
+| Quake Live (`.dm_71`+) | | ⚠ detected, not decoded | | [Quake family](#quake-family) |
+| SFM (DMX), Titanfall (`R1DEMO`) | | ✗ rejected on magic | | [Source-family formats](#source-family-formats) |
+
+Use `demoscope --check` (see [Verification](#verification)) to test your own
+demos. How each decoder was built is covered in [Decoder notes](#decoder-notes).
+
 ## Source-family formats
 
-| Game | Status |
-|------|--------|
-| Team Fortress 2 | ✅ Full - events, BSP (incl. LZMA), life breaks, teleport arcs, multi-player tracks |
-| Half-Life 2 (all versions) | ✅ Full |
-| HL2: Episode One / Two | ✅ |
-| HL2: Lost Coast | ✅ |
-| HL2 Deathmatch | ✅ |
-| Counter-Strike: Source | ✅ |
-| Day of Defeat: Source | ✅ |
-| Portal | ✅ |
-| Garry's Mod 9 / 10 Classic (legacy) | ✅ Camera path, usercmd inputs, and **player position track**. The net-7 entity-gap and field-gap readers plus the `CHANGES_OFTEN` flatten reorder are decoded from the November 2004 engine; GMod's initial world/player snapshot and partial entity/yaw updates now decode transactionally. Mod-specific later deltas remain sparse on `zombieslayer`, so entity 1 uses the recorder's dense viewOrigin path (3142 samples) while decoded remote entities/yaw are retained. The old view angles use 16-bit bitangles and GMod's extended usercmd payload carries a byte-aligned button mask (M1/M2/W/A/S/D). Verified on `zombieslayer.dem` (`garrysmod10classic`, proto 3/net 7). |
-| HL2 Old Engine | ✅ Native player entity path, camera, and usercmd inputs. The November 2004 `engine.dll` confirms unsigned Exp-Golomb entity/field gaps and a post-hierarchy `SPROP_CHANGES_OFTEN` shuffle; packets apply transactionally. Verified on `gmancheapledemo.dem` (`hl2`, proto 2/net 7): CWorld/CHL2_Player baseline plus a 1,976-sample native player track across 3,770 input rows. |
-| Portal 2 / Aperture Tag / Portal Stories / Portal Reloaded | ✅ Entity positions, eye-yaw, full DataTables (306 tables / 235 classes). Real `m_vecOrigin` decode verified against an `engine.dll` bit-trace. Mid-game / SAR speedrun (`fullgame`) recordings now decode too (the 12-bit `svc_UserMessage` fix). The event parser is proto-4-aware, but single-player Portal demos carry no networked `svc_GameEvent` messages (events fire locally), so the event log is empty for them - correct, not a gap. **Real usercmds now decode** (W/A/S/D + view angles + analog move): the proto-4 walk was treating `DEM_CustomData` as a plain length-prefixed block and desyncing right after signon before any usercmd: fixed (`testingportal2` → 5844 usercmds; a SAR speedrun → 12900). |
-| The Stanley Parable | ✅ Same Portal 2-engine path - 237 classes, real positions (2226 samples on the sample demo). `net_protocol = 1000` but shares the 19+8 flag format, splitscreen = 2, and message-ID remap. |
-| L4D1 / L4D2 | ✅ Per-player entity positions, eye-yaw, weapon switches, names, life states - plus inputs and recorder camera path. DataTables (222 / 278 classes - L4D1 = 16-bit flags + `m_nBits` 6; L4D2 = 19+8 + `m_nBits` 6). The final piece was the net-message map: L4D shares the Portal 2 engine's renumbering (`NetTick = 4`, `SvcPrint = 16`), verified against L4D1 `engine.dll`. `demogaty.dem` (L4D2) = 447 position samples + 324 game events on `c8m2_subway`. L4D's `svc_UserMessage` length stays 11-bit (Portal 2 widened it to 12). |
-| CS:GO (Source 1, ≤ 2023) | ✅ Per-player positions, eye angles, life states, weapons, inputs, names/SteamIDs, events, grenades, economy, and scoreboard. The protobuf message, SendTable, PacketEntities, game-event, and live `userinfo` string-table layers live in `src/source/csgo/`. Verified on GOTV and POV recordings, including players connected before recording began. |
-| Garry's Mod 13+ (`GMODEMO`) | ✅ Inputs, game events, names, recorder camera **and per-player entity tracks** (multiple players for MP demos). GMod ships a modified Source 2013 stream: three GMod-specific encodings were reverse-engineered from its `engine.dll` (all gated on `garrysmod`): `MAX_EDICT_BITS=13` (8192 edicts), a 24-bit `svc_PacketEntities` length field, and a hybrid `svc_CreateStringTable` (16-bit max_entries + varint length + compressed bit). Verified player tracks on three demos: `type6interloperedgmod` (2 players, 100% of entity packets), `garrythirteen` (full track across `gm_construct`), `gm_flatgrass` (934 samples spanning the demo). Players and other low-index entities decode every packet; high-index sandbox props that the server deltas without a prior ENTER (a Source baseline edge case) are skipped, which doesn't affect player tracking. |
-| CS2 / Dota 2 / Deadlock (`PBDEMS2`, Source 2) | ✅ **Per-player entity tracks.** A full from-scratch Source 2 pipeline (`src/source2/`): a dependency-free Snappy decompressor, the PBDEMS2 container walk, `CSVCMsg_FlattenedSerializer` parsing with **(name, version)**-accurate serializer linking, the canonical field-path Huffman tree, all Source 2 field decoders (quantized / coord / normal / qangle variants / sim-time / pointer-boolean / etc., matched against LaihoE-demoparser + clarity), string tables, instance baselines, and the `CSVCMsg_PacketEntities` delta walk. Decodes player **world positions** (cell + quantized-vector → world coords), eye-angles, **player/bot names** (controller `m_iszPlayerName` + the `userinfo` string table from `CDemoStringTables`, so the local host is named too), **death/respawn** (`m_lifeState` → the viewer's death-hiding), **game events** (`CMsgSource1LegacyGameEventList` descriptors + `CMsgSource1LegacyGameEvent`: player_death/kills, bomb plant/defuse/explode, round_start/end/mvp, grenades, … → the event timeline), and **economy + scoreboard** per player (money `m_pInGameMoneyServices.m_iAccount`, kills/deaths/assists `m_pActionTrackingServices`, `m_iScore`, `m_iTeamNum` → embedded in player metadata), plus map (from `svc_ServerInfo`), duration and build. **Verified:** a full CS2 match on `de_nuke` decodes **10 players (all named), ~190K position samples, 0 failed packets** (all 19,001 entity packets), 8 rounds, **703 gameplay events (55 kills, bomb plants)**, and a correct scoreboard (e.g. top fragger 19K/4D/5A). Routed by the unambiguous `PBDEMS2\0` magic, checked before the `.dem`-extension Quake route. **Map overlay now works:** CS2 maps are VPK-packed Source 2 resources (not VBSP), so a from-scratch pure-Rust stack: VPK v2 reader, Source 2 resource container, a full **KV3 v5** decoder (zstd dual-buffer value tree), and a physics-shape walker (`src/source2/{vpk,resource,kv3,vphys,map}.rs`): decodes the `world_physics.vmdl_c` collision mesh (meshes + fan-triangulated convex hulls) into the same base64 vertex/index buffers the BSP overlay uses. Drop the map's `.vpk` beside the demo (CLI) or in the drag-drop slot (web). **Verified:** `de_nuke.vpk` → 5988 hulls + 11 meshes → 115,738 verts / 191,628 triangles, with the player tracks sitting inside the map bounds. The textured render meshes (meshopt-compressed, per-instance) stay out of scope; the collision hull is the overlay. **Gameplay depth (CS2):** real **input monitoring** (held-button mask `m_nButtonDownMaskPrev` off `CCSPlayer_MovementServices` → W/A/S/D/attack/jump/duck), **held weapon** (`m_pWeaponServices.m_hActiveWeapon` → class name), **kill attribution** (`player_death` `*_pawn` handles remapped so the kill feed/arcs/markers name who killed whom: 55/55), **round events** (synthesized from `m_totalRoundsPlayed`, since CS2 emits no `round_end`), and **grenade markers + thrower** (incl. molotov-fire attribution via the `CInferno` `m_hOwnerEntity`: 6/7). Avatars hide on PVS/death gaps instead of freezing. Deadlock/Dota: positions/names/events work, but no held weapon (ability system) and no live input mask (toggle-only), so input falls back to velocity-derived WSAD. |
-| SFM (DMX) / Titanfall (`R1DEMO`) | ✗ Different file format entirely - rejected on magic |
+| Game | Status | Verified on |
+|------|--------|-------------|
+| Team Fortress 2 | ✅ Events, map (incl. LZMA), life breaks, teleport arcs, multi-player tracks | |
+| Half-Life 2, Episode One / Two, Lost Coast, HL2 Deathmatch | ✅ Full | |
+| Counter-Strike: Source | ✅ Full | |
+| Day of Defeat: Source | ✅ Full | |
+| Portal | ✅ Full | |
+| HL2 old engine (2004) | ✅ Native player track, camera, inputs | `gmancheapledemo.dem` |
+| Garry's Mod 9 / 10 Classic | ✅ Camera, inputs, player track (falls back to the camera path where entity deltas are sparse) | `zombieslayer.dem` |
+| Garry's Mod 13+ (`GMODEMO`) | ✅ Inputs, events, names, camera, per-player tracks | `type6interloperedgmod`, `garrythirteen`, `gm_flatgrass` |
+| Portal 2, Aperture Tag, Portal Stories, Portal Reloaded | ✅ Positions, eye-yaw, inputs, incl. mid-game / SAR speedrun recordings. Single-player demos have no networked events, so the event log is empty | `testingportal2`, SAR speedrun |
+| The Stanley Parable | ✅ Same path as Portal 2 | sample demo, 2,226 samples |
+| L4D1 / L4D2 | ✅ Positions, eye-yaw, weapons, names, life states, inputs, camera | `demogaty.dem` (L4D2, `c8m2_subway`) |
+| CS:GO (Source 1, ≤ 2023) | ✅ Positions, angles, life states, weapons, inputs, names, events, grenades, economy, scoreboard | GOTV and POV recordings |
+| CS2 | ✅ Positions, names, deaths, events, kill attribution, rounds, grenades, inputs, held weapon, economy, scoreboard, map overlay from `.vpk` | full `de_nuke` match: 10 players, 0 failed packets |
+| Dota 2 / Deadlock | ✅ Positions, names, events. No held weapon; inputs are estimated from movement | |
+| SFM (DMX) / Titanfall (`R1DEMO`) | ✗ Different file format, rejected on magic | |
 
-Multi-player entity decode is native on TF2, CS:S, CS:GO, Portal 2, The Stanley Parable, L4D1/2, and GMod 13. Other Source 1 games fall back to the recorder camera when compatible player properties are unavailable.
+Multi-player entity decode is native on TF2, CS:S, CS:GO, Portal 2, The Stanley
+Parable, L4D1/2, GMod 13 and Source 2. Other Source 1 games fall back to the
+recorder camera when compatible player properties are unavailable.
 
 ## Quake family
 
-Separate engine lineage, decoded in `src/quake/`. Quake demos are recordings of the server's network stream, so entity **positions are already in the bytes** - the decoder reads them, it doesn't re-simulate. Each parser emits the same `MultiPlayerData` (per-entity position/angle tracks + names + death/spectate state) the Source path uses, so the full 3D viewer / minimap / heatmap / POV camera / **death-hiding** work unchanged. Files are routed by extension; HL2DEMO demos are never misclassified (the magic is checked first).
+Quake demos record the server's network stream, so positions are read directly
+from the file. Files are routed by extension, after the Source and GoldSrc magic
+checks. For the map overlay, place the matching `.bsp` beside the demo (Quake 3
+maps ship inside a `.pk3`: extract `maps/<name>.bsp`).
 
-**Map overlay.** All three Quake BSP formats render if the matching `.bsp` is placed beside the demo (Quake 3 maps come in a `.pk3` - extract `maps/<name>.bsp` from it): **Quake 1** (version 29, shared with the GoldSrc decoder), **Quake 2** (`IBSP` v38 - edge/surfedge walk, 76-byte texinfo, SURF-flag sky/nodraw skip), **Quake 3** (`IBSP` v46 - meshvert-indexed drawverts, polygon + mesh faces; bezier patches are counted and skipped, tool/sky shaders dropped by name). Routed by magic/version through `bsp::extract_any_bsp`. Verified: `dm6.bsp` (Q1, 6750 tris), `base64.bsp` (Q2, 64962 tris), `cpm4.bsp` (Q3, 10711 tris) - on the cpm4 demo the recorder track sits 100% inside the decoded map bounds.
-
-**Death & spectator hiding.** The viewer hides an avatar while it's dead or spectating (same machinery as Source `m_lifeState`/`m_iObserverMode`). Quake feeds it from: Q3 entity `eFlags & EF_DEAD` (death→respawn) + the recorder's `pm_type == PM_DEAD` + players whose configstring team is `TEAM_SPECTATOR`; Q2 the recorder's `pm_type` (`PM_DEAD`/`PM_GIB`). The recorder is **not** hidden for `PM_SPECTATOR` - in-eye/POV demos sit there the whole time and that camera is what you follow.
-
-| Game | Status |
-|------|--------|
-| **Quake 2** (`.dm2`, protocol 34) | ✅ Per-player tracks (playerstate origin + packetentities delta), viewangles, names, map, recorder death-hiding. Byte/short oriented, no compression. Verified on a real DM demo (5 players, 9,464 frames, 11.3k samples); effect ops incl. the variable-length `svc_temp_entity` are decoded so the stream stays in sync. |
-| **Quake 3 Arena** (`.dm_66`-`.dm_68`, protocol 66-68) | ✅ Huffman-compressed bitstream + delta-compressed snapshots; player tracks, viewangles, names, map, per-player death-hiding + spectator-team hiding. Static Huffman tree plus the `entityState`/`playerState` field tables and delta logic are ported verbatim from GPL ioquake3 (`qcommon/msg.c`, `qcommon/huffman.c`); the 256-entry frequency table is byte-checked against source. Verified on 3 demos (q3tourney6, cpm4, pro-q3dm6). **`.dm_71`/`.dm_73`/`.dm_90`+ (Quake Live) are NOT supported** - QL extends the netfield tables, so it's detected and warned but the decode will desync. |
-| **Quake 1** (NetQuake `.dem`, protocol 15) | ✅ Entity/player position tracks, recorder POV angles, names, map (`CL_ParseServerMessage` / `CL_ParseUpdate`). Verified on real DM demos (`boodwand2` "The Dark Zone", `1134_rd1` "The Abandoned Base" - 12 players each, ~24k frames, names de-quaked from the colour/gold-font charset so the `1134` clan tag etc. read correctly). |
-| QuakeWorld (`.qwd` / `.mvd`) | ⚠ Detected but not decoded - QuakeWorld uses an extension-negotiated protocol (the sample carries FTE extensions) distinct from NetQuake. Clean error, no crash. |
+| Game | Status | Verified on |
+|------|--------|-------------|
+| Quake 1 (NetQuake `.dem`, protocol 15) | ✅ Player tracks, POV angles, names, map | `boodwand2`, `1134_rd1` |
+| QuakeWorld MVD (`.mvd`, protocol 28 + FTE / MVDSV extensions) | ✅ Player tracks, view angles, names, deaths, spectators, map | 4on4 KTX match on `dm3`: 8 players, whole file decoded |
+| QuakeWorld client demo (`.qwd`) | ⚠ Implemented; covered by synthetic unit tests only (no real sample yet): player tracks, recorder view angles, names, deaths | |
+| Quake 2 (`.dm2`, protocol 34) | ✅ Player tracks, angles, names, map, recorder death-hiding | 5-player DM demo, `base64.bsp` |
+| Quake 3 Arena (`.dm_66`-`.dm_68`) | ✅ Player tracks, angles, names, map, death and spectator hiding | `q3tourney6`, `cpm4`, `pro-q3dm6` |
+| Quake Live (`.dm_71`, `.dm_73`, `.dm_90`+) | ⚠ Detected and warned; decode is not supported | |
 
 ## GoldSrc (HLDEMO)
 
-The Quake-derived engine behind Half-Life 1 and its mods - a separate lineage from both Source (`HL2DEMO`) and id Quake. Decoded in `src/goldsrc.rs`. Routed by the `HLDEMO\0\0` magic, which is checked before the Quake `.dem` fallthrough so GoldSrc demos are never misclassified as NetQuake.
+| Game | Status | Verified on |
+|------|--------|-------------|
+| Half-Life 1, CS 1.6, DoD, Condition Zero (demo proto 5, net proto 48) | ✅ Recorder camera, per-player tracks, names, map overlay | `cs_assault` (CZ): 13 player tracks, all inside the map |
 
-| Game | Status |
-|------|--------|
-| **Half-Life 1 / CS 1.6 / DoD / Condition Zero** (`HLDEMO`, demo proto 5, net proto 48) | ✅ Container + recorder POV camera + **per-player entity tracks**. The 544-byte header (map, game dir, protocols), the directory at byte 540, the 92-byte directory entries, and the frame stream (9-byte `type/time/frame` header; NetMsg / DemoStart / ConsoleCommand / ClientData / NextSection / Event / WeaponAnim / Sound / DemoBuffer) are parsed and verified byte-for-byte against a real Condition Zero demo (`cs_assault`, `czero`, **95.78 s / 7916 frames**, directory math exact). The **recorder camera path renders**: eye origin + view angles come from each NetMsg `RefParams` (`vieworg` @ body+4, `viewangles` @ body+16, `msg_length` @ body+464). Frame layout transcribed from the open-source `hldemo` parser - no IDA needed (GoldSrc's structs are public). The walker resyncs past the occasional length-quirk frame (≈26 / 24k on the sample) so the trajectory is complete - `cs_assault` = 7916 samples across the full map. **Other-player tracks** now decode too: the bit-packed svc stream inside each NetMsg blob is walked (the GoldSrc delta protocol - bootstrap `delta_description_t`, `svc_deltadescription` field tables, `svc_packetentities`/`svc_deltapacketentities` deltas against `entity_state_t`/`entity_state_player_t`, names from `svc_updateuserinfo`), accumulating per-entity `origin[*]`/`angles[*]`. Each NetMsg frame is length-framed, so a mis-sized message only desyncs within that one blob. Field tables/delta logic mirror the LGPL `khanghugo/dem`; no protobuf, no IDA. On `cs_assault`: **13 player tracks / 12,211 samples, 100 % inside the BSP bounds**, recorder = `Sierra`. The **GoldSrc BSP map overlay** also renders (version 30 / Quake-1 version 29): same lump-based face walk as VBSP but a 15-lump header, 20-byte `dface_t`, 40-byte texinfo, and no LZMA/displacements; sky and tool brushes (`sky*`, `aaatrigger`, `clip`, …) are dropped by texture name. Verified on `cs_assault.bsp` (2805 verts / 5547 tris) - the map geometry envelops every player trajectory exactly. Drop the `.bsp` next to the demo, same as Source. |
-
-GoldSrc supports multiple simultaneous BSP layers through repeatable `--map`
-flags or multiple browser drops. Ordered campaign layers automatically align
-when consecutive BSPs share an `info_landmark` targetname: their geometry is
-translated into one campaign space and matching camera/player track segments
-switch spaces at the detected coordinate discontinuity. Maps without a shared
-landmark intentionally retain their native coordinates.
+GoldSrc viewers can load several maps at once with repeatable `--map` flags or
+multiple browser drops. When consecutive maps share an `info_landmark`, they are
+aligned into one campaign space automatically, and the camera and player tracks
+switch spaces at the changelevel. Maps without a shared landmark keep their
+native coordinates.
 
 ## Verification
 
@@ -69,3 +81,80 @@ demoscope --check /path/to/demos
 the result is usable with partial packet loss, and `FAIL` makes the command exit
 non-zero. Historical corpus counts are kept in the changelog alongside the
 version they describe rather than presented here as current results.
+
+## Decoder notes
+
+Technical background for each decoder, for contributors. Users can skip this.
+
+### Source 1
+
+- **HL2 old engine / GMod Classic (net protocol 7).** Entity and field gaps use
+  the November 2004 `engine.dll`'s unsigned Exp-Golomb reader, followed by a
+  post-hierarchy `SPROP_CHANGES_OFTEN` reorder. Packets apply transactionally,
+  so one bad delta can't corrupt later state. Old view angles are 16-bit
+  bitangles; GMod Classic's usercmd carries a byte-aligned button mask.
+  `gmancheapledemo` gives a 1,976-sample native player track. On `zombieslayer`,
+  later mod-specific deltas are sparse, so the recorder uses the dense camera
+  path (3,142 samples) while decoded remote entities are kept.
+- **GMod 13+.** A modified Source 2013 stream with three GMod-only encodings
+  (gated on `garrysmod`): 13-bit edict indices (8,192 edicts), a 24-bit
+  `svc_PacketEntities` length, and a hybrid `svc_CreateStringTable`. High-index
+  sandbox props that arrive without an Enter-PVS are skipped; players are
+  unaffected.
+- **Portal 2 / Stanley / L4D (demo protocol 4).** See [PROTO4.md](PROTO4.md).
+  Portal 2 decodes 306 tables / 235 classes, Stanley 237 classes, L4D1 222 and
+  L4D2 278. L4D shares the Portal 2 net-message numbering but keeps an 11-bit
+  `svc_UserMessage` length (Portal 2 uses 12).
+- **CS:GO.** A separate protobuf-based path in `src/source/csgo/` (messages,
+  SendTables, PacketEntities, game events, live `userinfo` table).
+
+### Source 2
+
+- A from-scratch pipeline in `src/source2/`: Snappy, the `PBDEMS2` container,
+  flattened serializers linked by (name, version), the field-path Huffman tree,
+  all field decoders, string tables, baselines and the entity delta walk.
+  Routed by the `PBDEMS2\0` magic.
+- **CS2 map overlay.** CS2 maps are VPK-packed Source 2 resources, decoded by a
+  VPK v2 reader, resource container, KV3 v5 decoder and physics-shape walker
+  (`src/source2/{vpk,resource,kv3,vphys,map}.rs`). The overlay is the
+  `world_physics.vmdl_c` collision mesh; textured render meshes are out of
+  scope. `de_nuke.vpk` gives 115,738 verts / 191,628 triangles.
+- **CS2 gameplay.** Inputs come from `m_nButtonDownMaskPrev`, the held weapon
+  from `m_hActiveWeapon`, and kill attribution from remapped `player_death` pawn
+  handles. Rounds are synthesized from `m_totalRoundsPlayed` (CS2 sends no
+  `round_end`). Molotov fire is attributed through `CInferno.m_hOwnerEntity`.
+
+### Quake
+
+- **Map formats.** Quake 1 (v29, shared with GoldSrc), Quake 2 (`IBSP` v38) and
+  Quake 3 (`IBSP` v46; bezier patches skipped, tool and sky shaders dropped),
+  routed through `bsp::extract_any_bsp`.
+- **Death and spectator hiding.** Quake 3 uses entity `EF_DEAD`, the recorder's
+  `PM_DEAD` and the spectator team; Quake 2 uses the recorder's `PM_DEAD` /
+  `PM_GIB`. The recorder is not hidden for `PM_SPECTATOR`, since POV demos sit
+  there the whole time.
+- **Quake 3.** The Huffman tree and field tables are ported from GPL ioquake3
+  (`qcommon/msg.c`, `qcommon/huffman.c`). Quake Live extends the field tables,
+  which is why it desyncs.
+- **Quake 1.** Player names are converted from the Quake colour charset so clan
+  tags read correctly.
+- **QuakeWorld** (`src/quake/qw.rs`). `.mvd` and `.qwd` share one message
+  parser with different framing: MVD frames carry a millisecond delta and a
+  target-player byte, QWD frames an absolute time and the recorder's usercmd.
+  Players come from `svc_playerinfo` (delta-coded per player in MVDs); entity
+  updates are consumed but not drawn. `FTE_PEXT_FLOATCOORDS` switches coords to
+  floats and angles to 16 bits, and MVDSV hidden-message frames (`dem_multiple`
+  sent to nobody) are skipped. Layouts follow the ezQuake / MVDSV sources.
+  Run with `DUMP_QUAKE=1` to print where decoding stopped and per-player frags
+  against decoded deaths.
+
+### GoldSrc
+
+- The 544-byte header, directory and frame stream are parsed following the
+  open-source `hldemo` parser. The camera comes from each NetMsg's `RefParams`.
+  The walker resyncs past occasional mis-sized frames.
+- Other players come from the bit-packed delta protocol inside each NetMsg
+  (`svc_deltadescription`, `svc_packetentities`, `svc_deltapacketentities`,
+  names from `svc_updateuserinfo`), mirroring the LGPL `khanghugo/dem`.
+- The map overlay reads v30 / v29 BSPs, dropping sky and tool textures by name.
+  `cs_assault.bsp` gives 2,805 verts / 5,547 triangles.

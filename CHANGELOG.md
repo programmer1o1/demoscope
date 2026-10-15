@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.8.0 (unreleased)
+
+- **QuakeWorld `.mvd` decoding.** MVDSV / KTX multi-view recordings now decode
+  to per-player tracks, view angles, names, deaths and spectators, including the
+  FTE float-coordinate and MVDSV hidden-message extensions. Verified on a full
+  4on4 match (8 players, 255k samples, whole file decoded with no bad messages).
+  `.qwd` client demos are implemented too but covered by synthetic unit tests
+  only, as there is no real sample yet.
+- **Viewer redesign.** A square, monospace, black-and-white theme with hairline
+  borders and no shadows or radii, applied to the viewer, the split viewer and
+  the drag-and-drop page.
+- **Paths break at teleports and respawns.** Track thinning now keeps both ends
+  of every large single-step jump, so the viewer no longer draws straight lines
+  from death spots to respawn points or counts them as speed peaks. Same-tick
+  jumps also count as teleports.
+- **Fixed a viewer crash.** `updateMultiPlayer` read `isRecorderEid` outside the
+  block that declared it, which threw on every frame.
+- **Viewer runtime check.** `scripts/check-viewer.sh` loads generated viewers in
+  headless Chromium and fails on any JavaScript error. It runs in the regression
+  workflow against two small fixture demos in `tests/fixtures/`.
+- `--html` now creates missing output directories, and write errors name the
+  path.
+- Portal 2 `--diff` no longer desyncs on `DEM_CustomData` frames, and file names
+  in `--diff-split` pane labels are escaped.
+- **Docs.** New `docs/ARCHITECTURE.md`; `COMPATIBILITY.md` is now a short
+  per-game matrix with decoder notes at the end; README intro and feature list
+  trimmed, with a quick-preview example.
+
 ## v0.7.0: "Signal"
 
 - Redesigned the browser intake and generated viewer around a shared Demoscope

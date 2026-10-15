@@ -2,14 +2,14 @@
   <img src="assets/logo/demoscope-banner.svg" alt="demoscope: pure-Rust parser and 3D visualiser for game demo files" width="100%">
 </p>
 
-Fast, pure-Rust parser and interactive 3D visualiser for game demo files across four engine families: built with a handful of pure-Rust crates and no C toolchain.
+A fast, pure-Rust parser and interactive 3D viewer for game demo files. No C toolchain needed.
 
-- **Source 1 (HL2DEMO)** - Team Fortress 2, Half-Life 2 (all versions), Counter-Strike: Source, Counter-Strike: Global Offensive, Day of Defeat: Source, Portal, Portal 2, The Stanley Parable, Left 4 Dead 1/2, and Garry's Mod (`GMODEMO`). Decodes player positions, inputs, game events, per-player entity tracks, and (CS:S / CS:GO) economy + scoreboard into a full visualisation.
-- **Source 2 (PBDEMS2)** - Counter-Strike 2, Dota 2, Deadlock. Per-player world positions, names, death/respawn, game events, and economy + scoreboard, plus a **CS2 map overlay** decoded from the map's `.vpk` (VPK → Source 2 resource → KV3 → world-collision mesh).
-- **GoldSrc (HLDEMO)** - Half-Life 1, Counter-Strike 1.6, Day of Defeat, Condition Zero. Recorder POV camera + map overlay.
-- **Quake family** - Quake 1 (NetQuake), Quake 2, and Quake 3 Arena, with per-player tracks and map overlays.
+- **Source 1** - TF2, Half-Life 2, CS:S, CS:GO, DoD:S, Portal, Portal 2, The Stanley Parable, L4D1/2, Garry's Mod
+- **Source 2** - CS2, Dota 2, Deadlock
+- **GoldSrc** - Half-Life 1, CS 1.6, Day of Defeat, Condition Zero
+- **Quake** - Quake 1, QuakeWorld, Quake 2, Quake 3 Arena
 
-All four render through the same viewer (3D scene, minimap, heatmap, POV camera, scoreboard, kill arcs). The world geometry is drawn behind the paths from a matching map file placed beside the demo: a `.bsp` for Source 1 / GoldSrc / Quake (VBSP, GoldSrc/Q1 v30/v29, Quake 2 `IBSP` v38, Quake 3 `IBSP` v46), or the map's `.vpk` for CS2.
+Every format opens in the same viewer: a 3D scene with player paths, a minimap, heatmap, POV camera, scoreboard and kill arcs. Put the map file next to the demo to draw the level around the paths (a `.bsp`, or the map's `.vpk` for CS2).
 
 See the **[full compatibility matrix](docs/COMPATIBILITY.md)** for per-game status.
 
@@ -40,7 +40,9 @@ python3 -m http.server 8088 --directory web
 
 Drop a `.dem` (and optionally the matching `.bsp`) onto the page. The viewer renders entirely in your browser - files never leave your machine. WASM parse time is ~5-8× slower than the native CLI (a 14 MB demo parses in ~1.6 s on Apple Silicon vs ~250 ms native), but for sharing demos with someone who doesn't have the CLI installed it's a meaningful upgrade.
 
-Build artifacts land in `web/` (the `.wasm` + JS glue are gitignored and built fresh - only `web/index.html` is committed). The `.github/workflows/pages.yml` workflow runs `build-wasm.sh` and deploys `web/` to GitHub Pages on every push to `master`, so the hosted viewer always matches source (enable it once under repo Settings → Pages → Source: "GitHub Actions"). The library entry point is `pub fn parse_demo_to_html(demo: &[u8], bsp: Option<Vec<u8>>, name_hint: &str, jump_threshold: f32) -> Result<String, JsValue>` in `src/lib.rs`.
+The viewer template is compiled into the wasm build, so rerun `./scripts/build-wasm.sh` after editing `src/render/html/template.html`.
+
+Build artifacts land in `web/` (the `.wasm` + JS glue are gitignored and built fresh - only `web/index.html` is committed). The `.github/workflows/pages.yml` workflow runs `build-wasm.sh` and deploys `web/` to GitHub Pages on every push to `master`, so the hosted viewer always matches source (enable it once under repo Settings → Pages → Source: "GitHub Actions"). The wasm entry point is `parse_demo_to_html(demo, bsp, name_hint, jump_threshold, diff, diff_name) -> Result<String, JsValue>` in `src/lib.rs`: `bsp` is an optional map buffer (a `.vpk` for CS2), `jump_threshold` of `0` means auto-derive, and `diff` / `diff_name` optionally add a ghost demo for comparison. Native consumers can call `generate_html_string`, re-exported from the same file.
 
 ---
 
@@ -99,11 +101,22 @@ The CSV columns are documented in [docs/FORMAT.md](docs/FORMAT.md#csv-column-ref
 
 `demoscope --html` produces a single HTML file with all demo data embedded. Viewer libraries are loaded from a CDN, so the first open requires a network connection; they work offline afterward when the browser cache is available.
 
+To preview a demo quickly, generate a viewer and open it directly, or serve its folder:
+
+```bash
+demoscope demo.dem --html out/index.html
+python3 -m http.server 8088 --directory out
+# open http://localhost:8088/
+```
+
 Place the `.bsp` map file in the same directory as the demo for the full 3D map overlay. Source VBSP (incl. LZMA-compressed lumps common in TF2 workshop maps), GoldSrc / Quake 1 (v30 / v29), Quake 2 (`IBSP` v38), and Quake 3 (`IBSP` v46) maps are all decoded automatically by version. Quake 3 maps ship inside a `.pk3` - extract `maps/<name>.bsp` and place it beside the demo.
 
 For campaigns split across several GoldSrc maps, repeat `--map FILE` or drop
 multiple BSPs into the browser. All layers render together in their native map
-coordinates; automatic landmark-based alignment is not yet implemented.
+coordinates. When consecutive maps share an `info_landmark` (the usual case for
+Half-Life campaign changelevels), they are aligned into one campaign space
+automatically; maps with no shared landmark keep their native coordinates. See
+[docs/COMPATIBILITY.md](docs/COMPATIBILITY.md#goldsrc-hldemo).
 
 ### Controls
 
@@ -113,32 +126,35 @@ coordinates; automatic landmark-based alignment is not yet implemented.
 | Scroll | Zoom |
 | Right-drag | Pan |
 | Space | Play / pause |
+| ← / → | Step one frame (hold Shift for 10) |
+| ↑ / ↓ | Playback speed up / down (0.5×, 1×, 2×, 5×, 10×) |
+| `[` / `]` | Previous / next round |
+| S | Open / close the scoreboard (when the demo has scoreboard data) |
+| Esc | Close the scoreboard, then the console overlay |
 | Timeline scrubber | Seek |
 
 ### Features
 
 | Section | Content |
 |---------|---------|
-| **3D scene** | Full BSP map mesh (incl. displacement terrain) + per-player path |
+| **3D scene** | The map (incl. displacement terrain) with each player's path |
 | **Playback** | Play/pause, speed 0.5×-10×, timeline scrubber |
-| **Metadata header** | Map, game, client, server name, duration, tickrate, demo protocol, usercmd / life / death / teleport counts |
-| **Speedometer** | Real engine-derived horizontal velocity (current + peak) computed from `viewOrigin` deltas |
-| **Players panel** | Sidebar entry per detected player. Click to toggle their path; right-click to set as primary (controls camera follow + Lives panel) |
-| **Lives panel** | Primary player's alive intervals from `m_lifeState`; click any row to seek |
-| **Deaths** | Off → YOU (primary only) → ALL three-state toggle |
-| **Rounds** | Auto-detected round windows. Prev/Next/All buttons, per-round seek, timeline shading |
-| **Camera modes** | Orbit · Follow Player · First Person |
-| **Player avatars** | Simple coloured box per entity. Primary tinted blue; YOU tag in the sidebar |
-| **Fire markers** | Toggle small spheres at every `IN_ATTACK` rising edge, coloured by `weaponselect` |
-| **Kill arcs** | `Kills` toggle draws a bezier arc from attacker → victim at each kill, lit up during playback (headshots gold, body shots orange-red) with an on-screen colour legend. Needs multi-player entity tracks |
-| **Teleport arcs** | Cyan bezier arcs for teleporter / Eureka Effect events |
-| **Minimap** | 2D top-down overlay with per-player paths, death markers, and current-position dots. `Heatmap` button overlays a log-scaled density grid (per-entity when MP is active) |
-| **Event log** | Scrollable table of parsed game events - click a row to seek |
-| **Console** | Chat + kills + spawns + rounds + connects in a Source-style log. Filter chips per category; expand-to-fullscreen button (⛶) auto-scrolls during playback |
-| **GIF export** | `Record GIF` captures the canvas at configurable speed/fps/duration. Optional HUD overlay composites the minimap + player name onto every frame |
-| **Video export** | `Record Video` records MP4/H.264 (preferred) or WebM/VP9/VP8 via the `MediaRecorder` API. Higher quality and smaller files than GIF |
-| **Active weapon readout** | Below the WASD/M1 panel: shows which weapon the primary player is holding, derived from `m_hActiveWeapon` and the wielded entity's class name |
-| **Hide specs toggle** | Players panel button that suppresses bots / observers / HLTV / recorder-while-spectating from the 3D scene + minimap + death markers. Combines a < 3-sample-count heuristic with the `svc_SetView` spectator-switch intervals so CS:S recorders don't render on top of whoever they're watching |
+| **Header** | Map, game, client, server, duration, tickrate, protocol, and life / death / teleport counts |
+| **Speedometer** | Current and peak horizontal speed |
+| **Players** | One entry per player. Click to show or hide their path; right-click to make them the primary player (followed by the camera) |
+| **Lives** | The primary player's lives; click one to jump to it |
+| **Deaths** | Death markers: off → primary player only → everyone |
+| **Rounds** | Detected rounds with Prev / Next / All, shaded on the timeline |
+| **Camera modes** | Orbit · Follow · First Person |
+| **Fire markers** | A marker at each shot, coloured by weapon |
+| **Kill arcs** | An arc from killer to victim at each kill (headshots gold), with a legend |
+| **Teleport arcs** | Arcs for teleporter / Eureka Effect events |
+| **Minimap** | Top-down view of paths, deaths and positions, with an optional heatmap |
+| **Event log** | Game events; click a row to jump to it |
+| **Console** | Chat, kills, spawns, rounds and connects, with filters and a fullscreen view |
+| **GIF / video export** | Record a GIF, or an MP4 / WebM video for higher quality |
+| **Inputs** | Live WASD / mouse / jump / duck keys and the held weapon |
+| **Hide specs** | Hides spectators, idle bots and the HLTV camera |
 
 ### Game-aware event filtering
 
@@ -150,9 +166,11 @@ coordinates; automatic landmark-based alignment is not yet implemented.
 
 | Doc | Contents |
 |-----|----------|
-| [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) | Per-game support matrix and release-verification guidance |
+| [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) | Per-game support matrix, verification, and decoder notes |
 | [docs/FORMAT.md](docs/FORMAT.md) | Demo file format, packet layout, UserCmd bit format, button masks, proto-4 SendTable/PacketEntities wire format, CSV columns, decode notes |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Source layout, how a demo is routed to a decoder, and how to add a new engine |
 | [docs/PROTO4.md](docs/PROTO4.md) | How proto-4 (Portal 2 / Stanley / L4D) decode was reverse-engineered, plus the env-gated trace switches for investigating a new proto-4 game |
+| [scripts/p2_engine_trace.md](scripts/p2_engine_trace.md) | Raw `engine.dll` bit-trace of the Portal 2 player class, used as ground truth for PROTO4 |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes and the full list of completed work |
 | [ROADMAP.md](ROADMAP.md) | Planned work |
 | [CREDITS.md](CREDITS.md) | Reference implementations, format docs, RE tooling, and demo contributors |
