@@ -673,6 +673,10 @@ if (CMDS.length === 0) {
     key = best;
   }
   const track = (key != null) ? ENTITY_TRACKS[key] : null;
+  // Engines that already ship a dense recorder path (GoldSrc) fill
+  // WORLD_POSITIONS themselves. Appending the track copy would add a second
+  // run that restarts at tick 0, so only fill it when it is empty.
+  const fillWorld = WORLD_POSITIONS.length === 0;
   if (track && track.length > 1) {
     // ENTITY_YAWS / ENTITY_TRACKS share the raw-world frame WORLD_POSITIONS
     // expects (interpolateWorldPositions negates y to the internal frame).
@@ -686,7 +690,7 @@ if (CMDS.length === 0) {
       // the first-person camera. Older demos without pitch leave it undefined.
       const pitch = yawArr.length ? (yawArr[yi][2] || 0) : 0;
       CMDS.push([tick, pitch, yaw, 0, 0, 0]);      // [tick, pitch, yaw, fwd, side, btns]
-      WORLD_POSITIONS.push([tick, x, y, z]);
+      if (fillWorld) WORLD_POSITIONS.push([tick, x, y, z]);
     }
   }
 }
@@ -2138,7 +2142,10 @@ function viewAngleAt(tick) {
   let dy = y1 - y0;
   if (dy >  180) dy -= 360;
   if (dy < -180) dy += 360;
-  return { pitch: p0 + f * (p1 - p0), yaw: y0 + f * dy };
+  let dp = p1 - p0;
+  if (dp > 180) dp -= 360;
+  if (dp < -180) dp += 360;
+  return { pitch: p0 + f * dp, yaw: y0 + f * dy };
 }
 
 // Authoritative recorder aim at a continuous game tick. This deliberately
@@ -2163,7 +2170,10 @@ function recorderCameraAimAt(tick) {
   let dy = y1 - y0;
   if (dy > 180) dy -= 360;
   if (dy < -180) dy += 360;
-  return { pitch: p0 + f * (p1 - p0), yaw: y0 + f * dy };
+  let dp = p1 - p0;
+  if (dp > 180) dp -= 360;
+  if (dp < -180) dp += 360;
+  return { pitch: p0 + f * dp, yaw: y0 + f * dy };
 }
 
 // ── Multi-player speedometer helpers ─────────────────────────────────────────

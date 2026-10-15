@@ -15,6 +15,14 @@
   of every large single-step jump, so the viewer no longer draws straight lines
   from death spots to respawn points or counts them as speed peaks. Same-tick
   jumps also count as teleports.
+- **Smoother Quake and QuakeWorld playback.** Players are now kept at about 12
+  points per second (was a fixed 4,000 per player, one every ~0.3 s on a
+  20 minute match), so paths and the first-person aim follow the recording
+  instead of stepping. Pitch is normalized, which stops the camera flipping
+  when the player aims across level (0/360 degrees), and the viewer no longer
+  appends a second, out-of-order copy of the primary path on Quake and GoldSrc
+  demos. Long Quake pages are larger (the QuakeWorld match goes from 2.5 to
+  5.2 MB).
 - **Fixed a viewer crash.** `updateMultiPlayer` read `isRecorderEid` outside the
   block that declared it, which threw on every frame.
 - **Viewer runtime check.** `scripts/check-viewer.sh` loads generated viewers in

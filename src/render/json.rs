@@ -143,15 +143,26 @@ pub(crate) fn spawn_to_json(spawn: [f32; 3]) -> String {
 }
 
 pub(crate) fn multi_tracks_to_json(data: &multi_player::MultiPlayerData) -> String {
+    multi_tracks_to_json_with(data, DEFAULT_TRACK_POINTS)
+}
+
+/// Default per-entity point budget for position tracks.
+pub(crate) const DEFAULT_TRACK_POINTS: usize = 4000;
+/// Default per-entity point budget for eye-angle streams.
+pub(crate) const DEFAULT_YAW_POINTS: usize = 1500;
+/// Default point budget for the recorder's camera-angle stream.
+pub(crate) const DEFAULT_VIEW_ANGLE_POINTS: usize = 6000;
+
+pub(crate) fn multi_tracks_to_json_with(
+    data: &multi_player::MultiPlayerData,
+    target_points: usize,
+) -> String {
     // Per-entity tracks → {"3":[[tick,x,y,z], ...], "4":[...], ...}
     // Subsampled to ~1500 points/entity. We include any entity that has
     // ANY track samples OR appears in life_states (so e.g. the spectator
     // entity shows up in the sidebar even with zero position updates).
-    // Density target per entity. Long demos (esp. Quake DM, 15-20 min) need
-    // enough points that adjacent samples stay within the ~0.5s interpolation
-    // window, or playback steps between keyframes. `subsample` only thins tracks
+    // `target_points` is the density per entity. `subsample` only thins tracks
     // longer than this, so short tracks are unaffected.
-    const TARGET_POINTS: usize = 4000;
     let mut eids: std::collections::BTreeSet<u32> = std::collections::BTreeSet::new();
     eids.extend(data.tracks.keys().copied());
     eids.extend(data.life_states.keys().copied());
@@ -162,7 +173,7 @@ pub(crate) fn multi_tracks_to_json(data: &multi_player::MultiPlayerData) -> Stri
         .map(|eid| {
             let empty = Vec::new();
             let samples = data.tracks.get(&eid).unwrap_or(&empty);
-            let reduced = multi_player::subsample(samples, TARGET_POINTS);
+            let reduced = multi_player::subsample(samples, target_points);
             let pts: Vec<String> = reduced
                 .iter()
                 .map(|(t, x, y, z)| {
@@ -250,20 +261,22 @@ pub(crate) fn multi_weapon_classes_to_json(data: &multi_player::MultiPlayerData)
 }
 
 pub(crate) fn multi_yaws_to_json(data: &multi_player::MultiPlayerData) -> String {
+    multi_yaws_to_json_with(data, DEFAULT_YAW_POINTS)
+}
+
+pub(crate) fn multi_yaws_to_json_with(
+    data: &multi_player::MultiPlayerData,
+    target: usize,
+) -> String {
     // Per-entity eye-angle yaw stream subsampled to a manageable size. Used by
     // the input panel to project velocity into the player's local frame for
     // proper WSAD reconstruction. Drop deg-fractions to 1 decimal to shave
     // bytes since the panel rounds to 90° quadrants anyway.
-    const TARGET: usize = 1500;
     let mut entries: Vec<String> = data
         .yaws
         .iter()
         .map(|(eid, ys)| {
-            let stride = if ys.len() > TARGET {
-                (ys.len() + TARGET - 1) / TARGET
-            } else {
-                1
-            };
+            let stride = ys.len().div_ceil(target).max(1);
             // [tick, yaw, pitch] - pitch (3rd element) drives the first-person
             // camera on proto-4 demos; older JS consumers read only [0]/[1].
             let mut pts: Vec<String> = ys
@@ -284,16 +297,18 @@ pub(crate) fn multi_yaws_to_json(data: &multi_player::MultiPlayerData) -> String
 }
 
 pub(crate) fn view_angles_to_json(data: &multi_player::MultiPlayerData) -> String {
+    view_angles_to_json_with(data, DEFAULT_VIEW_ANGLE_POINTS)
+}
+
+pub(crate) fn view_angles_to_json_with(
+    data: &multi_player::MultiPlayerData,
+    target: usize,
+) -> String {
     // Recorder's per-frame camera angles [tick, pitch, yaw] from democmdinfo.
     // Dense (~1 per game packet) and authoritative - drives the FPS camera on
     // demos with no usercmds. Keep generous resolution; this is the whole point.
-    const TARGET: usize = 6000;
     let v = &data.view_angles;
-    let stride = if v.len() > TARGET {
-        (v.len() + TARGET - 1) / TARGET
-    } else {
-        1
-    };
+    let stride = v.len().div_ceil(target).max(1);
     let mut pts: Vec<String> = v
         .iter()
         .step_by(stride)

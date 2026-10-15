@@ -324,6 +324,21 @@ fn decode(data: &[u8], name: &str) -> Result<(QuakeDemo, usize), Box<dyn Error>>
             ctx.tb.primary = Some(p as u32 + 1);
         }
     }
+    // An MVD has no recorder, so no camera-angle stream. The viewer defaults to
+    // the lowest slot as its primary, so use that player's aim as the dense
+    // first-person camera path instead of stepping through the thinned yaws.
+    if ctx.tb.view_angles.is_empty() {
+        let primary = ctx
+            .tb
+            .primary
+            .or_else(|| ctx.tb.tracks.keys().min().copied());
+        if let Some(yaws) = primary.and_then(|p| ctx.tb.yaws.get(&p)) {
+            ctx.tb.view_angles = yaws
+                .iter()
+                .map(|&(t, yaw, pitch)| (t, pitch, yaw))
+                .collect();
+        }
+    }
 
     let tick_rate = 1000.0;
     let duration = ctx.tick as f32 / tick_rate;
@@ -997,6 +1012,8 @@ mod tests {
         );
         assert_eq!(d.mpd.names[&1].name, "Ranger");
         assert!((d.mpd.yaws[&1][0].1 - 90.0).abs() < 0.01);
+        // No recorder in an MVD: the first player's aim stands in as the camera stream.
+        assert_eq!(d.mpd.view_angles, vec![(13, 0.0, 90.0)]);
     }
 
     #[test]

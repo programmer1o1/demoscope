@@ -220,12 +220,28 @@ pub struct TrackBuilder {
     last_obs: HashMap<u32, u8>,
 }
 
+/// Pitch in degrees mapped to [-180, 180). Quake engines store angles as
+/// 0-360, so looking up is ~340. The viewer interpolates pitch linearly, which
+/// would swing the camera the long way round between 359 and 1.
+pub fn normalize_pitch(deg: f32) -> f32 {
+    let mut d = deg % 360.0;
+    if d >= 180.0 {
+        d -= 360.0;
+    } else if d < -180.0 {
+        d += 360.0;
+    }
+    d
+}
+
 impl TrackBuilder {
     pub fn pos(&mut self, eid: u32, tick: i32, x: f32, y: f32, z: f32) {
         self.tracks.entry(eid).or_default().push((tick, x, y, z));
     }
     pub fn yaw(&mut self, eid: u32, tick: i32, yaw: f32, pitch: f32) {
-        self.yaws.entry(eid).or_default().push((tick, yaw, pitch));
+        self.yaws
+            .entry(eid)
+            .or_default()
+            .push((tick, yaw, normalize_pitch(pitch)));
     }
     pub fn name(&mut self, eid: u32, name: String) {
         if !name.is_empty() {
@@ -271,6 +287,11 @@ impl TrackBuilder {
             })
             .collect();
         let primary = self.primary.or_else(|| self.tracks.keys().min().copied());
+        let view_angles = self
+            .view_angles
+            .into_iter()
+            .map(|(t, pitch, yaw)| (t, normalize_pitch(pitch), yaw))
+            .collect();
         MultiPlayerData {
             map,
             server,
@@ -285,7 +306,33 @@ impl TrackBuilder {
             weapon_classes: HashMap::new(),
             econ: HashMap::new(),
             primary_entity: primary,
-            view_angles: self.view_angles,
+            view_angles,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pitch_is_mapped_to_signed_degrees() {
+        assert_eq!(normalize_pitch(0.0), 0.0);
+        assert_eq!(normalize_pitch(350.0), -10.0);
+        assert_eq!(normalize_pitch(80.0), 80.0);
+        assert_eq!(normalize_pitch(-10.0), -10.0);
+        assert_eq!(normalize_pitch(180.0), -180.0);
+        assert_eq!(normalize_pitch(725.0), 5.0);
+    }
+
+    #[test]
+    fn track_builder_normalizes_pitch_everywhere() {
+        let mut tb = TrackBuilder::default();
+        tb.pos(1, 0, 0.0, 0.0, 0.0);
+        tb.yaw(1, 0, 90.0, 345.0);
+        tb.view_angles.push((0, 355.0, 10.0));
+        let d = tb.build(String::new(), String::new(), 1.0, 1);
+        assert_eq!(d.yaws[&1], vec![(0, 90.0, -15.0)]);
+        assert_eq!(d.view_angles, vec![(0, -5.0, 10.0)]);
     }
 }

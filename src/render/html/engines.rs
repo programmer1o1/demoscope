@@ -15,10 +15,25 @@ use super::super::super::{goldsrc, quake, source2};
 use super::super::json::{
     escape_html, escape_json_str, events_to_json, json_f32, meta_to_json,
     multi_life_states_to_json, multi_names_to_json, multi_observer_modes_to_json,
-    multi_tracks_to_json, multi_weapon_classes_to_json, multi_weapons_to_json, multi_yaws_to_json,
-    spawn_to_json, view_angles_to_json, world_positions_to_json,
+    multi_tracks_to_json, multi_tracks_to_json_with, multi_weapon_classes_to_json,
+    multi_weapons_to_json, multi_yaws_to_json, multi_yaws_to_json_with, spawn_to_json,
+    view_angles_to_json, view_angles_to_json_with, world_positions_to_json,
 };
 use super::HTML_TEMPLATE;
+
+// Quake demos are long (15-20 minute matches) and record players at server
+// frame rate, so the default per-player budget (4000 points, one every ~0.3s on
+// a 20 minute demo) turns smooth movement into straight segments and makes the
+// first-person aim step. Budget by duration instead: this many points per
+// second, within a floor and a ceiling that bound the page size.
+const QUAKE_POINTS_PER_SEC: f32 = 12.0;
+const QUAKE_MIN_POINTS: usize = 4000;
+const QUAKE_MAX_POINTS: usize = 20_000;
+
+fn quake_point_budget(duration_secs: f32) -> usize {
+    ((duration_secs.max(0.0) * QUAKE_POINTS_PER_SEC) as usize)
+        .clamp(QUAKE_MIN_POINTS, QUAKE_MAX_POINTS)
+}
 
 // Quake-family HTML generator: parses a Q1/Q2/Q3 demo into a MultiPlayerData
 // and fills the SAME template.html as the Source path, leaving Source-only
@@ -37,12 +52,10 @@ pub fn generate_quake_html(
     let meta = &demo.meta;
     let mpd = &demo.mpd;
 
-    // The primary (recorder) entity's track doubles as the single-POV
-    // WORLD_POSITIONS path that drives the speedometer and fallback camera.
-    let world_positions: Vec<(i32, f32, f32, f32)> = mpd
-        .primary_entity
-        .and_then(|p| mpd.tracks.get(&p).cloned())
-        .unwrap_or_default();
+    // WORLD_POSITIONS stays empty: with no usercmds the template builds its
+    // playback timeline and recorder path from the primary's entity track, so
+    // sending a second copy only duplicates data.
+    let budget = quake_point_budget(meta.duration);
 
     let meta_json = meta_to_json(
         &meta.map,
@@ -63,10 +76,7 @@ pub fn generate_quake_html(
     html = html.replace("__LIFE_BREAKS__", "[]");
     html = html.replace("__TELEPORT_BREAKS__", "[]");
     html = html.replace("__EVENTS__", "[]");
-    html = html.replace(
-        "__WORLD_POSITIONS__",
-        &world_positions_to_json(&world_positions),
-    );
+    html = html.replace("__WORLD_POSITIONS__", "[]");
     // Quake map overlay (Q1 / Q2 / Q3 BSP), if a matching .bsp was found.
     let (q_verts, q_idx, q_spawn) = match bsp_bytes {
         Some(bytes) => match extract_any_bsp(bytes) {
@@ -84,11 +94,11 @@ pub fn generate_quake_html(
     html = html.replace("__BSP_VERTS__", &format!("\"{}\"", q_verts));
     html = html.replace("__BSP_IDX__", &format!("\"{}\"", q_idx));
     html = html.replace("__BSP_SPAWN__", &spawn_to_json(q_spawn));
-    html = html.replace("__ENTITY_TRACKS__", &multi_tracks_to_json(mpd));
+    html = html.replace("__ENTITY_TRACKS__", &multi_tracks_to_json_with(mpd, budget));
     html = html.replace("__ENTITY_NAMES__", &multi_names_to_json(mpd));
     html = html.replace("__ENTITY_LIFE_STATES__", &multi_life_states_to_json(mpd));
     html = html.replace("__ENTITY_OBSERVER__", &multi_observer_modes_to_json(mpd));
-    html = html.replace("__ENTITY_YAWS__", &multi_yaws_to_json(mpd));
+    html = html.replace("__ENTITY_YAWS__", &multi_yaws_to_json_with(mpd, budget));
     html = html.replace("__ENTITY_WEAPONS__", &multi_weapons_to_json(mpd));
     html = html.replace("__WEAPON_CLASSES__", &multi_weapon_classes_to_json(mpd));
     html = html.replace("__ENTITY_BUTTONS__", "{}"); // Quake demos carry no button state
@@ -98,7 +108,7 @@ pub fn generate_quake_html(
             .map(|e| e.to_string())
             .unwrap_or_else(|| "null".to_string()),
     );
-    html = html.replace("__VIEW_ANGLES__", &view_angles_to_json(mpd));
+    html = html.replace("__VIEW_ANGLES__", &view_angles_to_json_with(mpd, budget));
     html = html.replace("__VIEW_SWITCHES__", "[]");
     html = html.replace("__GHOST_EIDS__", "[]");
     Ok(html)
@@ -1043,4 +1053,17 @@ pub fn generate_goldsrc_html_multi(
     html = html.replace("__VIEW_SWITCHES__", "[]");
     html = html.replace("__GHOST_EIDS__", "[]");
     Ok(html)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn quake_point_budget_scales_with_duration_within_bounds() {
+        assert_eq!(quake_point_budget(0.0), QUAKE_MIN_POINTS);
+        assert_eq!(quake_point_budget(-5.0), QUAKE_MIN_POINTS);
+        assert_eq!(quake_point_budget(1216.4), 14_596);
+        assert_eq!(quake_point_budget(1.0e6), QUAKE_MAX_POINTS);
+    }
 }
