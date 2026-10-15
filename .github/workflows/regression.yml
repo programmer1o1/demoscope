@@ -5,6 +5,10 @@ name: regression
 # parser doesn't crash, produces a valid HTML, and emits a known count of
 # entities / samples on a couple of stable reference demos.
 #
+# Two small fixture demos in `tests/fixtures/` are always checked: each viewer
+# is loaded in headless Chromium and any JavaScript error fails the run
+# (scripts/check-viewer.sh).
+#
 # Note: large demos / BSPs are NOT shipped in the repo by default. Add them
 # under `DEMOS TESTING/` (or set the `DEMOS_DIR` env var to a path that has
 # them) for the assertions to fire. Missing files → workflow skips them and
@@ -30,6 +34,11 @@ jobs:
       - name: Lint (deny warnings)
         run: cargo build --release 2>&1 | tee build.log
             && ! grep -E "^warning" build.log
+
+      - name: Viewer runtime check (headless Chromium)
+        env:
+          PLAYWRIGHT_WITH_DEPS: "1"
+        run: ./scripts/check-viewer.sh
 
       - name: Smoke-run on every demo
         shell: bash
