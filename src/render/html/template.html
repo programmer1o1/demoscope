@@ -4,506 +4,307 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>demoscope: __DEMO_NAME__</title>
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+CiAgPHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iNyIgZmlsbD0iIzBlMGUxMiIvPgogIDxjaXJjbGUgY3g9IjE2IiBjeT0iMTYiIHI9IjEyIiBmaWxsPSJub25lIiBzdHJva2U9IiNlY2U5ZTIiIHN0cm9rZS13aWR0aD0iMS41IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1kYXNoYXJyYXk9IjE2IDQiIHRyYW5zZm9ybT0icm90YXRlKC01IDE2IDE2KSIvPgogIDxwYXRoIGQ9Ik04IDIxaDV2LTVoNXYtNWg4IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmIwMDAiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+CiAgPGNpcmNsZSBjeD0iOCIgY3k9IjIxIiByPSIxLjciIGZpbGw9IiNlY2U5ZTIiLz48cGF0aCBkPSJtMjQgOCA1IDMtNSAzeiIgZmlsbD0iI2ZmYjAwMCIvPgo8L3N2Zz4K">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%23000'/><circle cx='16' cy='16' r='11' fill='none' stroke='%23fff' stroke-width='1.5' stroke-linecap='round' stroke-dasharray='15 4'/><path d='M9 20.5h4.5V16H18v-4.5h6' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg>">
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-html, body {
-  height: 100%;
-  overflow: hidden;
-}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; border-radius: 0 !important; }
+html, body { height: 100%; overflow: hidden; }
 :root {
-  /* Telemetry Editorial: warm ink + paper-bone type + one amber signal.
-     Semantic data colors (death/tele/round/uber) are unchanged; the canvas/JS
-     relies on them. Only the chrome neutrals + accent were retuned. */
-  --bg: #0e0e12;
-  --bg-deep: #08080b;
-  --panel: #15151b;
-  --grid: #1d1d25;
-  --border: #2a2a34;
-  --text: #ece9e2;
+  /* Minimal, square, monochrome. Hairline borders, no radii, no shadows.
+     Player hues and data-layer colours (deaths, nades, kill arcs) live in JS
+     and are kept because they carry information. */
+  --bg: #000000;
+  --bg-deep: #000000;
+  --panel: #080808;
+  --grid: #141414;
+  --border: #222222;
+  --border-strong: #3a3a3a;
+  --text: #ededed;
   --fg: var(--text);
-  --muted: #9a968c;
-  --accent: #ffb000;
-  --accent-dim: #b87c12;
-  --accent-deep: #3a2c0a;
-  --death: #ff4d4d;
-  --tele: #00e5cc;
-  --round: #ffd700;
-  --uber: #cc44ff;
-  --sidebar: 300px;
-  --font-display: 'Bricolage Grotesque', 'Segoe UI', system-ui, -apple-system, sans-serif;
-  --font-mono: 'IBM Plex Mono', 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
+  --muted: #7a7a7a;
+  --faint: #4a4a4a;
+  --accent: #ffffff;
+  --accent-dim: #bdbdbd;
+  --accent-deep: #1a1a1a;
+  --death: #ededed;
+  --tele: #ededed;
+  --round: #ededed;
+  --uber: #ededed;
+  --sidebar: 304px;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --font-display: var(--font-mono);
 }
 body {
-  background: var(--bg);
-  color: var(--text);
-  font-family: var(--font-display);
-  font-size: 13px;
-  -webkit-font-smoothing: antialiased;
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
+  background: var(--bg); color: var(--text);
+  font-family: var(--font-mono); font-size: 12px; line-height: 1.4;
+  -webkit-font-smoothing: antialiased; font-feature-settings: "calt" 1, "zero" 1;
+  display: flex; flex-direction: column; height: 100vh;
 }
-button, input, select { font: inherit; }
+button, input, select { font: inherit; color: inherit; }
 button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  outline: 1px solid var(--accent); outline-offset: 1px;
 }
+::selection { background: var(--text); color: #000; }
+* { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-thumb { background: var(--border-strong); }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* Header */
 header {
-  background: linear-gradient(180deg, var(--panel), rgba(21,21,27,0.55));
-  border-bottom: 1px solid var(--border);
-  padding: 11px 18px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  flex-shrink: 0;
+  background: var(--bg); border-bottom: 1px solid var(--border);
+  padding: 0 16px; min-height: 40px; display: flex; align-items: stretch; gap: 0;
+  flex-wrap: wrap; flex-shrink: 0;
 }
+header svg { align-self: center; margin-right: 10px !important; }
 header h1 {
-  font-size: 16px;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  color: var(--text);
-  flex-shrink: 0;
-  font-optical-sizing: auto;
+  font-size: 12px; font-weight: 600; letter-spacing: 0.02em; color: var(--text);
+  flex-shrink: 0; margin-right: 16px; display: flex; align-items: center;
 }
-header h1::first-letter { color: var(--accent); }
+header h1 span { color: var(--muted); font-weight: 400; }
 .meta-tag {
-  background: var(--grid);
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  padding: 2px 8px;
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.01em;
-  color: var(--muted);
-  white-space: nowrap;
+  font-size: 10px; color: var(--faint); white-space: nowrap; text-transform: uppercase;
+  letter-spacing: 0.08em; display: flex; align-items: center; gap: 7px;
+  padding: 0 12px; border-left: 1px solid var(--border);
 }
-.meta-tag span { color: var(--text); }
-/* Main layout */
-.app-body {
-  display: flex;
-  flex-direction: row;
-  flex: 1;
-  overflow: hidden;
-  min-height: 0;
-}
-/* Sidebar */
+.meta-tag + .meta-tag { padding-left: 12px; }
+.meta-tag span { color: var(--text); text-transform: none; letter-spacing: 0; font-size: 11px; }
+
+/* Layout */
+.app-body { display: flex; flex-direction: row; flex: 1; overflow: hidden; min-height: 0; }
 .sidebar {
-  width: var(--sidebar);
-  min-width: var(--sidebar);
-  max-width: var(--sidebar);
-  background: var(--panel);
-  border-right: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  overflow-y: auto;
-  overflow-x: hidden;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border) transparent;
+  width: var(--sidebar); min-width: var(--sidebar); max-width: var(--sidebar);
+  background: var(--bg); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; overflow-y: auto; overflow-x: hidden;
 }
-.sidebar::-webkit-scrollbar { width: 5px; }
-.sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-.sidebar-section {
-  border-bottom: 1px solid var(--border);
-  padding: 10px 12px;
-}
+.sidebar-section { border-bottom: 1px solid var(--border); padding: 14px 16px; }
 .sidebar-section:last-child { border-bottom: none; }
 .section-title {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.16em;
-  font-weight: 600;
-  margin-bottom: 8px;
-  padding-left: 9px;
-  position: relative;
+  font-size: 10px; color: var(--muted); text-transform: uppercase;
+  letter-spacing: 0.16em; font-weight: 500; margin-bottom: 10px;
+  display: flex; align-items: center; gap: 8px;
 }
-.section-title::before {
-  content: ""; position: absolute; left: 0; top: 1px; bottom: 1px;
-  width: 2px; background: var(--accent); border-radius: 1px; opacity: 0.7;
-}
-/* Lives */
-.life-list { display: flex; flex-direction: column; gap: 4px; }
+.section-title::before { content: ""; width: 6px; height: 6px; background: var(--text); flex: none; }
+.section-title > span:first-child { flex: 1; text-align: left; }
+button.section-title { font-family: inherit; color: var(--muted); }
+button.section-title:hover { color: var(--text); }
+
+/* Lives / players */
+.life-list { display: flex; flex-direction: column; gap: 1px; }
 .life-item {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  cursor: pointer;
-  padding: 3px 5px;
-  border-radius: 4px;
-  transition: background 0.1s;
-  font-size: 12px;
-  color: var(--text);
-  user-select: none;
+  display: flex; align-items: center; gap: 8px; cursor: pointer;
+  padding: 4px 6px; transition: background 0.1s;
+  font-size: 11px; color: var(--text); user-select: none;
 }
 .life-item:hover { background: var(--grid); }
-.life-item input[type=checkbox] { accent-color: var(--accent); cursor: pointer; }
-.life-color {
-  width: 10px; height: 10px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  display: inline-block;
+.mp-steam-btn {
+  display: inline-flex; align-items: center; flex-shrink: 0; color: var(--muted);
+  opacity: 0.5; transition: opacity 0.1s, color 0.1s; pointer-events: auto; text-decoration: none;
 }
-/* Camera buttons */
-.btn-group { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+.mp-steam-btn:hover, .mp-steam-btn:focus-visible { opacity: 1; color: var(--text); }
+input[type=checkbox] {
+  appearance: none; -webkit-appearance: none; width: 11px; height: 11px; flex: none;
+  border: 1px solid var(--border-strong); background: transparent; cursor: pointer;
+  display: inline-grid; place-content: center; margin: 0;
+}
+input[type=checkbox]:hover { border-color: var(--text); }
+input[type=checkbox]::before { content: ""; width: 5px; height: 5px; background: #000; transform: scale(0); }
+input[type=checkbox]:checked { background: var(--text); border-color: var(--text); }
+input[type=checkbox]:checked::before { transform: scale(1); }
+.life-color, .pstat-dot, .sb-dot { width: 8px; height: 8px; flex-shrink: 0; display: inline-block; }
+
+/* Buttons */
+.btn-group { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 6px; }
 .cam-btn {
-  background: var(--grid);
-  border: 1px solid var(--border);
-  color: var(--text);
-  padding: 4px 10px;
-  border-radius: 4px;
-  font-size: 11px;
-  cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  background: transparent; border: 1px solid var(--border); color: var(--muted);
+  padding: 5px 10px; font-size: 10.5px; cursor: pointer; letter-spacing: 0.02em;
+  transition: background 0.1s, border-color 0.1s, color 0.1s;
 }
-.cam-btn:hover { background: var(--grid); }
-.cam-btn:disabled { cursor: not-allowed; opacity: 0.45; }
-.cam-btn.active { background: var(--accent-deep); border-color: var(--accent); color: var(--accent); }
-#btn-gif.active { background: #5f1f1f; border-color: #f08080; color: #f08080; }
+.cam-btn:hover { border-color: var(--text); color: var(--text); }
+.cam-btn:disabled { cursor: not-allowed; opacity: 0.3; }
+.cam-btn:disabled:hover { border-color: var(--border); color: var(--muted); }
+.cam-btn.active, #btn-gif.active, #btn-vid.active { background: var(--text); border-color: var(--text); color: #000; }
+.cam-btn.active span { color: #555 !important; }
+
 /* Stats */
-.stat-row {
-  display: flex;
-  justify-content: space-between;
-  padding: 2px 0;
-  font-size: 12px;
-}
+.stat-row { display: flex; justify-content: space-between; padding: 3px 0; font-size: 11px; border-bottom: 1px dotted var(--border); }
+.stat-row:last-child { border-bottom: none; }
 .stat-label { color: var(--muted); }
-.stat-val { color: var(--text); font-weight: 600; font-family: var(--font-mono); }
-/* Per-player stats leaderboard (multi-player demos) */
-#pstat-table { width: 100%; border-collapse: collapse; font-size: 11px; font-family: var(--font-mono); }
-#pstat-table th {
-  color: var(--muted); font-weight: 600; text-align: right;
-  padding: 2px 4px; cursor: pointer; user-select: none; white-space: nowrap;
-  border-bottom: 1px solid var(--border);
-}
+.stat-val { color: var(--text); font-weight: 500; font-variant-numeric: tabular-nums; }
+#pstat-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+#pstat-table th { color: var(--muted); font-weight: 500; text-align: right; padding: 3px 4px; cursor: pointer; user-select: none; white-space: nowrap; border-bottom: 1px solid var(--border); }
 #pstat-table th:first-child { text-align: left; }
 #pstat-table th:hover { color: var(--text); }
-#pstat-table th.sorted::after { content: ' \25BC'; font-size: 8px; color: var(--accent); }
-#pstat-table td { padding: 2px 4px; text-align: right; color: var(--text); white-space: nowrap; }
+#pstat-table th.sorted::after { content: ' \25BC'; font-size: 8px; color: var(--text); }
+#pstat-table td { padding: 3px 4px; text-align: right; color: var(--text); white-space: nowrap; }
 #pstat-table td:first-child { text-align: left; }
 #pstat-table tr.prow { cursor: pointer; }
 #pstat-table tr.prow:hover td { background: var(--grid); }
-#pstat-table tr.prow.primary td { background: rgba(255, 176, 0,0.12); }
-.pstat-name { display: flex; align-items: center; gap: 5px; max-width: 96px; overflow: hidden; text-overflow: ellipsis; }
-.pstat-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+#pstat-table tr.prow.primary td { background: rgba(255,255,255,0.08); }
+.pstat-name { display: flex; align-items: center; gap: 6px; max-width: 96px; overflow: hidden; text-overflow: ellipsis; }
+
 /* Event log */
-#event-log {
-  max-height: 180px;
-  overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border) transparent;
-}
-#event-log::-webkit-scrollbar { width: 5px; }
-#event-log::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+#event-log { max-height: 180px; overflow-y: auto; }
 table { width: 100%; border-collapse: collapse; }
 th {
-  position: sticky;
-  top: 0;
-  background: var(--grid);
-  color: var(--muted);
-  font-size: 10px;
-  font-weight: 700;
-  text-align: left;
-  padding: 3px 6px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  position: sticky; top: 0; background: var(--bg); color: var(--muted);
+  font-size: 9.5px; font-weight: 500; text-align: left;
+  padding: 4px 6px; text-transform: uppercase; letter-spacing: 0.12em;
+  border-bottom: 1px solid var(--border);
 }
-td { padding: 2px 6px; border-bottom: 1px solid var(--grid); font-size: 11px; color: var(--muted); }
-td.ev-name { color: var(--text); font-weight: 600; }
+td { padding: 3px 6px; border-bottom: 1px solid var(--grid); font-size: 10.5px; color: var(--muted); }
+td.ev-name { color: var(--text); font-weight: 500; }
 tr { cursor: pointer; transition: background 0.1s; }
 tr:hover td { background: var(--grid); color: var(--text); }
-tr.highlight-row td { background: var(--accent-deep); color: var(--text); }
-/* Canvas area */
-.canvas-area {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  min-width: 0;
-}
-#threejs-container {
-  flex: 1;
-  position: relative;
-  overflow: hidden;
-  background: #0e0e12;
-  min-height: 0;
-}
-#threejs-container canvas {
-  display: block;
-}
-/* Timeline */
-.timeline-area {
-  flex-shrink: 0;
-  background: var(--panel);
-  border-top: 1px solid var(--border);
-  padding: 6px 12px 4px 12px;
-}
-.timeline-label {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  font-weight: 700;
-  margin-bottom: 4px;
-}
-#timeline-wrap {
-  position: relative;
-  height: 36px;
-  cursor: pointer;
-  user-select: none;
-}
-#timeline-canvas {
-  position: absolute;
-  top: 0; left: 0;
-  width: 100%; height: 100%;
-}
-#tl-tooltip {
-  position: absolute;
-  top: -22px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  padding: 1px 6px;
-  font-size: 10px;
-  pointer-events: none;
-  white-space: nowrap;
-  display: none;
-  color: var(--text);
-}
-/* Event bottom area */
-.bottom-events {
-  flex-shrink: 0;
-  background: var(--panel);
-  border-top: 1px solid var(--border);
-  padding: 6px 12px;
-}
-.bottom-events-header {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  font-weight: 700;
-  margin-bottom: 4px;
-}
-#bottom-event-log {
-  max-height: 100px;
-  overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border) transparent;
-}
-/* Event filter chips */
-.ev-chip {
-  background: var(--grid);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 1px 7px;
-  font-size: 10px;
-  cursor: pointer;
-  color: var(--muted);
-  transition: background 0.1s, border-color 0.1s;
-  user-select: none;
-}
-.ev-chip.active {
-  background: var(--accent-deep);
-  border-color: var(--accent);
-  color: var(--accent);
-}
-/* Tooltip */
-#tooltip {
-  position: fixed;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  padding: 5px 9px;
-  font-size: 11px;
-  pointer-events: none;
-  display: none;
-  z-index: 999;
-  color: var(--text);
-  max-width: 220px;
-}
-/* Playhead info */
-#playhead-info {
-  position: absolute;
-  bottom: 6px;
-  right: 10px;
-  font-size: 10px;
-  color: var(--muted);
-  background: rgba(14, 14, 18,0.7);
-  padding: 2px 6px;
-  border-radius: 3px;
-  pointer-events: none;
-}
-/* Minimap */
-#minimap-canvas {
-  position: absolute;
-  bottom: 32px;
-  right: 10px;
-  width: 160px;
-  height: 160px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: rgba(14, 14, 18,0.82);
-  pointer-events: none;
-  z-index: 10;
-}
-/* Speedometer */
-#speedometer {
-  position: absolute;
-  top: 8px;
-  left: 10px;
-  background: rgba(14, 14, 18,0.78);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 4px 10px 5px 10px;
-  pointer-events: none;
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  z-index: 5;
-  min-width: 96px;
-}
-#speedometer .sp-now {
-  font-size: 22px;
-  font-weight: 600;
-  color: var(--text);
-  line-height: 1;
-}
-#speedometer .sp-unit {
-  font-size: 10px;
-  color: var(--muted);
-  margin-left: 3px;
-  font-weight: 500;
-}
-#speedometer .sp-peak {
-  font-size: 10px;
-  color: var(--muted);
-  margin-top: 2px;
-  letter-spacing: 0.02em;
-}
-#speedometer .sp-peak b { color: var(--accent); font-weight: 600; }
-/* Follow/FPS mode indicator */
-#cam-mode-badge {
-  position: absolute;
-  top: 8px;
-  right: 10px;
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--accent);
-  background: rgba(14, 14, 18,0.8);
-  padding: 2px 7px;
-  border-radius: 3px;
-  pointer-events: none;
-  display: none;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-#input-display { position:absolute;bottom:16px;left:16px;pointer-events:none;user-select:none; }
-/* Fire labels - projected from world space each frame, populated by updateFireMarkers */
-#fire-labels { position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;overflow:hidden;z-index:6; }
-.fire-label {
-  position: absolute;
-  background: rgba(0, 30, 10, 0.78);
-  border: 1px solid #00ff88;
-  color: #88ffaa;
-  font-family: 'IBM Plex Mono','SF Mono',Menlo,monospace;
-  font-size: 10px;
-  font-weight: 600;
-  padding: 2px 6px;
-  border-radius: 3px;
-  white-space: nowrap;
-  transform: translate(-50%, -120%);
-  text-shadow: 0 0 4px rgba(0, 255, 136, 0.55);
-  letter-spacing: 0.04em;
-  pointer-events: none;
-  display: none;
-}
-.ikey { width:30px;height:30px;background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.25);
-  border-radius:4px;color:rgba(255,255,255,.35);font-size:11px;display:flex;align-items:center;
-  justify-content:center;font-family:monospace;font-weight:bold;transition:background .06s,color .06s; }
-.ikey.on { background:rgba(255,255,255,.28);color:#fff;border-color:rgba(255,255,255,.75); }
-#chat-log { max-height:180px;overflow-y:auto;font-size:11px;font-family:'IBM Plex Mono','SF Mono',Menlo,Consolas,monospace; }
-#chat-log div { padding:3px 0;border-bottom:1px solid var(--grid);cursor:pointer;line-height:1.4; }
-#chat-log div:hover { background:rgba(255,255,255,.04); }
-#chat-log div.is-current { background:rgba(255, 176, 0,.15);border-left:2px solid var(--accent);padding-left:4px; }
-.con-chip { padding:1px 5px;border:1px solid var(--border);border-radius:9px;cursor:pointer;user-select:none;color:var(--muted); }
-.con-chip.on { background:var(--accent);color:#0e0e12;border-color:var(--accent); }
-#console-overlay {
-  position:fixed;inset:0;background:rgba(14, 14, 18,0.93);z-index:50;display:none;
-  flex-direction:column;padding:24px 32px;box-sizing:border-box;
-}
-#console-overlay.open { display:flex; }
-#console-overlay .con-head { display:flex;align-items:center;gap:12px;margin-bottom:10px;color:var(--fg);font-size:13px; }
-#console-overlay .con-title { font-weight:700;letter-spacing:.04em; }
-#console-overlay .con-body {
-  flex:1;overflow-y:auto;background:#0e0e12;border:1px solid var(--border);border-radius:6px;
-  padding:10px 14px;font-family:'IBM Plex Mono','SF Mono',Menlo,Consolas,monospace;font-size:12px;line-height:1.5;
-}
-#console-overlay .con-body div { padding:2px 0;cursor:pointer; }
-#console-overlay .con-body div:hover { background:rgba(255,255,255,.05); }
-#console-overlay .con-body div.is-current { background:rgba(255, 176, 0,.18);border-left:2px solid var(--accent);padding-left:6px; }
+tr.highlight-row td { background: var(--accent-deep); color: var(--text); box-shadow: inset 2px 0 0 var(--text); }
 
-/* ── Floating scoreboard window ─────────────────────────────────────────── */
+/* Canvas */
+.canvas-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+#threejs-container { flex: 1; position: relative; overflow: hidden; background: #000; min-height: 0; }
+#threejs-container canvas { display: block; }
+
+/* Timeline */
+.timeline-area { flex-shrink: 0; background: var(--bg); border-top: 1px solid var(--border); padding: 8px 16px 8px; }
+.timeline-label, .bottom-events-header {
+  font-size: 9.5px; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.16em; font-weight: 500; margin-bottom: 5px;
+}
+#timeline-wrap { position: relative; height: 36px; cursor: pointer; user-select: none; }
+#timeline-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+#tl-tooltip {
+  position: absolute; top: -24px; background: #000; border: 1px solid var(--border-strong);
+  padding: 1px 6px; font-size: 10px;
+  pointer-events: none; white-space: nowrap; display: none; color: var(--text);
+}
+.bottom-events { flex-shrink: 0; background: var(--bg); border-top: 1px solid var(--border); padding: 6px 12px; }
+#bottom-event-log { max-height: 100px; overflow-y: auto; }
+
+/* Chips */
+.ev-chip, .con-chip {
+  background: transparent; border: 1px solid var(--border);
+  padding: 1px 6px; font-size: 9.5px; cursor: pointer;
+  color: var(--muted); transition: background 0.1s, border-color 0.1s, color 0.1s; user-select: none;
+}
+.ev-chip:hover, .con-chip:hover { border-color: var(--text); color: var(--text); }
+.ev-chip.active, .con-chip.on { background: var(--text); border-color: var(--text); color: #000; }
+
+/* Overlays on the 3D view */
+#tooltip {
+  position: fixed; background: #000; border: 1px solid var(--border-strong);
+  padding: 5px 9px; font-size: 11px; pointer-events: none; display: none;
+  z-index: 999; color: var(--text); max-width: 240px;
+}
+#playhead-info {
+  position: absolute; bottom: 12px; right: 12px;
+  font-size: 10px; color: var(--muted); background: rgba(0,0,0,0.8);
+  border: 1px solid var(--border); padding: 2px 6px; pointer-events: none;
+}
+#minimap-canvas {
+  position: absolute; bottom: 40px; right: 12px; width: 160px; height: 160px;
+  border: 1px solid var(--border-strong); background: rgba(0,0,0,0.85);
+  pointer-events: none; z-index: 10;
+}
+#speedometer {
+  position: absolute; top: 12px; left: 12px; background: rgba(0,0,0,0.8);
+  border: 1px solid var(--border); padding: 8px 10px; pointer-events: none;
+  font-variant-numeric: tabular-nums; z-index: 5; min-width: 104px;
+}
+#speedometer .sp-now { font-size: 22px; font-weight: 500; color: var(--text); line-height: 1; letter-spacing: -0.03em; }
+#speedometer .sp-unit { font-size: 10px; color: var(--muted); margin-left: 4px; }
+#speedometer .sp-peak { font-size: 10px; color: var(--muted); margin-top: 4px; }
+#speedometer .sp-peak b { color: var(--text); font-weight: 500; }
+#cam-mode-badge {
+  position: absolute; top: 12px; right: 12px;
+  font-size: 9.5px; font-weight: 500; color: #000; background: var(--text);
+  padding: 3px 8px; pointer-events: none; display: none;
+  text-transform: uppercase; letter-spacing: 0.14em;
+}
+#input-display { position: absolute; bottom: 16px; left: 16px; pointer-events: none; user-select: none; }
+#fire-labels { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; overflow: hidden; z-index: 6; }
+.fire-label {
+  position: absolute; background: rgba(0,0,0,0.85); border: 1px solid #fff; color: #fff;
+  font-size: 10px; font-weight: 500; padding: 2px 6px;
+  white-space: nowrap; transform: translate(-50%, -120%);
+  letter-spacing: 0.04em; pointer-events: none; display: none;
+}
+.ikey {
+  width: 30px; height: 30px; background: rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.2);
+  color: rgba(255,255,255,0.4); font-size: 11px; display: flex;
+  align-items: center; justify-content: center; font-weight: 500;
+  transition: background .06s, color .06s, border-color .06s;
+}
+.ikey.on { background: #fff; color: #000; border-color: #fff; }
+
+/* Console */
+#chat-log { max-height: 180px; overflow-y: auto; font-size: 10.5px; }
+#chat-log div { padding: 3px 0; border-bottom: 1px solid var(--grid); cursor: pointer; line-height: 1.45; }
+#chat-log div:hover { background: rgba(255,255,255,0.04); }
+#chat-log div.is-current { background: rgba(255,255,255,0.06); border-left: 2px solid #fff; padding-left: 5px; }
+#console-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.96); z-index: 50; display: none;
+  flex-direction: column; padding: 24px 32px;
+}
+#console-overlay.open { display: flex; }
+#console-overlay .con-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; color: var(--fg); font-size: 12px; }
+#console-overlay .con-title { font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; font-size: 11px; }
+#console-overlay .con-body {
+  flex: 1; overflow-y: auto; background: #000; border: 1px solid var(--border);
+  padding: 10px 14px; font-size: 12px; line-height: 1.55;
+}
+#console-overlay .con-body div { padding: 2px 0; cursor: pointer; }
+#console-overlay .con-body div:hover { background: rgba(255,255,255,0.05); }
+#console-overlay .con-body div.is-current { background: rgba(255,255,255,0.08); border-left: 2px solid #fff; padding-left: 7px; }
+
+/* Scoreboard */
 #scoreboard-overlay {
-  position:fixed;inset:0;z-index:60;display:none;
-  background:rgba(8,11,16,0.62);backdrop-filter:blur(2px);
-  align-items:center;justify-content:center;padding:32px;box-sizing:border-box;
+  position: fixed; inset: 0; z-index: 60; display: none; background: rgba(0,0,0,0.8);
+  align-items: center; justify-content: center; padding: 32px;
 }
-#scoreboard-overlay.open { display:flex; }
+#scoreboard-overlay.open { display: flex; }
 .sb-window {
-  display:flex;flex-direction:column;width:min(860px,94vw);max-height:86vh;
-  background:var(--panel);border:1px solid var(--border);border-radius:10px;
-  box-shadow:0 18px 60px rgba(0,0,0,0.6);overflow:hidden;
+  display: flex; flex-direction: column; width: min(880px, 94vw); max-height: 86vh;
+  background: var(--bg); border: 1px solid var(--border-strong); overflow: hidden;
 }
-.sb-head {
-  display:flex;align-items:center;gap:12px;padding:13px 18px;
-  border-bottom:1px solid var(--border);background:rgba(255,255,255,0.02);
-}
-.sb-title { font-weight:700;font-size:15px;letter-spacing:.04em;color:var(--fg); }
-.sb-sub  { color:var(--muted);font-size:12px; }
-.sb-hint { color:var(--muted);font-size:10px; }
-.sb-body { overflow-y:auto;padding:14px 18px 18px;scrollbar-width:thin;scrollbar-color:var(--border) transparent; }
+.sb-head { display: flex; align-items: center; gap: 12px; padding: 12px 18px; border-bottom: 1px solid var(--border); }
+.sb-title { font-weight: 600; font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--fg); }
+.sb-sub { color: var(--muted); font-size: 11px; }
+.sb-hint { color: var(--faint); font-size: 10px; }
+.sb-body { overflow-y: auto; padding: 14px 18px 18px; }
 .sb-team-head {
-  display:flex;align-items:center;gap:8px;margin:14px 0 6px;font-size:12px;
-  font-weight:700;letter-spacing:.03em;text-transform:uppercase;
+  display: flex; align-items: center; gap: 8px; margin: 18px 0 6px;
+  font-size: 10px; font-weight: 500; letter-spacing: .16em; text-transform: uppercase;
 }
-.sb-team-head:first-child { margin-top:0; }
-.sb-team-dot { width:9px;height:9px;border-radius:2px;display:inline-block; }
-.sb-team-meta { color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;font-size:11px; }
-.sb-table { width:100%;border-collapse:collapse;font-size:12px;font-family:var(--font-mono); }
+.sb-team-head:first-child { margin-top: 0; }
+.sb-team-dot { width: 8px; height: 8px; display: inline-block; }
+.sb-team-meta { color: var(--muted); font-weight: 400; text-transform: none; letter-spacing: 0; }
+.sb-table { width: 100%; border-collapse: collapse; font-size: 11.5px; font-variant-numeric: tabular-nums; }
 .sb-table th {
-  position:sticky;top:0;background:var(--panel);color:var(--muted);
-  font-weight:600;text-align:right;padding:5px 8px;cursor:pointer;user-select:none;
-  border-bottom:1px solid var(--border);white-space:nowrap;
+  position: sticky; top: 0; background: var(--bg); color: var(--muted); font-weight: 500;
+  text-align: right; padding: 6px 8px; cursor: pointer; user-select: none;
+  border-bottom: 1px solid var(--border); white-space: nowrap; text-transform: none; letter-spacing: 0;
 }
-.sb-table th:first-child { text-align:left; }
-.sb-table th.sorted { color:var(--accent); }
-.sb-table td { text-align:right;padding:5px 8px;border-bottom:1px solid rgba(255,255,255,0.04);white-space:nowrap; }
-.sb-table td:first-child { text-align:left; }
-.sb-table tr.prow { cursor:pointer; }
-.sb-table tr.prow:hover td { background:rgba(255,255,255,0.04); }
-.sb-table tr.primary td { background:rgba(255, 176, 0,0.12); }
-.sb-name { display:inline-flex;align-items:center;gap:7px; }
-.sb-dot { width:9px;height:9px;border-radius:50%;flex:none; }
-.sb-empty { color:var(--muted);font-size:12px;font-style:italic;padding:8px 0; }
+.sb-table th:first-child { text-align: left; }
+.sb-table th:hover { color: var(--text); }
+.sb-table th.sorted { color: var(--text); text-decoration: underline; text-underline-offset: 4px; }
+.sb-table td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--grid); white-space: nowrap; color: var(--text); }
+.sb-table td:first-child { text-align: left; }
+.sb-table tr.prow { cursor: pointer; }
+.sb-table tr.prow:hover td { background: rgba(255,255,255,0.04); }
+.sb-table tr.primary td { background: rgba(255,255,255,0.08); }
+.sb-name { display: inline-flex; align-items: center; gap: 8px; }
+.sb-empty { color: var(--muted); font-size: 12px; padding: 8px 0; }
+
 @media (max-width: 760px) {
   :root { --sidebar: 100%; }
-  header { flex-wrap: nowrap; overflow-x: auto; padding: 9px 12px; scrollbar-width: thin; }
+  header { flex-wrap: nowrap; overflow-x: auto; padding: 0 12px; }
   header h1 { max-width: 62vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .app-body { flex-direction: column; }
-  .sidebar {
-    width: 100%; min-width: 0; max-width: none; height: 42vh;
-    border-right: 0; border-bottom: 1px solid var(--border);
-  }
+  .sidebar { width: 100%; min-width: 0; max-width: none; height: 42vh; border-right: 0; border-bottom: 1px solid var(--border); }
   #minimap-canvas { width: 128px; height: 128px; }
   .sb-hint { display: none; }
   #scoreboard-overlay { padding: 12px; }
@@ -542,9 +343,9 @@ tr.highlight-row td { background: var(--accent-deep); color: var(--text); }
 
 <header>
   <svg width="22" height="22" viewBox="0 0 100 100" style="flex-shrink:0;margin-right:-2px" aria-hidden="true">
-    <circle cx="50" cy="50" r="43" fill="none" stroke="#ece9e2" stroke-width="3.2" stroke-linecap="round" stroke-dasharray="56 11" transform="rotate(-3 50 50)"/>
-    <path d="M25 66H42V52H60V37H91" fill="none" stroke="#ffb000" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
-    <circle cx="25" cy="66" r="4" fill="#ece9e2"/><path d="m88 31 9 6-9 6z" fill="#ffb000"/>
+    <circle cx="50" cy="50" r="43" fill="none" stroke="#f5f5f5" stroke-width="3.2" stroke-linecap="round" stroke-dasharray="56 11" transform="rotate(-3 50 50)"/>
+    <path d="M25 66H42V52H60V37H91" fill="none" stroke="#ffffff" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="25" cy="66" r="4" fill="#f5f5f5"/><path d="m88 31 9 6-9 6z" fill="#ffffff"/>
   </svg>
   <h1>demoscope &mdash; <span>__DEMO_NAME__</span></h1>
   <div class="meta-tag">Map: <span id="m-map">-</span></div>
@@ -581,7 +382,7 @@ tr.highlight-row td { background: var(--accent-deep); color: var(--text); }
       <div id="console-filters" style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:4px;font-size:10px"></div>
       <div id="chat-log"></div>
     </div>
-    <div class="sidebar-section">
+    <div class="sidebar-section" id="playback-panel">
       <div class="section-title">Playback</div>
       <div class="btn-group">
         <button class="cam-btn" id="btn-play" onclick="togglePlay()">&#9654; Play</button>
@@ -675,10 +476,9 @@ tr.highlight-row td { background: var(--accent-deep); color: var(--text); }
       <div id="fire-labels"></div>
       <!-- Kill-arc color legend (shown only while the Kills layer is on) -->
       <div id="kill-legend" style="display:none;position:absolute;right:10px;top:34px;z-index:8;
-           background:rgba(14, 14, 18,0.82);border:1px solid #2a2a34;border-radius:6px;
-           padding:7px 10px;font-size:11px;line-height:1.7;color:#ece9e2;pointer-events:none;
-           box-shadow:0 2px 10px rgba(0,0,0,0.4)">
-        <div style="font-weight:600;margin-bottom:2px;color:#9a968c">Kill arcs - attacker→victim</div>
+           background:rgba(0, 0, 0,0.82);border:1px solid #3a3a3a;
+           padding:7px 10px;font-size:11px;line-height:1.7;color:#f5f5f5;pointer-events:none">
+        <div style="font-weight:600;margin-bottom:2px;color:#8a8a8a">Kill arcs - attacker→victim</div>
         <div><span style="display:inline-block;width:22px;height:3px;vertical-align:middle;background:#ffd11f;box-shadow:0 0 5px #ffd11f"></span> headshot</div>
         <div><span style="display:inline-block;width:22px;height:3px;vertical-align:middle;background:#ff5722;box-shadow:0 0 5px #ff5722"></span> body shot</div>
         <div><span style="display:inline-block;width:22px;height:3px;vertical-align:middle;background:#f28c40;opacity:0.7"></span> non-fatal hurt</div>
@@ -697,8 +497,8 @@ tr.highlight-row td { background: var(--accent-deep); color: var(--text); }
           <div style="display:grid;grid-template-columns:repeat(3,30px);gap:3px;margin-top:3px">
             <div class="ikey" id="ik-lmb">M1</div><div class="ikey" id="ik-jmp">&#9251;</div><div class="ikey" id="ik-duck">&#8679;</div>
           </div>
-          <div id="ik-label" style="text-align:center;font-size:9px;color:var(--muted);margin-top:4px;font-family:monospace;letter-spacing:0.04em"></div>
-          <div id="ik-weapon" style="text-align:center;font-size:10px;color:var(--accent);margin-top:2px;font-family:monospace;font-weight:600"></div>
+          <div id="ik-label" style="text-align:center;font-size:9px;color:var(--muted);margin-top:4px;font-family:inherit;letter-spacing:0.04em"></div>
+          <div id="ik-weapon" style="text-align:center;font-size:10px;color:var(--accent);margin-top:2px;font-family:inherit;font-weight:600"></div>
         </div>
       </div>
       <canvas id="minimap-canvas" width="160" height="160"></canvas>
@@ -844,6 +644,9 @@ const TICK_RATE = META.tick_rate || 66.0;
 // each keeps its OWN camera, kills, events and timeline. A standalone viewer
 // (or the single-demo web iframe, which has no '#sync') is unaffected.
 const SYNC_FOLLOWER = (function () { try { return location.hash.indexOf('sync') >= 0; } catch (e) { return false; } })();
+// True while applying a seek pushed BY the dual-view shell, so updatePlayhead
+// can tell it apart from a local user seek (which must be forwarded instead).
+var _syncApplying = false;
 
 // ─── proto-4 / entity-only fallback timeline ──────────────────────────────────
 // Some demos (Portal 2 and other proto-4 games) carry no parsed usercmds, so
@@ -940,10 +743,13 @@ const TELEPORT_VEL_SQ = TELEPORT_VEL * TELEPORT_VEL;
 // Returns true if a sample-pair (t0,x0,y0,z0)→(t1,x1,y1,z1) represents a
 // teleport rather than continuous movement. Falls back to the legacy
 // distance check when the time delta is zero.
+// Two samples on the same tick more than this far apart can't be movement.
+const SAME_TICK_JUMP_SQ = 64 * 64;
 function isSampleTeleport(t0, x0, y0, z0, t1, x1, y1, z1) {
   const dx = x1 - x0, dy = y1 - y0, dz = (z1 !== undefined ? z1 - z0 : 0);
   const distSq = dx*dx + dy*dy + dz*dz;
-  const dtTicks = Math.max(1, t1 - t0);
+  if (t1 <= t0) return distSq > SAME_TICK_JUMP_SQ;
+  const dtTicks = t1 - t0;
   const dtSec = dtTicks / TICK_RATE;
   const velSq = distSq / (dtSec * dtSec);
   return velSq > TELEPORT_VEL_SQ;
@@ -1281,7 +1087,7 @@ const container = document.getElementById('threejs-container');
 // genuine photosensitivity hazard. The log buffer all but eliminates it.
 const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, logarithmicDepthBuffer: true });
 renderer.setPixelRatio(window.devicePixelRatio);
-renderer.setClearColor(0x0e0e12);
+renderer.setClearColor(0x000000);
 container.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
@@ -1307,18 +1113,18 @@ camera.position.set(tcx, tcy + sceneSpan * 1.2, tcz + sceneSpan * 1.5);
 camera.lookAt(tcx, tcy, tcz);
 
 // Lighting
-const hemiLight = new THREE.HemisphereLight(0x6688bb, 0x443322, 0.55);
+const hemiLight = new THREE.HemisphereLight(0xffffff, 0x111111, 0.55);
 scene.add(hemiLight);
 const dirLight = new THREE.DirectionalLight(0xffffff, 0.7);
 dirLight.position.set(tcx + sceneSpan, tcy + sceneSpan * 2, tcz + sceneSpan);
 scene.add(dirLight);
-const dirLight2 = new THREE.DirectionalLight(0x4466aa, 0.2);
+const dirLight2 = new THREE.DirectionalLight(0xffffff, 0.2);
 dirLight2.position.set(tcx - sceneSpan * 0.5, tcy + sceneSpan, tcz - sceneSpan * 0.5);
 scene.add(dirLight2);
 
 // Grid
 const gridSize = Math.max(sceneSpan * 2, 10000);
-const gridHelper = new THREE.GridHelper(gridSize, 40, 0x1e3a5a, 0x1e2830);
+const gridHelper = new THREE.GridHelper(gridSize, 40, 0x2a2a2a, 0x121212);
 gridHelper.position.set(tcx, 0, tcz);
 scene.add(gridHelper);
 
@@ -1367,8 +1173,8 @@ if (BSP_VERTS && BSP_IDX && BSP_VERTS.length > 4 && BSP_IDX.length > 4) {
       bspGeo.computeVertexNormals();
       // Solid BSP faces - Phong gives per-face shading contrast so rooms/walls read clearly
       const bspMat = new THREE.MeshPhongMaterial({
-        color: 0x8899aa,
-        specular: 0x223344,
+        color: 0x8f8f8f,
+        specular: 0x1a1a1a,
         shininess: 12,
         side: THREE.DoubleSide,
         polygonOffset: true,
@@ -1393,7 +1199,7 @@ if (BSP_VERTS && BSP_IDX && BSP_VERTS.length > 4 && BSP_IDX.length > 4) {
       if (!dense) {
         const edgesGeo = new THREE.EdgesGeometry(bspGeo, 20);
         const edgesMat = new THREE.LineBasicMaterial({
-          color: 0xaabbd0,
+          color: 0xffffff,
           transparent: true,
           opacity: 0.28,
           depthTest: false,   // can't z-fight the solid if it never depth-tests
@@ -1689,6 +1495,40 @@ function mpShownIvIndexAt(eid, tick) {
   return -1;
 }
 
+// Convert whatever the userinfo string table gave us into a SteamID64, which
+// is the only form steamcommunity.com/profiles/ accepts. Three shapes turn up
+// across engines: the legacy textual "STEAM_X:Y:Z", the Source 3 "[U:1:N]"
+// account id, and (CS2 / newer) an already-64-bit decimal xuid. Bots carry
+// "BOT" or an empty guid - those get null and no button.
+const STEAM64_BASE = 76561197960265728n;
+// Stylised Steam mark (the valve "nut" + piston), drawn as strokes so it picks
+// up currentColor and stays legible at the 13px the sidebar row gives it.
+const STEAM_ICON_SVG =
+  '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor"'
+  + ' stroke-width="1.3" stroke-linecap="round" aria-hidden="true">'
+  + '<circle cx="8" cy="8" r="6.9"/>'
+  + '<path d="M5.2 10.3 L10.4 5.7"/>'
+  + '<circle cx="10.5" cy="5.6" r="2.5"/>'
+  + '<circle cx="5.1" cy="10.4" r="1.7" fill="currentColor"/>'
+  + '</svg>';
+function steamProfileUrl(steamId) {
+  const s = String(steamId || '').trim();
+  if (!s || /^bot$/i.test(s) || s === 'STEAM_ID_PENDING' || s === 'UNKNOWN') return null;
+  let id64 = null;
+  let m = s.match(/^STEAM_[0-5]:([01]):(\d+)$/i);
+  if (m) {
+    id64 = STEAM64_BASE + BigInt(m[2]) * 2n + BigInt(m[1]);
+  } else if ((m = s.match(/^\[?U:1:(\d+)\]?$/i))) {
+    id64 = STEAM64_BASE + BigInt(m[1]);
+  } else if (/^\d+$/.test(s)) {
+    // Either a raw 64-bit xuid or a bare 32-bit account id.
+    const n = BigInt(s);
+    id64 = n >= STEAM64_BASE ? n : (n > 0n ? STEAM64_BASE + n : null);
+  }
+  if (id64 == null || id64 <= STEAM64_BASE) return null;
+  return `https://steamcommunity.com/profiles/${id64}`;
+}
+
 // Render the Lives panel as the primary entity's life intervals. Each life
 // gets one row with duration + click-to-seek. Updates when primary changes.
 function refreshMpLives() {
@@ -1772,7 +1612,9 @@ let _synthRecorderEid = null;
 
 const mpEntities = []; // [{ eid, name, color, samples, pathGroup, avatar, label }]
 {
-  if (Object.keys(ENTITY_TRACKS).length === 0 &&
+  // Ghosts from a --diff overlay don't count: a single-player host demo still
+  // needs its synthesized recorder, otherwise only the ghost would be visible.
+  if (Object.keys(ENTITY_TRACKS).filter(k => !isGhostEid(k)).length === 0 &&
       typeof finalPositions !== 'undefined' && finalPositions.length >= 2) {
     _synthRecorderEid = (typeof PRIMARY_ENTITY !== 'undefined' && PRIMARY_ENTITY != null)
       ? String(PRIMARY_ENTITY) : '0';
@@ -1898,7 +1740,7 @@ const mpEntities = []; // [{ eid, name, color, samples, pathGroup, avatar, label
       const avatarGroup = new THREE.Group();
       // Use MeshBasicMaterial so the avatar is visible without scene lighting.
       const avatarMat = new THREE.MeshBasicMaterial({
-        color: isPrimaryInit ? 0xffb000 : color,
+        color: isPrimaryInit ? 0xffffff : color,
         transparent: true, opacity: ghost ? 0.3 : 0.95,
         wireframe: ghost,
       });
@@ -1908,7 +1750,7 @@ const mpEntities = []; // [{ eid, name, color, samples, pathGroup, avatar, label
         new THREE.Vector3(1, 0, 0),
         new THREE.Vector3(0, 18, 0),
         86,
-        isPrimaryInit ? 0xffd76a : 0xffffff,
+        isPrimaryInit ? 0xffffff : 0xffffff,
         18,
         9
       );
@@ -1923,7 +1765,7 @@ const mpEntities = []; // [{ eid, name, color, samples, pathGroup, avatar, label
       label.className = 'mp-name-label';
       label.style.cssText =
         'position:absolute;pointer-events:none;display:none;transform:translate(-50%,-100%);'
-        + `font-family:'IBM Plex Mono','SF Mono',Menlo,monospace;font-size:10px;font-weight:600;`
+        + `font-family:'JetBrains Mono','SF Mono',Menlo,monospace;font-size:10px;font-weight:600;`
         + `padding:1px 5px;border-radius:3px;white-space:nowrap;letter-spacing:0.03em;`
         + `background:rgba(0,0,0,0.6);border:1px solid hsl(${hue},65%,55%);`
         + `color:hsl(${hue},80%,80%);text-shadow:0 0 4px rgba(0,0,0,0.9);z-index:7;`;
@@ -1963,19 +1805,24 @@ const mpEntities = []; // [{ eid, name, color, samples, pathGroup, avatar, label
         ? `${livesCount} ${livesCount === 1 ? 'life' : 'lives'}`
         : `${samples.length} sample${samples.length === 1 ? '' : 's'}`;
 
+      // Steam profile link - only for slots that carry a resolvable guid
+      // (real players on Source engines; bots and CS2-less engines get none).
+      const steamUrl = steamProfileUrl(meta.steam_id);
+
       const row = document.createElement('div');
       row.className = 'life-item';
       row.dataset.eid = eid;
       row.style.userSelect = 'none';
       if (isPrimary) {
-        row.style.background = 'rgba(255, 176, 0, 0.12)';
+        row.style.background = 'rgba(255, 255, 255, 0.12)';
         row.style.borderLeft = '3px solid var(--accent)';
         row.style.paddingLeft = '4px';
       }
       row.innerHTML = `
         <input type="checkbox" data-eid="${eid}" ${startEnabled ? 'checked' : ''} style="pointer-events:auto">
         <span class="life-color" style="background:hsl(${hue}, 65%, 55%)"></span>
-        <span style="flex:1;overflow:hidden;text-overflow:ellipsis" title="${displayName}${nameSuffix}${aliasTitle} · ${trailingLabel} · right-click to set as YOU">${displayName}${nameSuffix}<span class="mp-you-tag" data-eid="${eid}" style="color:var(--accent);font-size:10px;font-weight:700;margin-left:5px;display:${isPrimary?'inline':'none'}">YOU</span>${priorAliases.length ? `<span style="color:var(--muted);font-size:10px;font-style:italic;margin-left:6px;font-weight:400">was ${priorAliases.map(a => a.replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))).join(', ')}</span>` : ''}</span>
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis" title="${esc(displayName)}${nameSuffix}${esc(aliasTitle)} · ${trailingLabel} · right-click to set as YOU">${esc(displayName)}${nameSuffix}<span class="mp-you-tag" data-eid="${eid}" style="color:var(--accent);font-size:10px;font-weight:700;margin-left:5px;display:${isPrimary?'inline':'none'}">YOU</span>${priorAliases.length ? `<span style="color:var(--muted);font-size:10px;font-style:italic;margin-left:6px;font-weight:400">was ${priorAliases.map(a => a.replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))).join(', ')}</span>` : ''}</span>
+        ${steamUrl ? `<a class="mp-steam-btn" href="${steamUrl}" target="_blank" rel="noopener noreferrer" title="Open ${esc(displayName)}'s Steam profile (${esc(meta.steam_id)})" aria-label="Open Steam profile">${STEAM_ICON_SVG}</a>` : ''}
         <span style="color:var(--muted);font-size:10px">${trailingLabel}</span>
       `;
       const cb = row.querySelector('input[type=checkbox]');
@@ -1992,6 +1839,10 @@ const mpEntities = []; // [{ eid, name, color, samples, pathGroup, avatar, label
           openColourPicker(eid);
         });
       }
+      // The Steam link opens in a new tab on its own - keep the click out of
+      // the row's select/toggle handling.
+      const steamBtn = row.querySelector('.mp-steam-btn');
+      if (steamBtn) steamBtn.addEventListener('click', (ev) => ev.stopPropagation());
       // Right-click anywhere on the row sets primary. preventDefault stops the
       // context menu; we explicitly don't touch the checkbox state.
       row.addEventListener('contextmenu', (ev) => {
@@ -2049,9 +1900,10 @@ if (currentPrimaryEid == null && _synthRecorderEid != null) currentPrimaryEid = 
   // marks it dead - it's the only thing on screen, so hiding it on death (HL2/
   // Portal single-player) just empties the scene. Multi-player demos keep the
   // death-hiding (it stops a dead recorder overlapping whoever they spectate).
-  const _solePlayer = mpEntities.length === 1;
-  const _anyRealTracks = mpEntities.some(e => e.samples && e.samples.length >= 3);
-  if (_solePlayer || !_anyRealTracks) for (const e of mpEntities) e.soloRecorder = true;
+  const _realEnts = mpEntities.filter(e => !isGhostEid(e.eid));
+  const _solePlayer = _realEnts.length === 1;
+  const _anyRealTracks = _realEnts.some(e => e.samples && e.samples.length >= 3);
+  if (_solePlayer || !_anyRealTracks) for (const e of _realEnts) e.soloRecorder = true;
 }
 
 // Single source of truth for "is multi-player mode active?". Used to short
@@ -2143,7 +1995,7 @@ function setPrimaryEntity(eid) {
   // Update primary highlight on sidebar rows
   document.querySelectorAll('#players-list [data-eid]').forEach(r => {
     if (r.dataset.eid === currentPrimaryEid) {
-      r.style.background = 'rgba(255, 176, 0, 0.12)';
+      r.style.background = 'rgba(255, 255, 255, 0.12)';
       r.style.borderLeft = '3px solid var(--accent)';
       r.style.paddingLeft = '4px';
     } else {
@@ -2362,7 +2214,7 @@ function mpPrimaryPeakSpeed() {
     const dy = s[i][2] - s[i-1][2];
     const dtSec = Math.max(1, s[i][0] - s[i-1][0]) / TICK_RATE;
     const v = Math.sqrt(dx*dx + dy*dy) / dtSec;
-    if (v > TELEPORT_VEL) continue; // skip respawn teleports
+    if (v > TELEPORT_VEL || isSampleTeleport(...s[i-1], ...s[i])) continue; // skip respawn teleports
     if (v > peak) peak = v;
   }
   _mpPeakCache.set(currentPrimaryEid, peak);
@@ -2383,7 +2235,7 @@ function computePlayerStat(ent) {
     const dx = s[i][1] - s[i-1][1], dy = s[i][2] - s[i-1][2];
     const dtSec = Math.max(1, s[i][0] - s[i-1][0]) / TICK_RATE;
     const v = Math.sqrt(dx*dx + dy*dy) / dtSec;
-    if (v > TELEPORT_VEL) continue; // skip respawn teleports / map transitions
+    if (v > TELEPORT_VEL || isSampleTeleport(...s[i-1], ...s[i])) continue; // skip respawn teleports / map transitions
     dist += Math.sqrt(dx*dx + dy*dy);
     if (v > peak) peak = v;
   }
@@ -2406,8 +2258,8 @@ function computePlayerStat(ent) {
 // Source team numbers: 2 = Terrorists, 3 = Counter-Terrorists; anything else is
 // unassigned / spectator. Drives the team split + colors in the scoreboard.
 const SB_TEAMS = {
-  2: { name: 'Terrorists',         color: '#e0903c' },
-  3: { name: 'Counter-Terrorists', color: '#5b8fc9' },
+  2: { name: 'Terrorists',         color: '#f5f5f5' },
+  3: { name: 'Counter-Terrorists', color: '#7a7a7a' },
 };
 
 // Toggles the sidebar launcher button (the scoreboard table itself lives in the
@@ -2416,7 +2268,7 @@ const SB_TEAMS = {
 function buildPlayerStats() {
   const panel = document.getElementById('player-stats-panel');
   if (!panel || !MP_ACTIVE) return;
-  const count = mpEntities.filter(e => e.samples && e.samples.length >= 3).length;
+  const count = mpEntities.filter(e => e.samples && e.samples.length >= 3 && !isGhostEid(e.eid)).length;
   panel.style.display = count >= 2 ? '' : 'none'; // single-player: global Statistics panel covers it
   if (count < 2) closeScoreboard();
   else if (isScoreboardOpen()) renderScoreboard();
@@ -2456,7 +2308,7 @@ function renderScoreboard() {
   const mapName = (document.getElementById('m-map') || {}).textContent;
   if (mapEl) mapEl.textContent = (mapName && mapName !== '-') ? mapName : '';
 
-  const rows = mpEntities.filter(e => e.samples && e.samples.length >= 3).map(computePlayerStat);
+  const rows = mpEntities.filter(e => e.samples && e.samples.length >= 3 && !isGhostEid(e.eid)).map(computePlayerStat);
   if (rows.length < 2) { host.innerHTML = '<div class="sb-empty">No multi-player data in this demo.</div>'; return; }
 
   const hasEcon = rows.some(r => r.kills || r.sbDeaths || r.money || r.score || r.assists);
@@ -2544,6 +2396,12 @@ function updateMultiPlayer(currentTick) {
     // "Hide specs" toggle: drop any non-primary entity with <3 samples.
     // Solo-recorder entities (single-POV / GMod) skip all the hide logic - they
     // are the only thing on screen and the spec/life signals are unreliable.
+    const isPrimEid = (currentPrimaryEid != null && e.eid === currentPrimaryEid);
+    // The camera path is the recorder's own view, so only the recorder may fall
+    // back to it. A remote player picked as primary must still hide across
+    // their own sample gaps rather than jump onto the recorder.
+    const _recorderEid = (PRIMARY_ENTITY != null) ? String(PRIMARY_ENTITY) : _synthRecorderEid;
+    const isRecorderEid = isPrimEid && _recorderEid != null && e.eid === _recorderEid;
     if (!e.soloRecorder) {
     if (hideSpecsActive && isSpectatorEntity(e)) {
       e.avatar.visible = false;
@@ -2552,8 +2410,7 @@ function updateMultiPlayer(currentTick) {
     }
     const hasStateData = (ENTITY_LIFE_STATES[e.eid] || []).length > 0
                       || (ENTITY_OBSERVER[e.eid] || []).length > 0;
-    const isPrimEid = (currentPrimaryEid != null && e.eid === currentPrimaryEid);
-    const hasCamFallback = isPrimEid && mpIsStateShownAt(e.eid, currentTick)
+    const hasCamFallback = isRecorderEid && mpIsStateShownAt(e.eid, currentTick)
       && typeof finalPositions !== 'undefined' && finalPositions.length > 0;
     // Hide whenever this entity has no position data at `currentTick`. With
     // lifeState/observer (Source/Quake) that's the dead/spectating windows;
@@ -2608,7 +2465,7 @@ function updateMultiPlayer(currentTick) {
     // viewOrigin. That makes Sierra follow the camera as the user expects,
     // instead of being parked at her ethereal spawn for the whole demo.
     let x, y, z;
-    const _useCamPath = (e.soloRecorder || e.samples.length < 3 || (currentPrimaryEid != null && e.eid === currentPrimaryEid && !mpIsShownAt(e.eid, currentTick)))
+    const _useCamPath = (e.soloRecorder || e.samples.length < 3 || (isRecorderEid && !mpIsShownAt(e.eid, currentTick)))
       && typeof finalPositions !== 'undefined' && finalPositions.length > 0;
     if (_useCamPath) {
       // Single-player recorder avatars and sparse primaries follow the same
@@ -2928,8 +2785,8 @@ const FIRE_FADE_SEC = 0.6;
 const TRACER_LEN = 2000;
 // Two attack channels: M1 = IN_ATTACK (green), M2 = IN_ATTACK2 (cyan-teal).
 // Per-instance color (vs. a single material color) is set via instanceColor.
-const FIRE_COLOR_M1 = new THREE.Color(0.18, 1.0, 0.45);
-const FIRE_COLOR_M2 = new THREE.Color(0.15, 0.85, 1.0);
+const FIRE_COLOR_M1 = new THREE.Color(1.0, 1.0, 1.0);
+const FIRE_COLOR_M2 = new THREE.Color(0.5, 0.5, 0.5);
 const FIRE_EVENTS = [];   // [{tick, x, y, z, dx, dy, dz, weapon}], sorted by tick
 let fireMarkersBuilt = false;
 let fireBurstMesh = null; // InstancedMesh of muzzle flashes
@@ -3101,13 +2958,13 @@ function updateFireMarkers(currentTick) {
     el.textContent = `${chLabel} · W${ev.weapon} · T${ev.tick}`;
     // Tint the chip border/text to match the channel
     if (ev.channel === 2) {
-      el.style.borderColor = '#26d8ff';
-      el.style.color       = '#a8eaff';
-      el.style.background  = 'rgba(0,20,30,0.78)';
+      el.style.borderColor = '#8a8a8a';
+      el.style.color       = '#bdbdbd';
+      el.style.background  = 'rgba(0,0,0,0.8)';
     } else {
-      el.style.borderColor = '#00ff88';
-      el.style.color       = '#88ffaa';
-      el.style.background  = 'rgba(0,30,10,0.78)';
+      el.style.borderColor = '#ffffff';
+      el.style.color       = '#ffffff';
+      el.style.background  = 'rgba(0,0,0,0.8)';
     }
   }
   for (let i = limit; i < fireLabelPool.length; i++) {
@@ -3198,7 +3055,7 @@ playerGroup.add(arrowHelper);
 // View cone (transparent yellow)
 const coneGeom = new THREE.ConeGeometry(150, 400, 8, 1, true);
 const coneMat = new THREE.MeshBasicMaterial({
-  color: 0xffcc00,
+  color: 0xffffff,
   transparent: true,
   opacity: 0.07,
   side: THREE.DoubleSide,
@@ -3270,7 +3127,7 @@ function composeHudFrame(compose) {
     const dw = Math.min(220, mw);
     const dh = mh * (dw / mw);
     // semi-transparent background panel
-    ctx.fillStyle = 'rgba(14, 14, 18,0.78)';
+    ctx.fillStyle = 'rgba(0, 0, 0,0.78)';
     ctx.fillRect(canvas.width - dw - margin - 6, canvas.height - dh - margin - 6, dw + 12, dh + 12);
     ctx.drawImage(mmCanvas, canvas.width - dw - margin, canvas.height - dh - margin, dw, dh);
   }
@@ -3282,13 +3139,13 @@ function composeHudFrame(compose) {
   const sec  = (tick / TICK_RATE).toFixed(1);
   const spd  = (typeof mpPrimarySpeedAt === 'function' ? mpPrimarySpeedAt(tick) : null)
             ?? REAL_SPEED[currentCmdIdx] ?? 0;
-  ctx.fillStyle = 'rgba(14, 14, 18,0.78)';
+  ctx.fillStyle = 'rgba(0, 0, 0,0.78)';
   ctx.fillRect(12, 12, 320, 56);
   ctx.font = 'bold 18px monospace';
-  ctx.fillStyle = '#ffb000';
+  ctx.fillStyle = '#ffffff';
   ctx.fillText(name, 22, 36);
   ctx.font = '14px monospace';
-  ctx.fillStyle = '#ece9e2';
+  ctx.fillStyle = '#f5f5f5';
   ctx.fillText(`${sec}s   ${Math.round(spd)} u/s`, 22, 58);
   return canvas;
 }
@@ -3327,7 +3184,7 @@ function showGifDialog() {
   dlg.style.cssText =
     'position:fixed;left:' + Math.round(rect.left) + 'px;top:' + Math.round(rect.bottom + 6) + 'px;'
     + 'background:var(--panel);border:1px solid var(--border);border-radius:6px;'
-    + 'padding:10px 12px;z-index:55;box-shadow:0 4px 18px rgba(0,0,0,0.4);'
+    + 'padding:10px 12px;z-index:55;'
     + 'font-size:11px;color:var(--text);min-width:240px;font-family:inherit';
   const s = GIF_DEFAULTS;
   dlg.innerHTML = `
@@ -3461,8 +3318,8 @@ async function startGifRecord(opts) {
   // Small floating progress badge.
   const overlay = document.createElement('div');
   overlay.id = 'gif-overlay';
-  overlay.style.cssText = 'position:fixed;top:14px;left:50%;transform:translateX(-50%);background:rgba(14, 14, 18,0.92);'
-    + 'border:1px solid var(--accent);border-radius:6px;padding:8px 14px;font-family:monospace;font-size:12px;'
+  overlay.style.cssText = 'position:fixed;top:14px;left:50%;transform:translateX(-50%);background:rgba(0, 0, 0,0.92);'
+    + 'border:1px solid var(--accent);border-radius:6px;padding:8px 14px;font-family:inherit;font-size:12px;'
     + 'color:var(--accent);z-index:60;display:flex;gap:10px;align-items:center';
   overlay.innerHTML = '<span id="gif-status">Recording 0 / ' + framesTarget + '</span>'
     + '<button onclick="cancelGifRecord()" style="background:transparent;color:#f08080;border:1px solid #f08080;border-radius:3px;cursor:pointer;font-family:inherit;font-size:11px;padding:1px 8px">Cancel</button>';
@@ -3581,8 +3438,8 @@ function toggleVideoRecord() {
   // Floating progress badge identical layout to the GIF one.
   const overlay = document.createElement('div');
   overlay.id = 'vid-overlay';
-  overlay.style.cssText = 'position:fixed;top:14px;left:50%;transform:translateX(-50%);background:rgba(14, 14, 18,0.92);'
-    + 'border:1px solid #f08080;border-radius:6px;padding:8px 14px;font-family:monospace;font-size:12px;'
+  overlay.style.cssText = 'position:fixed;top:14px;left:50%;transform:translateX(-50%);background:rgba(0, 0, 0,0.92);'
+    + 'border:1px solid #f08080;border-radius:6px;padding:8px 14px;font-family:inherit;font-size:12px;'
     + 'color:#f08080;z-index:60;display:flex;gap:10px;align-items:center';
   overlay.innerHTML = '<span id="vid-status">Recording video…</span>'
     + '<button onclick="stopVideoRecord()" style="background:transparent;color:#f08080;border:1px solid #f08080;border-radius:3px;cursor:pointer;font-family:inherit;font-size:11px;padding:1px 8px">Stop</button>';
@@ -3664,7 +3521,7 @@ document.addEventListener('keydown', e => {
   if (e.key === ']') { e.preventDefault(); if (typeof seekRound === 'function') seekRound(1); return; }
   // S toggles the scoreboard window (only when one is available). Tab remains
   // available for normal keyboard navigation through every control.
-  if (e.key.toLowerCase() === 's') {
+  if (e.key.toLowerCase() === 's' && !e.ctrlKey && !e.metaKey && !e.altKey) {
     const btn = document.getElementById('player-stats-panel');
     if (btn && btn.style.display !== 'none') { e.preventDefault(); toggleScoreboard(); }
     return;
@@ -3672,6 +3529,15 @@ document.addEventListener('keydown', e => {
 });
 
 function updatePlayhead(idx, exactTick) {
+  // Dual-view follower: local seeks (timeline drag, row clicks, arrow keys) go
+  // to the shell's master clock, which re-broadcasts to BOTH panes so they stay
+  // frame-locked. Only seeks the shell itself pushes are applied directly.
+  if (SYNC_FOLLOWER && !_syncApplying && window.parent && window.parent !== window && CMDS.length > 0) {
+    const _i = Math.max(0, Math.min(CMDS.length - 1, idx | 0));
+    const _want = (exactTick != null) ? exactTick : CMDS[_i][0];
+    window.parent.postMessage({ type: 'ds-want-seek', tick: _want }, '*');
+    return;
+  }
   // No timeline (a demo with neither usercmds nor a decoded entity track) -
   // nothing to scrub. Bail before indexing empty arrays.
   if (CMDS.length === 0 || finalPositions.length === 0) return;
@@ -3730,11 +3596,11 @@ function updatePlayhead(idx, exactTick) {
   coneMesh.position.set(dir.x * 200, 50 + dir.y * 200, dir.z * 200);
 
   // Update highlight in sidebar
-  const lifeItems = document.querySelectorAll('.life-item');
+  const lifeItems = document.querySelectorAll('#life-list > .life-item');
   lifeItems.forEach((el, i) => {
     const seg = lifeSegments[i];
     if (seg && currentCmdIdx >= seg.start && currentCmdIdx <= seg.end) {
-      el.style.background = 'rgba(31,58,95,0.5)';
+      el.style.background = 'rgba(255,255,255,0.06)';
     } else {
       el.style.background = '';
     }
@@ -4276,11 +4142,11 @@ function rebuildGrenadeMarkers() {
     const label = document.createElement('div');
     label.style.cssText =
       'position:absolute;pointer-events:none;display:none;transform:translate(-50%,-120%);'
-      + "font-family:'IBM Plex Mono','SF Mono',Menlo,monospace;font-size:10px;font-weight:600;padding:1px 5px;"
+      + "font-family:'JetBrains Mono','SF Mono',Menlo,monospace;font-size:10px;font-weight:600;padding:1px 5px;"
       + 'border-radius:3px;white-space:nowrap;background:rgba(0,0,0,0.65);z-index:7;'
       + `border:1px solid ${cssHex(info.color)};color:${cssHex(info.color)};`;
     label.textContent = thrower ? `${info.label}: ${thrower}` : info.label;
-    if (typeof labelContainer !== 'undefined' && labelContainer) labelContainer.appendChild(label);
+    { const _lc = document.getElementById('fire-labels'); if (_lc) _lc.appendChild(label); }
 
     grenadeMarkers.push({ group: g, line, label, mat, ringMat, tick: ev.tick, type: info.label, color: info.color, thrower, wx: dx, wy: ev.z + 24, wz: dz });
   }
@@ -4330,8 +4196,8 @@ function buildGrenadeLegend() {
   // Right side, just above the minimap: clear of the input-monitor (bottom-left),
   // the speedometer (top-left), the kill legend (top-right) and the minimap (below).
   el.style.cssText = 'position:absolute;right:12px;bottom:200px;z-index:8;display:none;'
-    + 'background:rgba(14, 14, 18,0.85);border:1px solid var(--border);border-radius:6px;'
-    + "padding:7px 9px;font-family:'IBM Plex Mono','SF Mono',Menlo,monospace;font-size:10px;color:#ece9e2;";
+    + 'background:rgba(0, 0, 0,0.85);border:1px solid var(--border);border-radius:6px;'
+    + "padding:7px 9px;font-family:'JetBrains Mono','SF Mono',Menlo,monospace;font-size:10px;color:#f5f5f5;";
   let rows = '<div style="font-weight:600;margin-bottom:4px">Grenades</div>';
   const seen = new Set();
   for (const k in GRENADE_INFO) {
@@ -4368,17 +4234,17 @@ function toggleGrenades() {
 const csTeam = n => (n === 2 ? 'T' : n === 3 ? 'CT' : ('team ' + n));
 
 const CONSOLE_CATEGORIES = [
-  { key: 'chat',   label: 'Chat',   color: '#ece9e2' },
+  { key: 'chat',   label: 'Chat',   color: '#f5f5f5' },
   { key: 'kill',   label: 'Kills',  color: '#f08080' },
   { key: 'round',  label: 'Round',  color: '#e3b341' },
   { key: 'nade',   label: 'Nades',  color: '#8fd3ff' },
   { key: 'spawn',  label: 'Spawn',  color: '#7ee787' },
-  { key: 'other',  label: 'Other',  color: '#9a968c' },
+  { key: 'other',  label: 'Other',  color: '#8a8a8a' },
 ];
 const activeConsoleCategories = new Set(CONSOLE_CATEGORIES.map(c => c.key));
 
 function esc(s) {
-  return String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
 function formatHMS(sec) {
@@ -4418,7 +4284,7 @@ function entityForName(name) {
 }
 function nameSpan(name, fallbackColor) {
   const e = entityForName(name);
-  const color = e ? `hsl(${e.hue}, 70%, 68%)` : (fallbackColor || '#ece9e2');
+  const color = e ? `hsl(${e.hue}, 70%, 68%)` : (fallbackColor || '#f5f5f5');
   return `<b style="color:${color}">${esc(name || '?')}</b>`;
 }
 
@@ -4502,7 +4368,7 @@ function shortWeapon(w) {
       // Speaker name in the entity's hue if we can match them; team-chat green
       // for the team prefix is intentionally separate so the speaker keeps
       // their personal colour.
-      const speaker = nameSpan(ev.player, isTeam ? '#66cc77' : '#ece9e2');
+      const speaker = nameSpan(ev.player, isTeam ? '#66cc77' : '#f5f5f5');
       html = `${stamp} ${tag}${speaker}: ${esc(ev.text||'')}`;
     } else if (ev.event === 'player_death') {
       category = 'kill';
@@ -4555,14 +4421,14 @@ function shortWeapon(w) {
       html = `${stamp} ${nameSpan(who)} <span style="color:#8fd3ff">${GRENADE_INFO[ev.event].label}</span>`;
     } else if (ev.event === 'player_connect' || ev.event === 'player_connect_client') {
       category = 'other';
-      html = `${stamp} <span style="color:#9a968c">${esc(ev.name||ev.player||'?')} connected</span>`;
+      html = `${stamp} <span style="color:#8a8a8a">${esc(ev.name||ev.player||'?')} connected</span>`;
     } else if (ev.event === 'player_disconnect') {
       category = 'other';
       const r = ev.reason ? ` (${esc(ev.reason)})` : '';
-      html = `${stamp} <span style="color:#9a968c">${esc(ev.name||ev.player||'?')} disconnected${r}</span>`;
+      html = `${stamp} <span style="color:#8a8a8a">${esc(ev.name||ev.player||'?')} disconnected${r}</span>`;
     } else if (ev.event === 'player_changename') {
       category = 'other';
-      html = `${stamp} <span style="color:#9a968c">${esc(ev.oldname||'?')} → ${esc(ev.newname||'?')}</span>`;
+      html = `${stamp} <span style="color:#8a8a8a">${esc(ev.oldname||'?')} → ${esc(ev.newname||'?')}</span>`;
     }
     if (html) consoleEntries.push({ tick: ev.tick, sec, category, html });
   }
@@ -4624,7 +4490,7 @@ function renderConsoleAll() {
 
 function highlightCurrentConsoleLine() {
   const targets = [chatLogEl, consoleOverlayBody];
-  const tick = playTick !== undefined ? playTick : 0;
+  const tick = (typeof window.playTick === 'number') ? window.playTick : 0;
   for (const t of targets) {
     if (!t) continue;
     let best = null;
@@ -4698,7 +4564,7 @@ function formatEventDetails(ev) {
 EVENTS.forEach((ev, idx) => {
   const tr = document.createElement('tr');
   const sec = tickToSec(ev.tick).toFixed(1);
-  const color = EV_COLORS[ev.event] || '#9a968c';
+  const color = EV_COLORS[ev.event] || '#8a8a8a';
   // Reuse the Console's weapon-class SVG for death rows so the event-log
   // bottom panel reads the same as the Console top panel at a glance.
   const icon = (ev.event === 'player_death' && typeof killIconSvg === 'function')
@@ -4737,10 +4603,10 @@ function drawTimeline() {
   const pad = 10;
   const pw  = W - pad * 2;
 
-  ctx.fillStyle = '#15151b';
+  ctx.fillStyle = '#000000';
   ctx.fillRect(0, 0, W, H);
 
-  ctx.fillStyle = '#1d1d25';
+  ctx.fillStyle = '#141414';
   ctx.fillRect(pad, H * 0.28, pw, H * 0.44);
 
   if (N < 2) return;
@@ -4751,7 +4617,7 @@ function drawTimeline() {
     const r = rounds[currentRoundFilter];
     const x0 = pad + ((r.startTick - minTick) / (maxTick - minTick)) * pw;
     const x1 = pad + ((r.endTick   - minTick) / (maxTick - minTick)) * pw;
-    ctx.fillStyle = 'rgba(255, 215, 0, 0.18)';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
     ctx.fillRect(x0, H * 0.28, Math.max(2, x1 - x0), H * 0.44);
   }
 
@@ -4796,7 +4662,7 @@ function drawTimeline() {
   const curTick = playbackGameTick;
   const tPlayhead = (maxTick > minTick)
     ? Math.max(0, Math.min(1, (curTick - minTick) / (maxTick - minTick))) : 0;
-  ctx.fillStyle = 'rgba(31, 58, 95, 0.6)';
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
   ctx.fillRect(pad, H * 0.28, pw * tPlayhead, H * 0.44);
 
   // Life segment markers (tick-based, to line up with the playhead)
@@ -4818,13 +4684,13 @@ function drawTimeline() {
   ctx.arc(knobX, H / 2, 6, 0, Math.PI * 2);
   ctx.fillStyle = 'white';
   ctx.fill();
-  ctx.strokeStyle = '#2a2a34';
+  ctx.strokeStyle = '#262626';
   ctx.lineWidth = 1.5;
   ctx.stroke();
 
   // Labels
-  ctx.fillStyle = '#9a968c';
-  ctx.font = '9px sans-serif';
+  ctx.fillStyle = '#8a8a8a';
+  ctx.font = '10px "JetBrains Mono", monospace';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'bottom';
   ctx.fillText('0s', pad, H);
@@ -5709,7 +5575,7 @@ function drawMinimap() {
       }
       if (px < mmMinX || px > mmMaxX || py < mmMinY || py > mmMaxY) continue;
       const isPrimary = (currentPrimaryEid != null && e.eid === currentPrimaryEid);
-      mmCtx.fillStyle = isPrimary ? '#ffb000' : `hsl(${e.hue}, 70%, 55%)`;
+      mmCtx.fillStyle = isPrimary ? '#ffffff' : `hsl(${e.hue}, 70%, 55%)`;
       mmCtx.beginPath();
       mmCtx.arc(mmX(px), mmY(py), isPrimary ? 6 : 2.4, 0, Math.PI * 2);
       mmCtx.fill();
@@ -5718,7 +5584,7 @@ function drawMinimap() {
         mmCtx.lineWidth = 2;
         mmCtx.stroke();
         // Pulsing outer ring
-        mmCtx.strokeStyle = 'rgba(255, 176, 0,0.5)';
+        mmCtx.strokeStyle = 'rgba(255, 255, 255,0.5)';
         mmCtx.lineWidth = 1;
         mmCtx.beginPath();
         mmCtx.arc(mmX(px), mmY(py), 10, 0, Math.PI * 2);
@@ -5732,7 +5598,7 @@ function drawMinimap() {
   if (!_mpActive && finalPositions.length > 0) {
     const x = finalPositions[currentCmdIdx][0], y = finalPositions[currentCmdIdx][1];
     mmCtx.fillStyle = '#ffffff';
-    mmCtx.strokeStyle = '#00aaff';
+    mmCtx.strokeStyle = '#ffffff';
     mmCtx.lineWidth = 1.5;
     mmCtx.beginPath();
     mmCtx.arc(mmX(x), mmY(y), 4, 0, Math.PI * 2);
@@ -5742,7 +5608,7 @@ function drawMinimap() {
     // View direction arrow
     const yawR = CMDS[currentCmdIdx][2] * Math.PI / 180;
     const arrowLen = 10;
-    mmCtx.strokeStyle = '#00aaff';
+    mmCtx.strokeStyle = '#ffffff';
     mmCtx.lineWidth = 1.5;
     mmCtx.beginPath();
     mmCtx.moveTo(mmX(x), mmY(y));
@@ -5828,7 +5694,8 @@ if (typeof buildPlayerStats === 'function') buildPlayerStats();
 animate();
 
 // ─── Initial update ───────────────────────────────────────────────────────────
-updatePlayhead(0);
+_syncApplying = true;
+try { updatePlayhead(0); } finally { _syncApplying = false; }
 drawTimeline();
 
 // ─── Dual-viewer sync (follower side) ─────────────────────────────────────────
@@ -5842,10 +5709,22 @@ function syncSeekTo(tick) {
   let lo = 0, hi = CMDS.length - 1;
   while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (CMDS[mid][0] <= tick) lo = mid; else hi = mid - 1; }
   playbackGameTick = tick;
-  updatePlayhead(lo, tick);
+  _syncApplying = true;
+  try { updatePlayhead(lo, tick); } finally { _syncApplying = false; }
 }
 if (SYNC_FOLLOWER) {
   isPlaying = false;
+  // The shell owns play/pause/speed: hide the dead local controls, and forward
+  // Space so it keeps working after the user clicks into a pane.
+  const _pb = document.getElementById('playback-panel');
+  if (_pb) _pb.style.display = 'none';
+  document.addEventListener('keydown', (e) => {
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+    if (e.code === 'Space' && window.parent && window.parent !== window) {
+      e.preventDefault();
+      window.parent.postMessage({ type: 'ds-key', code: 'Space' }, '*');
+    }
+  });
   window.addEventListener('message', (e) => {
     const m = e.data;
     if (!m || typeof m !== 'object') return;

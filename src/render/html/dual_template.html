@@ -4,17 +4,16 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>demoscope · side-by-side</title>
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+CiAgPHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iNyIgZmlsbD0iIzBlMGUxMiIvPgogIDxjaXJjbGUgY3g9IjE2IiBjeT0iMTYiIHI9IjEyIiBmaWxsPSJub25lIiBzdHJva2U9IiNlY2U5ZTIiIHN0cm9rZS13aWR0aD0iMS41IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1kYXNoYXJyYXk9IjE2IDQiIHRyYW5zZm9ybT0icm90YXRlKC01IDE2IDE2KSIvPgogIDxwYXRoIGQ9Ik04IDIxaDV2LTVoNXYtNWg4IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmIwMDAiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+CiAgPGNpcmNsZSBjeD0iOCIgY3k9IjIxIiByPSIxLjciIGZpbGw9IiNlY2U5ZTIiLz48cGF0aCBkPSJtMjQgOCA1IDMtNSAzeiIgZmlsbD0iI2ZmYjAwMCIvPgo8L3N2Zz4K">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%23000'/><circle cx='16' cy='16' r='11' fill='none' stroke='%23fff' stroke-width='1.5' stroke-linecap='round' stroke-dasharray='15 4'/><path d='M9 20.5h4.5V16H18v-4.5h6' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg:#0e0e12; --bg-deep:#08080b; --panel:#15151b; --grid:#1d1d25;
-    --border:#2a2a34; --text:#ece9e2; --muted:#9a968c; --accent:#ffb000;
-    --a:#ffb000; --b:#00e5cc;
-    --font-display:'Bricolage Grotesque','Segoe UI',system-ui,-apple-system,sans-serif;
-    --font-mono:'IBM Plex Mono','SF Mono',ui-monospace,Menlo,monospace;
+    --bg:#000; --panel:#0a0a0a; --grid:#161616; --border:#262626;
+    --text:#f5f5f5; --muted:#8a8a8a; --faint:#4a4a4a; --accent:#fff;
+    --font-mono:'JetBrains Mono',ui-monospace,'SF Mono',Menlo,monospace;
+    --font-display:var(--font-mono);
   }
   * { box-sizing:border-box; }
   html,body { margin:0; height:100%; }
@@ -22,30 +21,48 @@
   body { background:var(--bg); color:var(--text); font-family:var(--font-display);
          height:100vh; display:flex; flex-direction:column; overflow:hidden;
          -webkit-font-smoothing:antialiased; }
-  #bar { display:flex; align-items:center; gap:12px; padding:9px 16px;
-         background:linear-gradient(180deg,var(--panel),rgba(21,21,27,0.55));
+  ::selection { background:var(--text); color:#000; }
+
+  #bar { display:flex; align-items:center; gap:12px; padding:8px 14px;
          border-bottom:1px solid var(--border); flex:0 0 auto; }
-  #bar .title { font-weight:800; letter-spacing:-0.02em; color:var(--text); font-size:15px; }
-  #bar .title::first-letter { color:var(--accent); }
-  #bar button { padding:6px 14px; background:var(--accent); color:var(--bg-deep); border:0; border-radius:3px;
-                font-family:var(--font-mono); font-weight:600; cursor:pointer; font-size:12.5px; transition:filter .15s; }
-  #bar button:hover { filter:brightness(1.08); }
-  #bar button.sec { background:var(--grid); color:var(--text); border:1px solid var(--border); }
-  #bar button.sec:hover { border-color:var(--accent); filter:none; }
+  #bar .title { font-weight:600; font-size:13px; letter-spacing:-0.01em; white-space:nowrap; }
+  #bar .title span { color:var(--muted); font-weight:400; }
+  #bar button { padding:5px 12px; background:var(--text); color:#000; border:1px solid var(--text);
+                border-radius:2px; font-family:var(--font-mono); font-weight:500; cursor:pointer;
+                font-size:12px; transition:background .12s, border-color .12s; }
+  #bar button:hover { background:#fff; }
+  #bar button.sec { background:transparent; color:var(--text); border-color:var(--border); }
+  #bar button.sec:hover { border-color:#5a5a5a; }
   #bar button:focus-visible, #bar input:focus-visible, #bar select:focus-visible {
-    outline:2px solid var(--accent); outline-offset:2px;
+    outline:1px solid var(--accent); outline-offset:2px;
   }
-  #scrub { flex:1; accent-color:var(--accent); height:3px; }
-  #clock { font-family:var(--font-mono); font-variant-numeric:tabular-nums; color:var(--muted); min-width:120px; text-align:right; font-size:12.5px; }
-  #bar select { background:var(--grid); color:var(--text); border:1px solid var(--border); border-radius:3px; padding:5px 8px; font-family:var(--font-mono); font-size:12px; }
+
+  /* Monochrome range slider */
+  #scrub { flex:1; -webkit-appearance:none; appearance:none; background:transparent; height:16px; margin:0; }
+  #scrub::-webkit-slider-runnable-track { height:1px; background:var(--border); }
+  #scrub::-webkit-slider-thumb { -webkit-appearance:none; width:11px; height:11px; border-radius:50%;
+                                 background:#fff; margin-top:-5px; cursor:pointer; }
+  #scrub::-moz-range-track { height:1px; background:var(--border); }
+  #scrub::-moz-range-progress { height:1px; background:#fff; }
+  #scrub::-moz-range-thumb { width:11px; height:11px; border:0; border-radius:50%; background:#fff; cursor:pointer; }
+
+  #clock { font-family:var(--font-mono); font-variant-numeric:tabular-nums; color:var(--muted);
+           min-width:120px; text-align:right; font-size:12px; }
+  #bar select { background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:2px;
+                padding:4px 8px; font-family:var(--font-mono); font-size:12px; cursor:pointer; }
+
   #panes { flex:1 1 auto; display:flex; min-height:0; }
   .pane { flex:1 1 50%; display:flex; flex-direction:column; min-width:0; }
   .pane + .pane { border-left:1px solid var(--border); }
-  .pane .label { padding:6px 12px; font-family:var(--font-mono); font-size:11.5px; background:var(--panel); border-bottom:1px solid var(--border);
-                 white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--muted); }
+  .pane .label { padding:6px 12px; font-family:var(--font-mono); font-size:11px;
+                 border-bottom:1px solid var(--border); white-space:nowrap; overflow:hidden;
+                 text-overflow:ellipsis; color:var(--muted); }
   .pane .label b { color:var(--text); font-weight:600; }
-  .pane .tag { display:inline-block; width:9px; height:9px; border-radius:2px; margin-right:7px; vertical-align:-1px; }
+  .pane .tag { display:inline-block; width:8px; height:8px; margin-right:8px; vertical-align:0;
+               background:#fff; border:1px solid #fff; }
+  .pane .tag.hollow { background:transparent; }
   iframe { flex:1 1 auto; border:0; width:100%; background:var(--bg); }
+
   @media (max-width:760px) {
     #bar { gap:8px; padding:8px 10px; flex-wrap:wrap; }
     #bar .title { width:100%; }
@@ -59,15 +76,14 @@
 </head>
 <body>
   <div id="bar">
-    <svg width="18" height="18" viewBox="0 0 100 100" style="flex-shrink:0" aria-hidden="true">
-      <circle cx="50" cy="50" r="43" fill="none" stroke="#ece9e2" stroke-width="3.4" stroke-linecap="round" stroke-dasharray="56 11" transform="rotate(-3 50 50)"/>
-      <path d="M25 66H42V52H60V37H91" fill="none" stroke="#ffb000" stroke-width="4.6" stroke-linecap="round" stroke-linejoin="round"/>
-      <circle cx="25" cy="66" r="4" fill="#ece9e2"/><path d="m88 31 9 6-9 6z" fill="#ffb000"/>
+    <svg width="16" height="16" viewBox="0 0 100 100" style="flex-shrink:0" aria-hidden="true">
+      <circle cx="50" cy="50" r="43" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-dasharray="56 11" transform="rotate(-3 50 50)"/>
+      <path d="M25 66H42V52H60V37H85" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>
-    <span class="title">demoscope · diff</span>
+    <span class="title">demoscope <span>/ diff</span></span>
     <button id="play">&#9654; Play</button>
     <button id="rew" class="sec" title="Rewind to start">&#9664;&#9664;</button>
-    <input type="range" id="scrub" min="0" max="1000" value="0">
+    <input type="range" id="scrub" min="0" max="1000" value="0" aria-label="Race clock">
     <span id="clock">0.0s / 0.0s</span>
     <select id="speed" title="Playback speed">
       <option value="0.25">0.25&times;</option>
@@ -79,12 +95,12 @@
   </div>
   <div id="panes">
     <div class="pane">
-      <div class="label" id="lblA"><span class="tag" style="background:#ffb000"></span><b>A</b></div>
-      <iframe id="a" allow="fullscreen"></iframe>
+      <div class="label" id="lblA"></div>
+      <iframe id="a" allow="fullscreen" title="Demo A"></iframe>
     </div>
     <div class="pane">
-      <div class="label" id="lblB"><span class="tag" style="background:#00e5cc"></span><b>B</b></div>
-      <iframe id="b" allow="fullscreen"></iframe>
+      <div class="label" id="lblB"></div>
+      <iframe id="b" allow="fullscreen" title="Demo B"></iframe>
     </div>
   </div>
 <script>
@@ -102,28 +118,22 @@
     return URL.createObjectURL(new Blob([u], { type: 'text/html' })) + '#sync';
   }
 
+  // Labels are built from text nodes: demo file names never reach innerHTML.
+  function setLabel(id, letter, name, hollow) {
+    const el = document.getElementById(id);
+    const tag = document.createElement('span');
+    tag.className = 'tag' + (hollow ? ' hollow' : '');
+    const b = document.createElement('b');
+    b.textContent = letter;
+    el.replaceChildren(tag, b, document.createTextNode(' \u00b7 ' + name));
+    el.title = name;
+  }
+  setLabel('lblA', 'A', NAME_A, false);
+  setLabel('lblB', 'B', NAME_B, true);
+
   const fa = document.getElementById('a');
   const fb = document.getElementById('b');
   const meta = { a: null, b: null };
-
-  document.getElementById('lblA').innerHTML =
-    '<span class="tag" style="background:#ffb000"></span><b>A</b> &middot; ' + NAME_A;
-  document.getElementById('lblB').innerHTML =
-    '<span class="tag" style="background:#00e5cc"></span><b>B</b> &middot; ' + NAME_B;
-
-  // Collect each follower's tick range / rate so the master clock can map a
-  // shared "race second" onto each demo's own ticks (different length/rate ok).
-  window.addEventListener('message', (e) => {
-    const m = e.data;
-    if (!m || m.type !== 'ds-ready') return;
-    if (e.source === fa.contentWindow) meta.a = m;
-    else if (e.source === fb.contentWindow) meta.b = m;
-    // Re-seek to the current position once a side reports in.
-    pushSeek();
-  });
-
-  fa.src = blobUrl(A_B64);
-  fb.src = blobUrl(B_B64);
 
   // ── Master race-clock ───────────────────────────────────────────────────────
   let raceSec = 0, playing = false, speed = 1, lastTs = 0;
@@ -151,6 +161,47 @@
     clock.textContent = raceSec.toFixed(1) + 's / ' + T.toFixed(1) + 's';
   }
   function updPlayBtn() { playBtn.innerHTML = playing ? '&#9646;&#9646; Pause' : '&#9654; Play'; }
+  function seekRace(sec) {
+    raceSec = Math.max(0, Math.min(totalSec(), sec));
+    updUi();
+    pushSeek();
+  }
+  function togglePlay() {
+    if (raceSec >= totalSec()) raceSec = 0;
+    playing = !playing;
+    lastTs = performance.now();
+    updPlayBtn();
+  }
+
+  // Messages from the panes:
+  //   ds-ready      → tick range / rate for the race-clock mapping
+  //   ds-want-seek  → a local seek inside a pane; convert to race time, sync both
+  //   ds-key        → Space pressed while a pane had focus
+  //   demoscope:back (string) → Esc inside a pane; hand up to any embedding host
+  window.addEventListener('message', (e) => {
+    const side = e.source === fa.contentWindow ? 'a' : e.source === fb.contentWindow ? 'b' : null;
+    if (!side) return;
+    const m = e.data;
+    if (m === 'demoscope:back') {
+      if (window.parent && window.parent !== window) window.parent.postMessage('demoscope:back', '*');
+      return;
+    }
+    if (!m || typeof m !== 'object') return;
+    if (m.type === 'ds-ready') {
+      meta[side] = m;
+      updUi();
+      pushSeek();
+    } else if (m.type === 'ds-want-seek') {
+      const src = meta[side];
+      if (!src || !(src.tickRate > 0)) return;
+      seekRace((m.tick - src.minTick) / src.tickRate);
+    } else if (m.type === 'ds-key' && m.code === 'Space') {
+      togglePlay();
+    }
+  });
+
+  fa.src = blobUrl(A_B64);
+  fb.src = blobUrl(B_B64);
 
   function loop(ts) {
     requestAnimationFrame(loop);
@@ -165,21 +216,18 @@
   }
   requestAnimationFrame(loop);
 
-  playBtn.onclick = () => {
-    if (raceSec >= totalSec()) raceSec = 0;
-    playing = !playing;
-    lastTs = performance.now();
-    updPlayBtn();
-  };
-  document.getElementById('rew').onclick = () => { raceSec = 0; updUi(); pushSeek(); };
-  scrub.oninput = (e) => { raceSec = (e.target.value / 1000) * totalSec(); updUi(); pushSeek(); };
+  playBtn.onclick = togglePlay;
+  document.getElementById('rew').onclick = () => seekRace(0);
+  scrub.oninput = (e) => seekRace((e.target.value / 1000) * totalSec());
   document.getElementById('speed').onchange = (e) => { speed = parseFloat(e.target.value); };
 
-  // Keyboard: space toggles play, arrows nudge.
+  // Keyboard (when the shell has focus): Space toggles, arrows nudge 1s.
   window.addEventListener('keydown', (e) => {
-    if (e.code === 'Space') { e.preventDefault(); playBtn.onclick(); }
-    else if (e.code === 'ArrowRight') { raceSec = Math.min(totalSec(), raceSec + 1); updUi(); pushSeek(); }
-    else if (e.code === 'ArrowLeft') { raceSec = Math.max(0, raceSec - 1); updUi(); pushSeek(); }
+    if (e.target instanceof HTMLSelectElement) return;
+    if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
+    else if (e.target === scrub) return; // the slider handles its own arrows
+    else if (e.code === 'ArrowRight') seekRace(raceSec + 1);
+    else if (e.code === 'ArrowLeft') seekRace(raceSec - 1);
   });
 </script>
 </body>
