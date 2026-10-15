@@ -111,16 +111,72 @@ fn wrap_raw(raw: player_tracks::PlayerTrackData) -> Result<MultiPlayerData, Box<
     })
 }
 
+// A single raw step longer than this is a teleport or respawn, not movement.
+const JUMP_KEEP_DIST_SQ: f32 = 200.0 * 200.0;
+
+/// Thins a track to roughly `target` points by keeping every Nth sample, plus
+/// both ends of every large single-step jump. Without those, a teleport between
+/// two strided samples looks like fast-but-plausible movement, so the viewer
+/// joins the two places with a line and counts it as a speed peak.
 pub fn subsample(track: &[(i32, f32, f32, f32)], target: usize) -> Vec<(i32, f32, f32, f32)> {
     if track.len() <= target {
         return track.to_vec();
     }
-    let stride = (track.len() + target - 1) / target;
-    let mut out: Vec<_> = track.iter().step_by(stride).cloned().collect();
-    if let Some(last) = track.last() {
-        if out.last().map(|p| p.0) != Some(last.0) {
-            out.push(*last);
+    let stride = track.len().div_ceil(target);
+    let mut keep = vec![false; track.len()];
+    for i in (0..track.len()).step_by(stride) {
+        keep[i] = true;
+    }
+    keep[track.len() - 1] = true;
+
+    let jumps: Vec<usize> = (1..track.len())
+        .filter(|&i| {
+            let (_, ax, ay, az) = track[i - 1];
+            let (_, bx, by, bz) = track[i];
+            let (dx, dy, dz) = (bx - ax, by - ay, bz - az);
+            dx * dx + dy * dy + dz * dz > JUMP_KEEP_DIST_SQ
+        })
+        .collect();
+    // A track that "jumps" constantly is sparse rather than teleporting; keep
+    // the plain stride so the output size stays bounded.
+    if jumps.len() <= target / 2 {
+        for i in jumps {
+            keep[i - 1] = true;
+            keep[i] = true;
         }
     }
-    out
+
+    track
+        .iter()
+        .zip(keep)
+        .filter_map(|(p, k)| k.then_some(*p))
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::subsample;
+
+    #[test]
+    fn subsample_keeps_both_ends_of_a_teleport() {
+        // 1000 samples walking 5u per tick, with a 900u teleport at index 503.
+        let track: Vec<_> = (0..1000)
+            .map(|i| {
+                let x = i as f32 * 5.0 + if i >= 503 { 900.0 } else { 0.0 };
+                (i, x, 0.0, 0.0)
+            })
+            .collect();
+        let out = subsample(&track, 100);
+        assert!(out.len() <= 103, "{}", out.len());
+        assert!(out.contains(&track[502]) && out.contains(&track[503]));
+        assert_eq!(out.first(), track.first());
+        assert_eq!(out.last(), track.last());
+        assert!(out.windows(2).all(|w| w[0].0 < w[1].0), "stays in order");
+    }
+
+    #[test]
+    fn subsample_leaves_short_tracks_alone() {
+        let track = vec![(0, 0.0, 0.0, 0.0), (1, 999.0, 0.0, 0.0)];
+        assert_eq!(subsample(&track, 100), track);
+    }
 }
