@@ -1,4 +1,4 @@
-// Quake-family demo decoding (Quake 1 / 2 / 3).
+// Quake-family demo decoding (Quake 1 / QuakeWorld / 2 / 3).
 //
 // These are a different lineage from the Source `HL2DEMO` format the rest of
 // the crate decodes, but they slot into the SAME output: each parser produces a
@@ -18,6 +18,7 @@ use super::source::multi_player::{MultiPlayerData, PlayerMeta};
 pub mod q1;
 pub mod q2;
 pub mod q3;
+pub mod qw;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum QuakeKind {
@@ -81,7 +82,7 @@ pub fn parse(kind: QuakeKind, data: &[u8], name: &str) -> Result<QuakeDemo, Box<
         QuakeKind::Q2 => q2::parse(data),
         QuakeKind::Q3 => q3::parse(data, name),
         QuakeKind::Q1Net => q1::parse_netquake(data),
-        QuakeKind::QwMvd => q1::parse_qw_mvd(data),
+        QuakeKind::QwMvd => qw::parse(data, name),
     }
 }
 

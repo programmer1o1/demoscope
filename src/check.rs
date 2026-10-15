@@ -110,18 +110,6 @@ pub fn check_demo(bytes: &[u8], name_hint: &str) -> DemoHealth {
     // Quake family (Q1/Q2/Q3): matched by extension+content; returns None for
     // HL2DEMO so Source 1 demos fall through.
     if let Some(kind) = super::quake::detect(name_hint, bytes) {
-        // QuakeWorld is deliberately detected so users receive a precise
-        // compatibility message, but its extension-negotiated .qwd/.mvd stream
-        // is not decoded yet. This is a known product boundary, not a decoder
-        // regression, so the health harness reports WARN instead of making the
-        // supported-format release gate fail.
-        if kind == super::quake::QuakeKind::QwMvd {
-            return DemoHealth::warn(
-                name_hint,
-                "quake",
-                "QuakeWorld .qwd/.mvd is detected but not decoded yet; NetQuake .dem is supported",
-            );
-        }
         return guard(name_hint, "quake", || {
             match super::quake::parse(kind, bytes, name_hint) {
                 Ok(d) => {
@@ -227,7 +215,7 @@ fn is_supported_demo_path(path: &std::path::Path) -> bool {
         .is_some_and(|ext| {
             matches!(
                 ext.to_ascii_lowercase().as_str(),
-                "dem" | "dm2" | "dm_66" | "dm_67" | "dm_68"
+                "dem" | "dm2" | "dm_66" | "dm_67" | "dm_68" | "mvd" | "qwd"
             )
         })
 }
@@ -305,7 +293,14 @@ mod tests {
 
     #[test]
     fn directory_discovery_covers_supported_extensions() {
-        for name in ["match.dem", "match.dm2", "match.dm_66", "match.dm_68"] {
+        for name in [
+            "match.dem",
+            "match.dm2",
+            "match.dm_66",
+            "match.dm_68",
+            "match.mvd",
+            "match.qwd",
+        ] {
             assert!(is_supported_demo_path(std::path::Path::new(name)), "{name}");
         }
         for name in ["match.dm_71", "match.dm_91", "map.bsp", "notes.txt"] {
@@ -317,12 +312,11 @@ mod tests {
     }
 
     #[test]
-    fn known_unsupported_quakeworld_is_a_warning() {
+    fn garbage_quakeworld_fails_cleanly() {
         for name in ["match.qwd", "match.mvd"] {
             let h = check_demo(b"placeholder", name);
             assert_eq!(h.format, "quake");
-            assert_eq!(h.status, Status::Warn, "{name}");
-            assert!(h.note.contains("not decoded yet"), "{name}");
+            assert_eq!(h.status, Status::Fail, "{name}");
         }
     }
 

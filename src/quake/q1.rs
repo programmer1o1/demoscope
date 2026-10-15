@@ -8,9 +8,7 @@
 // update); the recorder's view entity is named by svc_setview. Refs: original
 // Quake source (cl_parse.c CL_ParseServerMessage / CL_ParseUpdate, common.c MSG_*).
 //
-// QuakeWorld (.qwd / .mvd): a different, extension-negotiated protocol (the MVD
-// test file on hand carries FTE protocol extensions). It is NOT vanilla NetQuake
-// and is left as a documented gap rather than a half-correct decode.
+// QuakeWorld (.qwd / .mvd) is a different protocol, decoded in `qw.rs`.
 
 use std::collections::HashMap;
 use std::error::Error;
@@ -449,13 +447,4 @@ fn parse_temp_entity(m: &mut ByteReader) {
         }
     };
     m.skip(n);
-}
-
-pub fn parse_qw_mvd(_data: &[u8]) -> Result<QuakeDemo, Box<dyn Error>> {
-    Err(
-        "QuakeWorld .qwd/.mvd demos use an extension-negotiated protocol (the \
-         sample carries FTE extensions) distinct from NetQuake; not yet supported. \
-         Vanilla NetQuake .dem files decode via the Q1 path."
-            .into(),
-    )
 }
