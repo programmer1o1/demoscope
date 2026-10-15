@@ -47,6 +47,17 @@ const HTML_TEMPLATE: &str = include_str!("template.html");
 
 const MAX_CMDS_EMBED: usize = 20_000;
 
+// Creates the output file, making any missing parent directories first, and
+// names the path in the error so a bad `--html` target is easy to spot.
+fn create_output(output_path: &Path) -> io::Result<File> {
+    let with_path =
+        |e: io::Error| io::Error::new(e.kind(), format!("{}: {e}", output_path.display()));
+    if let Some(parent) = output_path.parent().filter(|p| !p.as_os_str().is_empty()) {
+        std::fs::create_dir_all(parent).map_err(with_path)?;
+    }
+    File::create(output_path).map_err(with_path)
+}
+
 // CLI wrapper - reads the dem + (optional) bsp from disk, delegates to the
 // pure-bytes core, then writes the result. Keeps the existing command-line
 // behaviour intact while the WASM build calls the core directly.
@@ -116,7 +127,7 @@ pub(crate) fn generate_html(
             &name_hint,
         )
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
-        let mut out_file = File::create(output_path)?;
+        let mut out_file = create_output(output_path)?;
         out_file.write_all(html.as_bytes())?;
         eprintln!(
             "HTML -> {}  ({:.1} KB)",
@@ -160,7 +171,7 @@ pub(crate) fn generate_html(
         };
         let html = generate_quake_html(&data, kind, bsp_bytes.as_deref(), &name_hint)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
-        let mut out_file = File::create(output_path)?;
+        let mut out_file = create_output(output_path)?;
         out_file.write_all(html.as_bytes())?;
         eprintln!(
             "HTML -> {}  ({:.1} KB)",
@@ -193,7 +204,7 @@ pub(crate) fn generate_html(
         };
         let html = generate_goldsrc_html_multi(&data, &map_refs, &name_hint)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
-        let mut out_file = File::create(output_path)?;
+        let mut out_file = create_output(output_path)?;
         out_file.write_all(html.as_bytes())?;
         eprintln!(
             "HTML -> {}  ({:.1} KB)",
@@ -255,7 +266,7 @@ pub(crate) fn generate_html(
             None,
         )?,
     };
-    let mut out_file = File::create(output_path)?;
+    let mut out_file = create_output(output_path)?;
     out_file.write_all(html.as_bytes())?;
     let size_kb = html.len() as f64 / 1024.0;
     eprintln!("HTML -> {}  ({:.1} KB)", output_path.display(), size_kb);
@@ -264,10 +275,9 @@ pub(crate) fn generate_html(
 
 const DUAL_TEMPLATE: &str = include_str!("dual_template.html");
 
-/// Build the side-by-side **dual viewer** (`--diff`): two complete, independent
-/// viewers (each its own scene, camera, kills, events, timeline) embedded as
-/// base64 blobs in a shell that frame-locks them to one master race-clock. Each
-/// inner viewer runs in `#sync` follower mode. Source (HL2DEMO) demos only.
+/// Build the side-by-side **dual viewer** (`--diff-split`): two complete,
+/// independent viewers embedded as base64 blobs in a shell that frame-locks
+/// them to one master race-clock. Source (HL2DEMO) demos only.
 pub fn generate_dual_html_string(
     demo_a: &[u8],
     bsp_a: Option<&[u8]>,
@@ -280,11 +290,13 @@ pub fn generate_dual_html_string(
     use base64::{Engine as _, engine::general_purpose::STANDARD};
     let viewer_a = generate_html_string(demo_a, bsp_a, name_a, jump_threshold, None)?;
     let viewer_b = generate_html_string(demo_b, bsp_b, name_b, jump_threshold, None)?;
-    // JS string-escape for the pane labels (the base64 blobs need no escaping).
+    // JS string-escape for the pane labels. `<` becomes \u003c so a file name
+    // containing `</script>` can't close the script block early.
     let esc = |s: &str| {
         s.replace('\\', "\\\\")
             .replace('"', "\\\"")
             .replace(['\n', '\r'], " ")
+            .replace('<', "\\u003c")
     };
     let html = DUAL_TEMPLATE
         .replace("__VIEWER_A__", &STANDARD.encode(viewer_a.as_bytes()))

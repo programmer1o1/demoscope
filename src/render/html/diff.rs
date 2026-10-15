@@ -105,6 +105,23 @@ fn extract_recorder_path(data: &[u8]) -> (Vec<(i32, f32, f32, f32)>, Vec<(i32, f
                 }
                 offset = next;
             }
+            // proto-4 DEM_CustomData: callbackIndex(4) + length(4) + data.
+            // Mirrors the arm in mod.rs; without it a Portal 2 diff demo
+            // desyncs at the first CustomData frame and yields no path.
+            8 if proto > 3 => {
+                let p = offset + pkt_hdr;
+                if p + 8 > data.len() {
+                    break;
+                }
+                let length = le_i32(data, p + 4);
+                if length < 0 {
+                    break;
+                }
+                offset = p
+                    .saturating_add(8)
+                    .saturating_add(length as usize)
+                    .min(data.len());
+            }
             6 | 8 | 9 => {
                 let p = offset + pkt_hdr;
                 if p + 4 > data.len() {
