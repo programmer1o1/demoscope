@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.8.0 (unreleased)
+## v0.8.0: "Strafe"
 
 - **QuakeWorld `.mvd` decoding.** MVDSV / KTX multi-view recordings now decode
   to per-player tracks, view angles, names, deaths and spectators, including the
