@@ -30,7 +30,11 @@ repository owner; they are open questions, not facts.
 demos, not a recording made by the project: the map is `background1`, the
 server is `localhost:0`, and the client name `cge7-193` also appears in a
 Half-Life: Source `background02` demo (`game_dir` `hl1`). That points to a
-Valve-authored file shipped in the game's data, but it is not proven.
+Valve-authored file shipped in the game's data, but it is not proven: the same
+name is also a player name in one TF2 demo in the owner's local corpus, so it
+may instead be a default name taken from some machine. **To confirm:** whether
+`cge7-193` is the owner's own machine name. If it is, these menu demos were
+recorded locally and the license concern below mostly goes away.
 
 **License / permission.** **To confirm.** If it is a stock Valve asset, it is
 Valve's copyrighted game content and the repository has no license to
