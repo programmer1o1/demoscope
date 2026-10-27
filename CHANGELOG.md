@@ -8,6 +8,13 @@
   `--json is only supported for Source 1 demos` (or `--csv`) to stderr, print
   nothing to stdout, and exit with code 1. `--summary`, `--html` and `--all` are
   unchanged.
+- **Output contract documented.** New `docs/OUTPUT.md` defines what is stable
+  from 1.0 (CLI flags, exit codes, `--csv` columns, `--json` keys and types,
+  `--check` status words and exit code), documents the embedded HTML tables as
+  internal and unstable, and states the versioning policy.
+- **Golden tests.** `tests/golden.rs` snapshots `--json` output and a digest of
+  the embedded HTML tables for every fixture; `tests/cli_contract.rs` covers
+  exit codes. Update snapshots with `UPDATE_GOLDEN=1 cargo test --test golden`.
 - **Compatibility matrix rewritten.** `docs/COMPATIBILITY.md` now has a status
   legend (✅ supported, 🟡 partial, ⚠ experimental, ✗ rejected), a "Verified on"
   entry for every row (game / map / mode and measured track counts, or "not yet
