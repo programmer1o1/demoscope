@@ -25,6 +25,11 @@
   `.dm_66`-`.dm_68` are experimental and report `WARN` whether or not they
   decode (never `PASS`, never `FAIL`), in both modes, so they can't make a sweep
   exit 1.
+- **Test fixtures replaced.** `tests/fixtures/` now holds six maintainer-recorded
+  demos plus one approved public demo (seven files) instead of two third-party ones, covering
+  CS:S, CS2, CS:GO, Portal, Portal 2, Deadlock and the HL2 2004 engine. Each one
+  is documented in `tests/fixtures/README.md` (source, license, personal data).
+  The CLI contract and golden tests moved to the new files.
 - **CI covers more.** The regression workflow now runs `cargo test --all-targets`
   (including the golden snapshots) and `demoscope --check tests/fixtures`, and a
   new `wasm` job builds the bundle and runs `scripts/check-wasm.mjs`, which

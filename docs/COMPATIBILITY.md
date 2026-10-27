@@ -126,8 +126,10 @@ golden-output snapshots), `demoscope --check` over `tests/fixtures/` (no `FAIL`
 allowed), loads each fixture's viewer in headless Chromium, and builds the wasm
 bundle and checks that it returns the same HTML as the CLI. It also generates
 HTML and validates its embedded JavaScript when a demo corpus is available. The
-fixtures are two demos (Source 1 and Source 2), so the other engine families are
-not covered by CI. For a local corpus, run:
+fixtures cover Source 1 (CS:S, CS:GO, Portal, Portal 2, the HL2 2004 engine) and
+Source 2 (CS2, Deadlock); Quake, GoldSrc, TF2 and the other games are covered
+only by the maintainer's private corpus, so CI does not exercise those decoders.
+For a local corpus, run:
 
 ```bash
 demoscope --check /path/to/demos

@@ -5,6 +5,12 @@ use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::process::{Command, Output, Stdio};
 
+// A Source 1 fixture with usercmds, and a Source 2 fixture (no `--csv` / `--json`).
+const S1: &str = "portal_testchmb_a_10.dem";
+const S2: &str = "deadlock_bots_clip.dem";
+// A Source 1 fixture whose `--json` / `--csv` output is larger than a pipe buffer.
+const BIG_S1: &str = "portal2_sp_a3_01.dem";
+
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
@@ -22,7 +28,7 @@ fn run(args: &[&str], demo: &str) -> Output {
 
 #[test]
 fn json_on_source2_exits_nonzero_with_empty_stdout() {
-    let out = run(&["--json"], "hi.dem");
+    let out = run(&["--json"], S2);
     assert_eq!(out.status.code(), Some(1));
     assert!(
         out.stdout.is_empty(),
@@ -38,7 +44,7 @@ fn json_on_source2_exits_nonzero_with_empty_stdout() {
 
 #[test]
 fn csv_on_source2_exits_nonzero_with_empty_stdout() {
-    let out = run(&["--csv"], "hi.dem");
+    let out = run(&["--csv"], S2);
     assert_eq!(out.status.code(), Some(1));
     assert!(out.stdout.is_empty());
     let err = String::from_utf8_lossy(&out.stderr);
@@ -50,14 +56,14 @@ fn csv_on_source2_exits_nonzero_with_empty_stdout() {
 
 #[test]
 fn summary_on_source2_still_succeeds() {
-    let out = run(&["--summary"], "hi.dem");
+    let out = run(&["--summary"], S2);
     assert_eq!(out.status.code(), Some(0));
     assert!(String::from_utf8_lossy(&out.stdout).contains("Source 2 PBDEMS2"));
 }
 
 #[test]
 fn json_on_source1_is_a_json_array() {
-    let out = run(&["--json"], "backgrounddem.dem");
+    let out = run(&["--json"], S1);
     assert_eq!(out.status.code(), Some(0));
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(stdout.starts_with("[\n"));
@@ -66,7 +72,7 @@ fn json_on_source1_is_a_json_array() {
 
 #[test]
 fn csv_on_source1_starts_with_the_documented_header() {
-    let out = run(&["--csv"], "backgrounddem.dem");
+    let out = run(&["--csv"], S1);
     assert_eq!(out.status.code(), Some(0));
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert_eq!(
@@ -108,7 +114,7 @@ fn check_on_a_missing_path_fails_with_exit_one() {
 
 #[test]
 fn csv_and_json_together_exit_one_with_empty_stdout() {
-    for demo in ["backgrounddem.dem", "hi.dem"] {
+    for demo in [S1, S2] {
         let out = run(&["--csv", "--json"], demo);
         assert_eq!(out.status.code(), Some(1), "{demo}");
         assert!(out.stdout.is_empty(), "{demo}: stdout must be empty");
@@ -126,7 +132,7 @@ fn closed_stdout_exits_zero_without_panicking() {
     // writing when the reader goes away.
     for flag in ["--json", "--csv"] {
         let mut child = Command::new(env!("CARGO_BIN_EXE_demoscope"))
-            .arg(fixture("backgrounddem.dem"))
+            .arg(fixture(BIG_S1))
             .arg(flag)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
