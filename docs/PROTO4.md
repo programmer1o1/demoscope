@@ -1,6 +1,6 @@
 # Proto-4 (Portal 2 / Stanley Parable / L4D) decode
 
-Demos with `demo_protocol = 4` (Portal 2, Aperture Tag, Stanley Parable, L4D1/L4D2, and CS:GO at net protocol 13xxx, pre-CS2) share the `HL2DEMO` magic and bit-level wire conventions of proto-3 but diverge in several layers. Each had to be peeled back in order before a single entity position came out. **Portal 2, The Stanley Parable, and L4D1/L4D2 fully decode.** Source 1 CS:GO is a separate protobuf-based path, implemented in `src/source/csgo/`.
+Demos with `demo_protocol = 4` (Portal 2, Aperture Tag, Stanley Parable, L4D1/L4D2, and CS:GO at net protocol 13xxx, pre-CS2) share the `HL2DEMO` magic and bit-level wire conventions of proto-3 but diverge in several layers. Each had to be peeled back in order before a single entity position came out. **These games decode; see [COMPATIBILITY.md](COMPATIBILITY.md) for per-game status.** Source 1 CS:GO is a separate protobuf-based path, implemented in `src/source/csgo/`.
 
 The layers, outermost to innermost:
 
