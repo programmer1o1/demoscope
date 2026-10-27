@@ -700,7 +700,7 @@ if (CMDS.length === 0) {
 // stream so it scales across tickrates and games.
 //
 // Algorithm: compute 99th-percentile horizontal delta from WORLD_POSITIONS
-// (per-tick recorder eye position), multiply by 2.5. This puts the cutoff
+// (per-tick recorder origin), multiply by 2.5. This puts the cutoff
 // comfortably above legitimate fast movement (rocket jumps, sticky jumps,
 // sprinting) while staying well below any real teleport / map switch.
 function deriveJumpThreshold() {
