@@ -6,7 +6,8 @@ name: regression
 # entities / samples on a couple of stable reference demos.
 #
 # The tracked demos in `tests/fixtures/` are always checked:
-#   - `cargo test` (unit tests, CLI contract tests, golden-output snapshots);
+#   - unit tests (debug), then the CLI contract tests and golden-output
+#     snapshots (release);
 #   - `demoscope --check tests/fixtures` (no FAIL allowed; WARN is reported);
 #   - each viewer is loaded in headless Chromium and any JavaScript error fails
 #     the run (scripts/check-viewer.sh);
@@ -39,8 +40,15 @@ jobs:
         run: cargo build --release 2>&1 | tee build.log
             && ! grep -E "^warning" build.log
 
-      - name: Tests (unit, CLI contract, golden snapshots)
-        run: cargo test --all-targets
+      # Unit tests stay in debug mode, which keeps overflow checks on (they have
+      # caught real walker bugs). The CLI contract and golden tests decode every
+      # fixture several times, so they run in release mode: about 5 s instead of
+      # about 30 s, with the same results.
+      - name: Unit tests (debug)
+        run: cargo test --lib --bins
+
+      - name: CLI contract and golden snapshot tests (release)
+        run: cargo test --release --test cli_contract --test golden
 
       - name: Decode check over the fixtures (no FAIL)
         run: ./target/release/demoscope --check tests/fixtures
