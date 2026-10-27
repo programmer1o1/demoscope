@@ -32,14 +32,15 @@ Everything else works on every engine through `--html` and `--check`.
 
 Standard output carries the requested data. Diagnostics go to standard error.
 With `--csv` and `--json`, nothing but the data is written to stdout. Passing
-`--csv` and `--json` together is not supported.
+`--csv` and `--json` together is an error: nothing is written to stdout, a
+message goes to stderr and the exit code is 1.
 
 ### Exit codes
 
 | Code | Meaning |
 |------|---------|
 | `0` | Success. Also `--help`, and `--check` runs with no `FAIL`. |
-| `1` | Any error: no arguments, unreadable file, unsupported or corrupt demo, a failed `--html`, `--csv` / `--json` on a non-Source 1 demo, or a `--check` run with at least one `FAIL`. |
+| `1` | Any error: no arguments, unreadable file, unsupported or corrupt demo, a failed `--html`, `--csv` and `--json` together, `--csv` / `--json` on a non-Source 1 demo, or a `--check` run with at least one `FAIL`. |
 
 No other exit codes are promised. A panic (for example, writing to a closed
 pipe) exits with Rust's default of 101 and is a bug, not part of the contract.

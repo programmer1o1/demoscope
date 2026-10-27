@@ -98,3 +98,17 @@ fn check_on_a_missing_path_fails_with_exit_one() {
     assert_eq!(out.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&out.stdout).contains("FAIL"));
 }
+
+#[test]
+fn csv_and_json_together_exit_one_with_empty_stdout() {
+    for demo in ["backgrounddem.dem", "hi.dem"] {
+        let out = run(&["--csv", "--json"], demo);
+        assert_eq!(out.status.code(), Some(1), "{demo}");
+        assert!(out.stdout.is_empty(), "{demo}: stdout must be empty");
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            err.contains("--csv and --json can't be used together"),
+            "{demo}: unexpected stderr: {err}"
+        );
+    }
+}

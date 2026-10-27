@@ -77,12 +77,8 @@ fn print_usage(prog: &str) {
 
 /// `--csv` / `--json` only exist for Source 1 usercmds. On any other engine,
 /// fail with nothing on stdout so a consumer never parses a text banner as data.
-fn exit_unsupported_packet_output(csv_mode: bool, json_mode: bool, engine: &str) -> ! {
-    let flags = match (csv_mode, json_mode) {
-        (true, true) => "--csv and --json are",
-        (true, false) => "--csv is",
-        _ => "--json is",
-    };
+fn exit_unsupported_packet_output(csv_mode: bool, engine: &str) -> ! {
+    let flags = if csv_mode { "--csv is" } else { "--json is" };
     eprintln!(
         "Error: {flags} only supported for Source 1 demos (this is a {engine} demo; use --summary or --html)"
     );
@@ -174,6 +170,11 @@ fn main() -> io::Result<()> {
     let json_mode = args.iter().any(|a| a == "--json");
     let summary_only = args.iter().any(|a| a == "--summary");
 
+    if csv_mode && json_mode {
+        eprintln!("Error: --csv and --json can't be used together; pick one");
+        std::process::exit(1);
+    }
+
     let mut file = File::open(filename)?;
     let mut data = Vec::new();
     file.read_to_end(&mut data)?;
@@ -184,7 +185,7 @@ fn main() -> io::Result<()> {
     let structured_output_requested = csv_mode || json_mode;
     if goldsrc::is_goldsrc(&data) {
         if structured_output_requested {
-            exit_unsupported_packet_output(csv_mode, json_mode, "GoldSrc");
+            exit_unsupported_packet_output(csv_mode, "GoldSrc");
         }
         let meta = goldsrc::parse(&data).ok_or_else(|| {
             io::Error::new(io::ErrorKind::InvalidData, "malformed GoldSrc HLDEMO file")
@@ -219,7 +220,7 @@ fn main() -> io::Result<()> {
     }
     if source2::is_source2(&data) {
         if structured_output_requested {
-            exit_unsupported_packet_output(csv_mode, json_mode, "Source 2");
+            exit_unsupported_packet_output(csv_mode, "Source 2");
         }
         let meta = source2::container::parse_meta(&data).ok_or_else(|| {
             io::Error::new(
@@ -263,7 +264,7 @@ fn main() -> io::Result<()> {
         .to_string_lossy();
     if let Some(kind) = quake::detect(&name_hint, &data) {
         if structured_output_requested {
-            exit_unsupported_packet_output(csv_mode, json_mode, "Quake");
+            exit_unsupported_packet_output(csv_mode, "Quake");
         }
         let demo = quake::parse(kind, &data, &name_hint).map_err(|e| {
             io::Error::new(
