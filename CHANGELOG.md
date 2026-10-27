@@ -17,8 +17,9 @@
 - **`--check` treats Quake Live the same everywhere.** Directory sweeps used to
   skip `.dm_71`+ files while a single-file check ran them (and passed them).
   Sweeps now include every `.dm_NN` file, and Quake 3 demos outside
-  `.dm_66`-`.dm_68` report `WARN` ("experimental") when they decode, in both
-  modes.
+  `.dm_66`-`.dm_68` are experimental and report `WARN` whether or not they
+  decode (never `PASS`, never `FAIL`), in both modes, so they can't make a sweep
+  exit 1.
 - **CI covers more.** The regression workflow now runs `cargo test --all-targets`
   (including the golden snapshots) and `demoscope --check tests/fixtures`, and a
   new `wasm` job builds the bundle and runs `scripts/check-wasm.mjs`, which

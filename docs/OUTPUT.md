@@ -125,8 +125,9 @@ Exit code: `0` when no demo is `FAIL` (`WARN` is not a failure), `1` otherwise.
 A path that can't be read counts as `FAIL`. A directory with no supported demo
 files prints a message to stderr, writes nothing to stdout and exits `1`. A
 directory sweep covers `.dem`, `.dm2`, `.mvd`, `.qwd` and every `.dm_NN` file.
-Quake 3 files outside `.dm_66`-`.dm_68` (Quake Live) are experimental: when they
-decode they are `WARN`, never `PASS`. A single-file check and a sweep give the
+Quake 3 files outside `.dm_66`-`.dm_68` (Quake Live) are experimental: they are
+`WARN`, never `PASS` and never `FAIL`, whether or not they decode, so they can't
+make a sweep exit `1`. (A file that can't be read at all is still `FAIL`.) A single-file check and a sweep give the
 same result for the same file.
 
 Apart from the status word, the layout of a row, including the `decode` column,

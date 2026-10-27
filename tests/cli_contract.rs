@@ -184,6 +184,9 @@ fn check_sweep_includes_quake_live_and_matches_single_file_result() {
     let (single_code, single) = check(&file);
     assert!(sweep.contains("match.dm_91"), "sweep skipped it: {sweep}");
     assert_eq!(sweep_code, single_code);
+    // An experimental format that can't be decoded is a WARN, not a FAIL.
+    assert_eq!(sweep_code, Some(0), "{sweep}");
+    assert!(sweep.contains("WARN") && !sweep.contains("FAIL"), "{sweep}");
     let row = |s: &str| {
         s.lines()
             .find(|l| l.contains("match.dm_91"))

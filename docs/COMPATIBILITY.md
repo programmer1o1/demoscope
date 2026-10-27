@@ -139,7 +139,8 @@ is: a demo with a single native sample passes.
 
 A directory sweep checks `.dem`, `.dm2`, `.mvd`, `.qwd` and every `.dm_NN`
 file. Quake 3 files outside `.dm_66`-`.dm_68` (Quake Live) are attempted and
-reported as `WARN` ("experimental") when they decode, never `PASS`. Historical
+reported as `WARN` ("experimental") whether or not they decode: never `PASS`,
+never `FAIL`. Historical
 corpus counts are kept in the changelog alongside the version they describe
 rather than presented here as current results.
 

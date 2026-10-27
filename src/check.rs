@@ -7,7 +7,7 @@
 // extensions in `is_supported_demo_path`. Exit code is non-zero if any demo
 // FAILs, so it doubles as a CI gate.
 //
-// Health tiers:
+// Health tiers (experimental formats, i.e. Quake Live, are capped at WARN):
 //   PASS: decoded and produced native player tracks (not just the recorder
 //          camera copied into a track).
 //   WARN: usable, with a soft concern: only the recorder-camera fallback
@@ -121,7 +121,7 @@ pub fn check_demo(bytes: &[u8], name_hint: &str) -> DemoHealth {
     // Quake family (Q1/Q2/Q3): matched by extension+content; returns None for
     // HL2DEMO so Source 1 demos fall through.
     if let Some(kind) = super::quake::detect(name_hint, bytes) {
-        return guard(name_hint, "quake", || {
+        let health = guard(name_hint, "quake", || {
             match super::quake::parse(kind, bytes, name_hint) {
                 Ok(d) => {
                     let tracks = d.mpd.tracks.len();
@@ -156,6 +156,10 @@ pub fn check_demo(bytes: &[u8], name_hint: &str) -> DemoHealth {
                 Err(e) => DemoHealth::fail(name_hint, "quake", e.to_string()),
             }
         });
+        // Experimental formats (Quake Live) never fail a check: an undecodable
+        // file is reported as WARN so a sweep over a mixed directory still
+        // exits 0.
+        return cap_experimental(health);
     }
 
     // GoldSrc (HL1) HLDEMO container.
@@ -276,6 +280,19 @@ fn guard(name: &str, format: &'static str, f: impl FnOnce() -> DemoHealth) -> De
 /// Live and variants). They are attempted but unverified.
 fn is_experimental_quake(name: &str) -> bool {
     super::quake::dm_protocol(name).is_some_and(|p| !(66..=68).contains(&p))
+}
+
+/// Experimental formats are capped at WARN, including files that fail to decode.
+fn cap_experimental(mut h: DemoHealth) -> DemoHealth {
+    if is_experimental_quake(&h.name) && h.status == Status::Fail {
+        h.status = Status::Warn;
+        h.note = if h.note.is_empty() {
+            "experimental".to_string()
+        } else {
+            format!("experimental, {}", h.note)
+        };
+    }
+    h
 }
 
 fn is_supported_demo_path(path: &std::path::Path) -> bool {
@@ -400,6 +417,20 @@ mod tests {
         }
         for name in ["a.dm_66", "a.dm_67", "a.dm_68", "a.dm2", "a.dem", "a.mvd"] {
             assert!(!is_experimental_quake(name), "{name}");
+        }
+    }
+
+    #[test]
+    fn experimental_quake_never_fails_but_supported_quake_does() {
+        for name in ["x.dm_71", "x.dm_91"] {
+            let h = check_demo(&[0u8; 64], name);
+            assert_eq!(h.format, "quake", "{name}");
+            assert_eq!(h.status, Status::Warn, "{name}: {}", h.note);
+            assert!(h.note.contains("experimental"), "{name}: {}", h.note);
+        }
+        for name in ["x.dm_68", "x.dm2", "x.dem"] {
+            let h = check_demo(&[0u8; 64], name);
+            assert_eq!(h.status, Status::Fail, "{name}");
         }
     }
 
