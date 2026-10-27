@@ -126,13 +126,12 @@ fn decode_file_info(body: &[u8], meta: &mut Source2Meta) {
 }
 
 // ---------------------------------------------------------------------------
-// Entity-decode walk (positions), not yet implemented. These are the frames
-// that feed serializer/fieldpath/entities once those stages land.
+// Entity-decode walk stub. Unused: the real frame walk and entity pipeline
+// live in `parser.rs`.
 // ---------------------------------------------------------------------------
 
-/// Walk every frame, dispatching DEM_SendTables/ClassInfo/StringTables/Packet
-/// to the entity pipeline. Currently a stub: `parse_meta` covers the
-/// metadata-only path that the HTML viewer uses today.
+/// Unused stub; see `parser.rs` for the frame walk that feeds the entity
+/// pipeline.
 pub fn walk(_data: &[u8]) {
     todo!("PBDEMS2 entity-decode frame walk")
 }
