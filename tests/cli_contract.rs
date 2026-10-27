@@ -159,3 +159,35 @@ fn check_on_a_directory_without_demos_exits_one() {
     assert!(out.stdout.is_empty(), "stdout must be empty");
     assert!(String::from_utf8_lossy(&out.stderr).contains("no supported demo files found"));
 }
+
+#[test]
+fn check_sweep_includes_quake_live_and_matches_single_file_result() {
+    // Not a real Quake Live demo: a truncated file is enough to show the sweep
+    // picks the extension up, and that it gives the same verdict as a
+    // single-file check.
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("check-quake-live");
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("match.dm_91");
+    std::fs::write(&file, [0u8; 64]).unwrap();
+    let check = |p: &PathBuf| {
+        let out = Command::new(env!("CARGO_BIN_EXE_demoscope"))
+            .arg("--check")
+            .arg(p)
+            .output()
+            .expect("failed to run demoscope");
+        (
+            out.status.code(),
+            String::from_utf8_lossy(&out.stdout).to_string(),
+        )
+    };
+    let (sweep_code, sweep) = check(&dir);
+    let (single_code, single) = check(&file);
+    assert!(sweep.contains("match.dm_91"), "sweep skipped it: {sweep}");
+    assert_eq!(sweep_code, single_code);
+    let row = |s: &str| {
+        s.lines()
+            .find(|l| l.contains("match.dm_91"))
+            .map(String::from)
+    };
+    assert_eq!(row(&sweep), row(&single));
+}

@@ -11,7 +11,8 @@
 //   PASS: decoded and produced native player tracks (not just the recorder
 //          camera copied into a track).
 //   WARN: usable, with a soft concern: only the recorder-camera fallback
-//          produced tracks, or some packets failed to decode (Source 2).
+//          produced tracks, some packets failed to decode (Source 2), or the
+//          format is experimental (Quake Live).
 //   FAIL: panicked, errored, or produced no tracks.
 //
 // The `decode` column says where the tracks came from: `native` (entity
@@ -126,12 +127,21 @@ pub fn check_demo(bytes: &[u8], name_hint: &str) -> DemoHealth {
                     let tracks = d.mpd.tracks.len();
                     let samples = d.mpd.tracks.values().map(|v| v.len()).sum();
                     let named = d.mpd.names.values().filter(|n| !n.name.is_empty()).count();
+                    // Quake Live and other `.dm_NN` outside 66-68 are attempted
+                    // but unverified (see docs/COMPATIBILITY.md): a decode is
+                    // reported as WARN, never PASS.
+                    let experimental = is_experimental_quake(name_hint);
                     let status = if tracks == 0 {
                         Status::Fail
+                    } else if experimental {
+                        Status::Warn
                     } else {
                         Status::Pass
                     };
-                    let note = format!("{:?} {}", kind, d.meta.map);
+                    let mut note = format!("{:?} {}", kind, d.meta.map);
+                    if experimental && tracks > 0 {
+                        note.push_str(", experimental");
+                    }
                     DemoHealth {
                         name: name_hint.to_string(),
                         format: "quake",
@@ -262,14 +272,21 @@ fn guard(name: &str, format: &'static str, f: impl FnOnce() -> DemoHealth) -> De
     }
 }
 
+/// `.dm_NN` Quake 3 demo extensions outside the verified 66-68 range (Quake
+/// Live and variants). They are attempted but unverified.
+fn is_experimental_quake(name: &str) -> bool {
+    super::quake::dm_protocol(name).is_some_and(|p| !(66..=68).contains(&p))
+}
+
 fn is_supported_demo_path(path: &std::path::Path) -> bool {
     path.extension()
         .and_then(|ext| ext.to_str())
         .is_some_and(|ext| {
-            matches!(
-                ext.to_ascii_lowercase().as_str(),
-                "dem" | "dm2" | "dm_66" | "dm_67" | "dm_68" | "mvd" | "qwd"
-            )
+            let ext = ext.to_ascii_lowercase();
+            matches!(ext.as_str(), "dem" | "dm2" | "mvd" | "qwd")
+                || ext
+                    .strip_prefix("dm_")
+                    .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
         })
 }
 
@@ -359,11 +376,30 @@ mod tests {
         ] {
             assert!(is_supported_demo_path(std::path::Path::new(name)), "{name}");
         }
-        for name in ["match.dm_71", "match.dm_91", "map.bsp", "notes.txt"] {
+        for name in ["match.dm_71", "match.dm_73", "match.dm_91"] {
+            assert!(is_supported_demo_path(std::path::Path::new(name)), "{name}");
+        }
+        for name in [
+            "map.bsp",
+            "notes.txt",
+            "match.dm_",
+            "match.dm_x",
+            "match.dmo",
+        ] {
             assert!(
                 !is_supported_demo_path(std::path::Path::new(name)),
                 "{name}"
             );
+        }
+    }
+
+    #[test]
+    fn quake_live_extensions_are_experimental() {
+        for name in ["a.dm_71", "a.dm_73", "a.dm_90", "a.dm_91", "A.DM_91"] {
+            assert!(is_experimental_quake(name), "{name}");
+        }
+        for name in ["a.dm_66", "a.dm_67", "a.dm_68", "a.dm2", "a.dem", "a.mvd"] {
+            assert!(!is_experimental_quake(name), "{name}");
         }
     }
 

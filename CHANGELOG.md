@@ -14,6 +14,11 @@
   instead of `PASS`. A new `decode` column shows `native`, `mixed`, `fallback`
   or `-` per file. `PASS` now means native tracks were decoded. `--check` also
   reports real player-name counts for GoldSrc instead of always 0.
+- **`--check` treats Quake Live the same everywhere.** Directory sweeps used to
+  skip `.dm_71`+ files while a single-file check ran them (and passed them).
+  Sweeps now include every `.dm_NN` file, and Quake 3 demos outside
+  `.dm_66`-`.dm_68` report `WARN` ("experimental") when they decode, in both
+  modes.
 - **Source 2 HTML no longer embeds a local path.** `META.game` held the
   recorder's absolute game directory (for example
   `D:\SteamLibrary\steamapps\common\Deadlock\game\citadel`). It now holds
