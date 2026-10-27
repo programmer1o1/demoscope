@@ -22,13 +22,13 @@ A demo is a fixture only if all of these hold:
 
 One documented exception: `hl2_2004_trainstation.dem` (below).
 
-Total size of the fixtures in this directory: **7,141,903 bytes**.
+Total size of the fixtures in this directory: **8,641,903 bytes**.
 
 ## Coverage
 
 | Engine family | Fixture |
 |---------------|---------|
-| Source 1, demo protocol 3, multi-player | `css_bots_cs_office.dem` (CS:S) |
+| Source 1, demo protocol 3, multi-player | `css_bots_cs_office.dem` (CS:S), `hl2dm_bots_dm_overwatch_clip.dem` (HL2 Deathmatch) |
 | Source 1, demo protocol 3, single-player | `portal_testchmb_a_10.dem` (Portal) |
 | Source 1, demo protocol 4 | `portal2_sp_a3_01.dem` (Portal 2) |
 | Source 1, CS:GO (protobuf path, GOTV) | `csgo_gotv_dust2_clip.dem` |
@@ -38,9 +38,9 @@ Total size of the fixtures in this directory: **7,141,903 bytes**.
 
 **No fixture, covered only by the maintainer's private corpus:** Quake 1,
 QuakeWorld (`.mvd` and `.qwd`), Quake 2, Quake 3 Arena, Quake Live, GoldSrc
-(Half-Life 1, CS 1.6, Condition Zero, DoD), TF2, HL2 Deathmatch, Day of Defeat:
-Source, Half-Life: Source, HL2 retail and episodes, Left 4 Dead 1 and 2, The
-Stanley Parable, Garry's Mod (Classic and 13) and Dota 2. CI does not exercise
+(Half-Life 1, CS 1.6, Condition Zero, DoD), TF2, Day of Defeat: Source,
+Half-Life: Source, HL2 retail and episodes, Left 4 Dead 1 and 2, The Stanley
+Parable, Garry's Mod (Classic and 13) and Dota 2. CI does not exercise
 these decoders.
 
 ## css_bots_cs_office.dem
@@ -161,6 +161,27 @@ players are `Bot8` to `Bot11`. The header holds the maintainer's local game path
 `D:\SteamLibrary\steamapps\common\Deadlock\game\citadel` (accepted) and the
 file also holds a private LAN address (`192.168.1.8`) next to `127.0.0.1`. No
 chat.
+
+## hl2dm_bots_dm_overwatch_clip.dem
+
+| | |
+|---|---|
+| Original name | first 1,500,000 bytes of `testingdm.dem` |
+| Size | 1,500,000 bytes |
+| SHA-256 | `244923b6dbd73cdd190fe7da78dcd65c74ae66fc8dbd938ef260433599f98c0b` |
+| Engine / game | Source 1, Half-Life 2: Deathmatch, demo protocol 3, net protocol 24 |
+| Map | `dm_overwatch` |
+| Covers | multi-player entity decode (17 tracks, 10,863 samples, 17 named), `player_death` events, `--csv` / `--json` (4,679 usercmds) |
+
+The clip is the start of the file, cut mid-stream: it has no end-of-demo marker.
+The header is intact, so it still reports the full 434.7 s length.
+
+**Source.** Recorded by the maintainer on a local server (`localhost:27015`)
+against bots.
+**License.** Recorded by the maintainer.
+**Personal data.** Recorder `Sierra` and the maintainer's SteamID. The other 16
+players are bots (SteamID `BOT`, all named `Bot Name`). No chat, no IP addresses,
+no file paths.
 
 ## hl2_2004_trainstation.dem
 

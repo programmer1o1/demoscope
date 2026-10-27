@@ -35,9 +35,9 @@
   53, Quake 3 recorder 88 -> 50 units above the floor. Source 1 is unchanged: a
   crouched player's camera does not drop, because `m_vecViewOffset` is not
   decoded or embedded.
-- **Test fixtures replaced.** `tests/fixtures/` now holds six maintainer-recorded
-  demos plus one approved public demo (seven files) instead of two third-party ones, covering
-  CS:S, CS2, CS:GO, Portal, Portal 2, Deadlock and the HL2 2004 engine. Each one
+- **Test fixtures replaced.** `tests/fixtures/` now holds seven maintainer-recorded
+  demos plus one approved public demo (eight files) instead of two third-party ones, covering
+  CS:S, HL2DM, CS2, CS:GO, Portal, Portal 2, Deadlock and the HL2 2004 engine. Each one
   is documented in `tests/fixtures/README.md` (source, license, personal data).
   The CLI contract and golden tests moved to the new files.
 - **CI covers more.** The regression workflow now runs `cargo test --all-targets`
