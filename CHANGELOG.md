@@ -1,92 +1,117 @@
 # Changelog
 
-## Unreleased
+## v1.0.0: "Baseline"
 
-- **Behavior change: `--json` and `--csv` now fail on non-Source 1 demos.** On
-  GoldSrc, Source 2 and Quake demos they used to print the human summary banner
-  to stdout (so `--json` output was not valid JSON). They now print
-  `--json is only supported for Source 1 demos` (or `--csv`) to stderr, print
-  nothing to stdout, and exit with code 1. `--summary`, `--html` and `--all` are
-  unchanged.
-- **Source 2 `WEAPON_CLASSES` and the Source 1 map geometry are written in a
-  stable order.** `WEAPON_CLASSES` was built from a `HashMap`, so a CS2 page
-  differed from run to run (same entries, different key order); it is now sorted
-  by class id. `BSP_VERTS` / `BSP_IDX` on Source 1 maps also came out in a
-  run-dependent order, because the coplanar-overlap pass appended its nudged
-  vertices in `HashMap` order; they are now appended in face order. The geometry is
-  unchanged (the same triangles by coordinates, checked on two maps). A unit test
-  covers the overlap pass. Two run-to-run differences remain on some demos (a
-  CS:S SourceTV `VIEW_SWITCHES` table and one Dota 2 sample); they are listed in
-  `docs/OUTPUT.md` and under Known issues.
-- **Behavior change: `--check` no longer passes camera-only demos.** A demo whose
-  only track is the recorder camera copied in as a fallback (Half-Life: Source,
-  some GMod builds, GoldSrc demos with no decodable players) is now `WARN`
-  instead of `PASS`. A new `decode` column shows `native`, `mixed`, `fallback`
-  or `-` per file. `PASS` now means native tracks were decoded. `--check` also
-  reports real player-name counts for GoldSrc instead of always 0.
-- **`--check` treats Quake Live the same everywhere.** Directory sweeps used to
-  skip `.dm_71`+ files while a single-file check ran them (and passed them).
-  Sweeps now include every `.dm_NN` file, and Quake 3 demos outside
-  `.dm_66`-`.dm_68` are experimental and report `WARN` whether or not they
-  decode (never `PASS`, never `FAIL`), in both modes, so they can't make a sweep
-  exit 1.
-- **First-person camera height fixed (viewer only).** The first-person camera, the
-  follow-camera target and the grenade-arc start used a fixed +64 above every
-  entity's tracked position, on every engine. They now use the engine's standing
-  eye height: GoldSrc 17, Quake 1 / QuakeWorld 22, Quake 2 22, Quake 3 26, Source
-  64 (unchanged). The GoldSrc recorder's track already is the eye
-  (`RefParams.vieworg`), so its offset is 0. Measured against the map floor with
-  the page's real camera: GoldSrc recorder 117 -> 53, GoldSrc other players 100 ->
-  53, Quake 3 recorder 88 -> 50 units above the floor. Source 1 is unchanged: a
-  crouched player's camera does not drop, because `m_vecViewOffset` is not
-  decoded or embedded.
-- **Test fixtures replaced.** `tests/fixtures/` now holds seven maintainer-recorded
-  demos plus one approved public demo (eight files) instead of two third-party ones, covering
-  CS:S, HL2DM, CS2, CS:GO, Portal, Portal 2, Deadlock and the HL2 2004 engine. Each one
-  is documented in `tests/fixtures/README.md` (source, license, personal data).
-  The CLI contract and golden tests moved to the new files.
-- **CI covers more.** The regression workflow now runs `cargo test --all-targets`
-  (including the golden snapshots) and `demoscope --check tests/fixtures`, and a
-  new `wasm` job builds the bundle and runs `scripts/check-wasm.mjs`, which
-  requires the wasm output to be byte-identical to the CLI's. `check-viewer.sh`
-  now sweeps every demo extension the decoders accept.
-- **Source 2 HTML no longer embeds a local path.** `META.game` held the
-  recorder's absolute game directory (for example
-  `D:\SteamLibrary\steamapps\common\Deadlock\game\citadel`). It now holds
-  only the last component (`citadel`). The `--summary` text output is unchanged.
+1.0 marks a stable output contract ([docs/OUTPUT.md](docs/OUTPUT.md)), an
+accurate support matrix ([docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)), and
+public test fixtures that run in CI. No decoder gained or lost a format in this
+release. For what doesn't work yet, see Known issues in
+[docs/COMPATIBILITY.md](docs/COMPATIBILITY.md#known-issues).
+
+### Contract changes
+
+Anything a script might notice. From 1.0 these are covered by the versioning
+policy in [docs/OUTPUT.md](docs/OUTPUT.md).
+
+- **`--json` and `--csv` fail on non-Source 1 demos.** On GoldSrc, Source 2 and
+  Quake demos they used to print the human summary banner to stdout (so `--json`
+  output was not valid JSON). They now print `--json is only supported for
+  Source 1 demos` (or `--csv`) to stderr, print nothing to stdout, and exit 1.
+  `--summary`, `--html` and `--all` are unchanged.
 - **`--csv` and `--json` together are rejected.** The combination used to print
   CSV rows followed by a stray `]`. It now exits 1 with a message on stderr and
   nothing on stdout.
-- **Closed stdout no longer panics.** `demoscope demo.dem --csv | head -n 1`
+- **A closed stdout no longer panics.** `demoscope demo.dem --csv | head -n 1`
   used to abort with a panic (exit 101). A closed pipe now ends the run quietly
   with exit 0; other stdout write errors print an error and exit 1.
-- **`--check` on a directory with no supported demos now fails.** It used to
-  print a note and exit 0; it now exits 1.
-- **Output contract documented.** New `docs/OUTPUT.md` defines what is stable
-  from 1.0 (CLI flags, exit codes, `--csv` columns, `--json` keys and types,
+- **`--check`: `PASS` now means native tracks were decoded.** A demo whose only
+  track is the recorder camera copied in as a fallback (Half-Life: Source, some
+  GMod builds, GoldSrc demos with no decodable players) is `WARN` instead of
+  `PASS`. A GoldSrc demo with no decodable players but a moving camera is `WARN`
+  instead of `FAIL`.
+- **`--check` has a `decode` column** showing `native`, `mixed`, `fallback` or
+  `-` for each file, and reports real player-name counts for GoldSrc instead of
+  always 0.
+- **`--check` on a directory with no supported demos exits 1.** It used to print
+  a note and exit 0.
+- **`--check` treats Quake Live the same everywhere.** Directory sweeps used to
+  skip `.dm_71`+ files while a single-file check ran them (and passed them).
+  Sweeps now include every `.dm_NN` file. Quake 3 demos outside
+  `.dm_66`-`.dm_68` are experimental: `WARN` whether or not they decode, never
+  `PASS` or `FAIL`, so they can't make a sweep exit 1.
+- **Source 2 `META.game` no longer holds a local path.** It held the recorder's
+  absolute game directory (for example
+  `D:\SteamLibrary\steamapps\common\Deadlock\game\citadel`) and now holds only
+  the last component (`citadel`). The `--summary` text is unchanged.
+- **New `--version` / `-V` flag** prints `demoscope 1.0.0`.
+
+### Viewer fixes
+
+- **First-person camera height.** The first-person camera, the follow-camera
+  target and the grenade-arc start used a fixed +64 above every entity's tracked
+  position, on every engine. They now use the engine's standing eye height:
+  GoldSrc 17, Quake 1 / QuakeWorld 22, Quake 2 22, Quake 3 26, Source 64
+  (unchanged). The GoldSrc recorder's track already is the eye
+  (`RefParams.vieworg`), so its offset is 0. Measured against the map floor with
+  the page's real camera: GoldSrc recorder 117 to 53, GoldSrc other players 100
+  to 53, Quake 3 recorder 88 to 50 units above the floor. Source 1 is
+  unchanged: a crouched player's camera does not drop, because
+  `m_vecViewOffset` is not decoded or embedded.
+- **Stable page output.** Source 2 `WEAPON_CLASSES` was built from a `HashMap`,
+  so a CS2 page differed from run to run (same entries, different key order); it
+  is now sorted by class id. `BSP_VERTS` / `BSP_IDX` on Source 1 maps also came
+  out in a run-dependent order, because the coplanar-overlap pass appended its
+  nudged vertices in `HashMap` order; they are now appended in face order. The
+  geometry is unchanged (the same triangles by coordinates, checked on two
+  maps). Two run-to-run differences remain on some demos (a CS:S SourceTV
+  `VIEW_SWITCHES` table and one Dota 2 sample); see Known issues.
+
+### Docs
+
+- **Output contract.** New [docs/OUTPUT.md](docs/OUTPUT.md) defines what is
+  stable (CLI flags, exit codes, `--csv` columns, `--json` keys and types,
   `--check` status words and exit code), documents the embedded HTML tables as
-  internal and unstable, and states the versioning policy.
-- **Golden tests.** `tests/golden.rs` snapshots `--json` output and a digest of
-  the embedded HTML tables for every fixture; `tests/cli_contract.rs` covers
-  exit codes. Update snapshots with `UPDATE_GOLDEN=1 cargo test --test golden`.
-- **Compatibility matrix rewritten.** `docs/COMPATIBILITY.md` now has a status
-  legend (✅ supported, 🟡 partial, ⚠ experimental, ✗ rejected), a "Verified on"
-  entry for every row (game / map / mode and measured track counts, or "not yet
-  verified on a named demo"), and a Known issues section. Several rows move from
-  ✅ to 🟡: Deadlock, Dota 2, Garry's Mod 13, Garry's Mod Classic and the HL2
-  2004 engine, plus Stanley Parable, L4D1, DoD:S and the other games with no
-  named sample. `.qwd` is ⚠ everywhere. Half-Life: Source is listed as
+  internal and unstable along with their known inconsistencies, and states the
+  versioning policy.
+- **Compatibility matrix rewritten.** [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)
+  has a status legend (✅ supported, 🟡 partial, ⚠ experimental, ✗ rejected), a
+  "Verified on" entry for every row (game / map / mode and measured track
+  counts, or "not yet verified on a named demo"), and a Known issues section.
+  Several rows moved from ✅ to 🟡: Deadlock, Dota 2, Garry's Mod 13, Garry's Mod
+  Classic, the HL2 2004 engine, Left 4 Dead 2, Condition Zero, and the games with
+  no named sample. `.qwd` is ⚠ everywhere. Half-Life: Source is listed as
   camera-only, and Quake Live as attempted with a warning, not rejected.
-- **Docs corrected.** Source 1 player tracking is described as any `Player`
-  class (entity 1-64) with a per-demo camera fallback, not a per-game list.
-  `democmdinfo.viewOrigin` is documented as the entity origin, not the eye
-  position. CS:GO is described by net protocol (13xxx, pre-CS2) instead of a
-  date range. The routing order and the extension-based Quake detection are
-  described as the code does them.
-- **`--check` documented.** `PASS` means tracks > 0 and does not distinguish
-  native decoding from the camera fallback; directory sweeps skip Quake Live
-  extensions.
-- The Quake 1 decode line no longer says the NetQuake path is unverified.
+- **Corrections.** Source 1 player tracking is described as any `Player` class
+  (entity 1-64) with a per-demo camera fallback, not a per-game list.
+  `democmdinfo.viewOrigin` is documented as the entity origin, not the eye.
+  CS:GO is described by net protocol (13xxx, pre-CS2) instead of a date range.
+  The routing order and the extension-based Quake detection are described as the
+  code does them. The Quake 1 decode line no longer says the NetQuake path is
+  unverified.
+
+### Testing and CI
+
+- **Public test fixtures.** `tests/fixtures/` holds seven demos recorded by the
+  maintainer plus one public demo with the maintainer's approval (eight files,
+  8.6 MB): CS:S, HL2DM, CS2, CS:GO, Portal, Portal 2, Deadlock and the HL2 2004
+  engine. Each is documented in `tests/fixtures/README.md` (source, license,
+  personal data, SHA-256). They replace two third-party files.
+- **Golden tests.** `tests/golden.rs` snapshots `--json` output and a digest of
+  the embedded HTML tables for every fixture, and checks that pages are
+  byte-identical between runs. Update snapshots with
+  `UPDATE_GOLDEN=1 cargo test --test golden`. `tests/cli_contract.rs` covers
+  exit codes, `--csv` / `--json` rejection, the closed-pipe case and `--version`.
+- **CI.** The regression workflow runs the unit tests (debug), the CLI contract
+  and golden tests (release), `demoscope --check tests/fixtures`, a smoke-run of
+  every fixture (`scripts/smoke-run.sh`), the headless-Chromium viewer check, and
+  a `wasm` job that builds the bundle and requires its output to be
+  byte-identical to the CLI's (`scripts/check-wasm.mjs`). The two steps that need
+  the private demo corpus are skipped with a notice when it is absent, instead of
+  passing silently. `check-viewer.sh` sweeps every demo extension the decoders
+  accept.
+- **Actions updated** to their Node 24 majors in all three workflows
+  (`checkout` v7, `upload-artifact` v7, `download-artifact` v8,
+  `upload-pages-artifact` v5, `deploy-pages` v5, `action-gh-release` v3).
 
 ## v0.8.0: "Strafe"
 
