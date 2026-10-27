@@ -281,7 +281,7 @@ pub fn parse_netquake(data: &[u8]) -> Result<QuakeDemo, Box<dyn Error>> {
     let duration = max_tick as f32 / tick_rate;
     let total_samples: usize = tb.tracks.values().map(|v| v.len()).sum();
     eprintln!(
-        "  [Quake1/NetQuake] map={} players={} entities={} samples={} frames={} (note: NetQuake path not verified against a local demo)",
+        "  [Quake1/NetQuake] map={} players={} entities={} samples={} frames={}",
         map,
         tb.names.len(),
         tb.tracks.len(),

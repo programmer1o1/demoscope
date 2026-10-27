@@ -114,8 +114,6 @@ pub(crate) fn generate_html(
     // Source 2 (`PBDEMS2`: CS2 / Dota 2 / Deadlock): a different container from
     // HL2DEMO. Checked FIRST: its 8-byte magic is unambiguous, whereas the Quake
     // route below matches by `.dem` extension and would otherwise swallow it.
-    // Metadata-only viewer for now (map / duration / build); position tracks
-    // await the entity pipeline.
     if source2::is_source2(&data) {
         // The CS2 world geometry overlay is resolved inside the generator (it
         // needs the map name, which only appears after the entity parse) by

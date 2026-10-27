@@ -114,14 +114,14 @@ pub fn generate_quake_html(
     Ok(html)
 }
 
-// Source 2 (`PBDEMS2`: CS2 / Dota 2 / Deadlock) HTML generator: metadata-only.
+// Source 2 (`PBDEMS2`: CS2 / Dota 2 / Deadlock) HTML generator.
 //
-// The full entity-decode pipeline (FlattenedSerializer + field-path Huffman +
-// PacketEntities) isn't built yet, so there are no position tracks. What IS
-// decoded today: the container header, `CDemoFileHeader` (map / server / build)
-// and `CDemoFileInfo` (duration / ticks). We fill the SAME template so a Source
-// 2 demo opens to a valid viewer showing its metadata instead of being rejected
-// on magic: every track/event section is empty until the entity stages land.
+// Metadata comes from the container header, `CDemoFileHeader` (map / server /
+// build) and `CDemoFileInfo` (duration / ticks). Player tracks, names, events
+// and (on CS2) inputs and held weapons come from the entity pipeline
+// (FlattenedSerializer + field-path Huffman + PacketEntities). The SAME
+// template as the other engines is filled; sections a game doesn't provide
+// are left empty.
 pub fn generate_source2_html(
     data: &[u8],
     vpk_bytes: Option<&[u8]>,
@@ -429,9 +429,10 @@ pub fn generate_source2_html(
             "{}"
         },
     );
-    // Real per-pawn input streams (CS2 / Deadlock / Dota): { pawn: [[tick, mask], …] }
-    // decoded from the movement-services button state: the viewer lights actual
-    // W/A/S/D/attack/jump/duck from these instead of inferring from velocity.
+    // Per-pawn input streams: { pawn: [[tick, mask], …] } decoded from the
+    // movement-services button state. Populated on CS2; empty on the sampled
+    // Deadlock and Dota 2 demos. The viewer lights actual W/A/S/D/attack/jump/duck
+    // from these where present, instead of inferring from velocity.
     let buttons_json = {
         let parts: Vec<String> = tracks
             .buttons
