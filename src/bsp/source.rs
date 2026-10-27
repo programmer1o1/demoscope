@@ -90,7 +90,7 @@ fn remove_coplanar_overlaps(
 
     // Phase 1 (read-only): find which faces overlap, and the normal to nudge
     // them along. Scoped so the immutable borrow of `verts` ends before phase 2.
-    let to_offset: Vec<(usize, [f32; 3])> = {
+    let mut to_offset: Vec<(usize, [f32; 3])> = {
         let v: &[[f32; 3]] = verts;
         let get = |i: u32| v[i as usize];
         let sub = |a: [f32; 3], b: [f32; 3]| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -259,6 +259,12 @@ fn remove_coplanar_overlaps(
     // Phase 2 (mutate): nudge each overlapping face along its normal by a small,
     // per-face-varied amount (so stacked duplicates separate from each other too),
     // appending fresh vertices so neighbours aren't dragged along.
+    //
+    // `to_offset` was collected by walking a HashMap, whose order differs from run
+    // to run. The nudge itself depends only on the face index, so sorting by index
+    // here makes the order of the appended vertices (and the output bytes)
+    // stable without changing which faces move or by how much.
+    to_offset.sort_by_key(|&(i, _)| i);
     for (i, n) in to_offset {
         let h = (i as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) >> 28;
         let mag = 0.3 + 0.5 * ((h & 0xF) as f32 / 15.0); // 0.30 .. 0.80 units
@@ -659,4 +665,49 @@ pub(crate) fn extract_bsp_from_bytes(
     let spawn = find_spawn_in_entities(&en_str).unwrap_or([0.0; 3]);
 
     Some((verts_b64, idx_b64, compact_v.len(), compact_t.len(), spawn))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Many coplanar planes, each holding a small triangle inside a larger one, so
+    // `remove_coplanar_overlaps` has many buckets and many faces to nudge. Every
+    // `HashMap` gets its own random iteration order, so calling it repeatedly in
+    // one process is enough to expose an order that depends on the map.
+    fn overlapping_planes(planes: usize) -> (Vec<[f32; 3]>, Vec<(u32, u32, u32)>) {
+        let mut verts = Vec::new();
+        let mut tris = Vec::new();
+        for k in 0..planes {
+            let z = k as f32 * 16.0;
+            let base = verts.len() as u32;
+            verts.extend_from_slice(&[
+                [-50.0, -50.0, z],
+                [300.0, -50.0, z],
+                [-50.0, 300.0, z],
+                [0.0, 0.0, z],
+                [100.0, 0.0, z],
+                [0.0, 100.0, z],
+            ]);
+            tris.push((base, base + 1, base + 2));
+            tris.push((base + 3, base + 4, base + 5));
+        }
+        (verts, tris)
+    }
+
+    #[test]
+    fn coplanar_overlap_removal_is_deterministic() {
+        let (verts, tris) = overlapping_planes(40);
+        let run = || {
+            let mut v = verts.clone();
+            let t = remove_coplanar_overlaps(&mut v, tris.clone());
+            (v, t)
+        };
+        let first = run();
+        // The small triangle on every plane overlaps the big one and is nudged.
+        assert_eq!(first.0.len(), verts.len() + 3 * 40);
+        for _ in 0..30 {
+            assert!(run() == first, "vertex/index order changed between calls");
+        }
+    }
 }

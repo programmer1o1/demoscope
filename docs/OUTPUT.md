@@ -151,8 +151,9 @@ Conventions:
 - `tick` is an engine tick. Its length depends on the engine; see `META.tick_rate`.
 - Engines: S1 = Source 1, S2 = Source 2, GS = GoldSrc, Q = Quake family.
 - "empty" means `[]`, `{}` or `""`.
-- Output is deterministic for the test fixtures (a test runs each twice). It is
-  not guaranteed in general: see known inconsistency 11.
+- Output is deterministic for the test fixtures (a test runs each twice) and for
+  nearly all of a larger local corpus. It is not guaranteed in general: see known
+  inconsistency 11.
 
 | Table | Shape | S1 | S2 | GS | Q |
 |-------|-------|:-:|:-:|:-:|:-:|
@@ -244,12 +245,13 @@ Recorded as they are. They are not being fixed in this release.
     `ENTITY_BUTTONS` is filled for CS2 client recordings and empty for a CS2
     GOTV match, and `ENTITY_WEAPONS` is empty on the Portal 2 sample.
 11. **Output is not always byte-stable.** Found by running a local corpus
-    twice. With a map file beside the demo, the order of `BSP_VERTS` and
-    `BSP_IDX` varies from run to run on Source 1 maps (the same geometry in a
-    different order). Two cases differ in the data: a CS:S SourceTV demo gave 27
-    or 31 `VIEW_SWITCHES` entries, and a Dota 2 demo gave a first track sample at
-    tick 781 or 784 for one entity. `--json` and `--csv` are not affected. None of
-    the fixtures, which ship without maps, show this.
+    repeatedly (44 demos, 3 runs each). Two cases still differ from run to run in
+    the data: a CS:S SourceTV demo gave 27 or 31 `VIEW_SWITCHES` entries, and a
+    Dota 2 demo gave a first track sample at tick 781 or 784 for one entity. Every
+    other demo in that corpus, with or without a map, was byte-identical.
+    (Earlier releases also wrote `BSP_VERTS` / `BSP_IDX` in a run-dependent order;
+    that is fixed.) `--json` and `--csv` are not affected, and the fixtures are
+    byte-stable.
 
 ## 3. Versioning policy
 

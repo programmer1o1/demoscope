@@ -8,11 +8,16 @@
   `--json is only supported for Source 1 demos` (or `--csv`) to stderr, print
   nothing to stdout, and exit with code 1. `--summary`, `--html` and `--all` are
   unchanged.
-- **Source 2 `WEAPON_CLASSES` is written in a stable order.** It was built from a
-  `HashMap`, so a CS2 page differed from run to run (same entries, different key
-  order). It is now sorted by class id. Other run-to-run differences remain on
-  some demos (BSP geometry order, one SourceTV table, one Dota 2 sample); they
-  are listed in `docs/OUTPUT.md` and under Known issues.
+- **Source 2 `WEAPON_CLASSES` and the Source 1 map geometry are written in a
+  stable order.** `WEAPON_CLASSES` was built from a `HashMap`, so a CS2 page
+  differed from run to run (same entries, different key order); it is now sorted
+  by class id. `BSP_VERTS` / `BSP_IDX` on Source 1 maps also came out in a
+  run-dependent order, because the coplanar-overlap pass appended its nudged
+  vertices in `HashMap` order; they are now appended in face order. The geometry is
+  unchanged (the same triangles by coordinates, checked on two maps). A unit test
+  covers the overlap pass. Two run-to-run differences remain on some demos (a
+  CS:S SourceTV `VIEW_SWITCHES` table and one Dota 2 sample); they are listed in
+  `docs/OUTPUT.md` and under Known issues.
 - **Behavior change: `--check` no longer passes camera-only demos.** A demo whose
   only track is the recorder camera copied in as a fallback (Half-Life: Source,
   some GMod builds, GoldSrc demos with no decodable players) is now `WARN`

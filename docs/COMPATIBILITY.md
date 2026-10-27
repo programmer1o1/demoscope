@@ -111,10 +111,9 @@ builds; they don't change a game's status above.
   names are not decoded.
 - **Condition Zero:** only the recorder's name decodes on the sample; other
   players are labelled `player N`. Counter-Strike 1.6 names decode.
-- **Output stability:** with a map file, the BSP geometry order varies between
-  runs on Source 1. A CS:S SourceTV demo and a Dota 2 demo also gave different
-  `VIEW_SWITCHES` / first-sample values on repeat runs. See
-  [OUTPUT.md](OUTPUT.md).
+- **Output stability:** a CS:S SourceTV demo and a Dota 2 demo gave different
+  `VIEW_SWITCHES` / first-sample values on repeat runs. All other demos in the
+  local corpus were byte-identical. See [OUTPUT.md](OUTPUT.md).
 - **Quake Live:** not rejected, so decoding is attempted and may desync. The
   `.dm_91` sample decoded no player names.
 
