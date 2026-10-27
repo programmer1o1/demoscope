@@ -11,7 +11,7 @@ A fast, pure-Rust parser and interactive 3D viewer for game demo files. No C too
 
 Every format opens in the same viewer: a 3D scene with player paths, a minimap, heatmap, POV camera, scoreboard and kill arcs. Put the map file next to the demo to draw the level around the paths (a `.bsp`, or the map's `.vpk` for CS2).
 
-See the **[full compatibility matrix](docs/COMPATIBILITY.md)** for per-game status.
+Support varies by game: each game is marked supported, partial, experimental or rejected, with the demos it was verified on and the known issues. See the **[full compatibility matrix](docs/COMPATIBILITY.md)**.
 
 ---
 
@@ -64,7 +64,8 @@ demoscope <demo-file> [OPTIONS]
 | `--diff-split FILE` | Compare two Source demos in a synchronized split viewer |
 | `--map FILE` | Add a BSP/VPK map layer; repeat for multi-map GoldSrc viewers |
 | `--jump-threshold N` | Override the automatically derived path-break distance |
-| `--check FILE_OR_DIR` | Run the decoder self-check and fail if any demo cannot be decoded |
+| `--check FILE_OR_DIR` | Decode self-check: one `PASS` / `WARN` / `FAIL` row per demo; exits 1 if any demo fails |
+| `--version`, `-V` | Print the version |
 
 ### Examples
 
@@ -94,6 +95,15 @@ demoscope demo.dem --html --jump-threshold 400
 ```
 
 The CSV columns are documented in [docs/FORMAT.md](docs/FORMAT.md#csv-column-reference).
+
+### Output stability
+
+From 1.0 the command-line flags, exit codes, `--csv` columns, `--json` keys and
+`--check` status words follow semantic versioning. `--csv` and `--json` are
+Source 1 only: on other engines they print an error to stderr and exit 1. The
+tables embedded in the HTML are internal and may change in any release. What is
+and isn't stable, and the versioning policy, are defined in
+[docs/OUTPUT.md](docs/OUTPUT.md).
 
 ---
 
@@ -169,6 +179,7 @@ automatically; maps with no shared landmark keep their native coordinates. See
 | [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) | Per-game support matrix, verification, and decoder notes |
 | [docs/FORMAT.md](docs/FORMAT.md) | Demo file format, packet layout, UserCmd bit format, button masks, proto-4 SendTable/PacketEntities wire format, CSV columns, decode notes |
 | [docs/OUTPUT.md](docs/OUTPUT.md) | Output contract: stable CLI / `--csv` / `--json` / `--check` behaviour, the internal HTML tables, versioning policy, and how to update snapshot tests |
+| [tests/fixtures/README.md](tests/fixtures/README.md) | The public test demos: source, license and personal-data notes for each |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Source layout, how a demo is routed to a decoder, and how to add a new engine |
 | [docs/PROTO4.md](docs/PROTO4.md) | How proto-4 (Portal 2 / Stanley / L4D) decode was reverse-engineered, plus the env-gated trace switches for investigating a new proto-4 game |
 | [scripts/p2_engine_trace.md](scripts/p2_engine_trace.md) | Raw `engine.dll` bit-trace of the Portal 2 player class, used as ground truth for PROTO4 |

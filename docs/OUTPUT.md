@@ -4,7 +4,7 @@ demoscope has three kinds of output, with different promises:
 
 | Output | Promise |
 |--------|---------|
-| CLI flags, exit codes, `--csv`, `--json`, `--check` status words | **Stable.** Covered by semver from 1.0. |
+| CLI flags, exit codes, `--csv`, `--json`, `--check` status words | **Stable.** Covered by semantic versioning. |
 | The tables embedded in the HTML viewer | **Internal and unstable.** Documented here as they are; may change in any release. |
 | Human-readable text (default output, `--summary`, `--all`, stderr messages, the `--check` table layout) | Not covered. Don't parse it. |
 
@@ -119,8 +119,8 @@ recorder's track is the camera copy but other players decoded natively),
 `fallback` (the recorder camera only) or `-` (nothing decoded).
 
 A Source 1 demo with no gameplay (about 0 ticks) and no tracks is `PASS` with
-decode `-`. Before 1.0, `PASS` meant "tracks > 0" and camera-only demos passed;
-they are now `WARN`.
+decode `-`. Up to 0.8, `PASS` meant "tracks > 0" and camera-only demos passed;
+since 1.0 they are `WARN`.
 
 Exit code: `0` when no demo is `FAIL` (`WARN` is not a failure), `1` otherwise.
 A path that can't be read counts as `FAIL`. A directory with no supported demo
@@ -256,7 +256,7 @@ Recorded as they are. They are not being fixed in this release.
 
 ## 3. Versioning policy
 
-demoscope follows semantic versioning from 1.0. The versioned surface is the
+demoscope follows semantic versioning. The versioned surface is the
 stable contract in section 1.
 
 **Major (2.0, 3.0, …)** changes:
