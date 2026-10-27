@@ -45,7 +45,7 @@ with no fallback to the recorder camera.
 | Portal 2 | ✅ Positions, eye-yaw, inputs, incl. mid-game / SAR speedrun recordings. Single-player demos have no networked events, so the event log is empty | Three single-player demos, native, incl. a SAR full-game recording (finale) |
 | Aperture Tag, Portal Stories, Portal Reloaded | 🟡 Same engine path as Portal 2 | not yet verified on a named demo |
 | The Stanley Parable | 🟡 Same engine path as Portal 2 | not yet verified on a named demo |
-| Left 4 Dead 2 | ✅ Positions, eye-yaw, weapons, names, life states, inputs, camera | `c8m2_subway`: 2 native tracks (the second has 9 samples) |
+| Left 4 Dead 2 | 🟡 Positions, eye-yaw, weapons, names, life states, inputs, camera. Sparse on the one sample: 4 named players, 2 tracks (one with 9 samples) | `c8m2_subway`: 2 native tracks |
 | Left 4 Dead 1 | 🟡 Same engine path as Left 4 Dead 2 | not yet verified on a named demo |
 | CS:GO (Source 1, net protocol 13xxx, pre-CS2) | ✅ Positions, angles, life states, weapons, inputs, names, events, grenades, economy, scoreboard | Four demos, 7-11 native tracks each, incl. an `ar_monastery` GOTV match |
 | CS2 | ✅ Positions, names, deaths, events, kill attribution, rounds, grenades, inputs, held weapon, economy, scoreboard, map overlay from `.vpk` | `de_nuke` match (build 10924): 10 tracks, 779k samples, 0 failed packets, 1,544 events. Three more recordings, one on build 10772: 1-11 tracks, 0 failed packets |
