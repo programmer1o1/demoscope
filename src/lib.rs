@@ -48,7 +48,7 @@ mod wasm {
         let primary_map = map_layers.first().copied();
         // Source 2 (PBDEMS2: CS2 / Dota 2 / Deadlock) - checked first: its magic
         // is unambiguous, whereas the Quake route matches by `.dem` extension and
-        // would otherwise swallow it. Metadata-only viewer for now.
+        // would otherwise swallow it.
         if super::cli::source2::is_source2(demo) {
             // CS2 maps are VPK-packed Source 2 resources, not VBSP, so the
             // optional second buffer doubles as the `.vpk` map pak here (the

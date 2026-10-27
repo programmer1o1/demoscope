@@ -117,9 +117,13 @@ builds; they don't change a game's status above.
 ## Verification
 
 The release workflow builds and tests the Rust library and CLI before producing
-platform archives. The regression workflow also generates HTML and validates
-its embedded JavaScript when a demo corpus is available. For a local corpus,
-run:
+platform archives. The regression workflow runs `cargo test` (including the
+golden-output snapshots), `demoscope --check` over `tests/fixtures/` (no `FAIL`
+allowed), loads each fixture's viewer in headless Chromium, and builds the wasm
+bundle and checks that it returns the same HTML as the CLI. It also generates
+HTML and validates its embedded JavaScript when a demo corpus is available. The
+fixtures are two demos (Source 1 and Source 2), so the other engine families are
+not covered by CI. For a local corpus, run:
 
 ```bash
 demoscope --check /path/to/demos

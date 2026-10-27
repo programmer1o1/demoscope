@@ -19,6 +19,11 @@
   Sweeps now include every `.dm_NN` file, and Quake 3 demos outside
   `.dm_66`-`.dm_68` report `WARN` ("experimental") when they decode, in both
   modes.
+- **CI covers more.** The regression workflow now runs `cargo test --all-targets`
+  (including the golden snapshots) and `demoscope --check tests/fixtures`, and a
+  new `wasm` job builds the bundle and runs `scripts/check-wasm.mjs`, which
+  requires the wasm output to be byte-identical to the CLI's. `check-viewer.sh`
+  now sweeps every demo extension the decoders accept.
 - **Source 2 HTML no longer embeds a local path.** `META.game` held the
   recorder's absolute game directory (for example
   `D:\SteamLibrary\steamapps\common\Deadlock\game\citadel`). It now holds

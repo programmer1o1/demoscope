@@ -43,7 +43,7 @@ src/
 ```
 
 Non-Rust pieces: `web/index.html` (the drag-and-drop page that loads the wasm
-build), `scripts/` (wasm build, viewer check and the Portal 2 trace tooling),
+build), `scripts/` (wasm build, viewer and wasm checks, and the Portal 2 trace tooling),
 `tests/fixtures/` (small demos for the viewer check), `assets/` (logo
 SVGs) and `.github/workflows/` (`regression`, `release`, `pages`).
 

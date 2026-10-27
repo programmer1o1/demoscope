@@ -5,9 +5,13 @@ name: regression
 # parser doesn't crash, produces a valid HTML, and emits a known count of
 # entities / samples on a couple of stable reference demos.
 #
-# Two small fixture demos in `tests/fixtures/` are always checked: each viewer
-# is loaded in headless Chromium and any JavaScript error fails the run
-# (scripts/check-viewer.sh).
+# The tracked demos in `tests/fixtures/` are always checked:
+#   - `cargo test` (unit tests, CLI contract tests, golden-output snapshots);
+#   - `demoscope --check tests/fixtures` (no FAIL allowed; WARN is reported);
+#   - each viewer is loaded in headless Chromium and any JavaScript error fails
+#     the run (scripts/check-viewer.sh);
+#   - the wasm bundle is built and must return the same HTML as the CLI
+#     (scripts/check-wasm.mjs).
 #
 # Note: large demos / BSPs are NOT shipped in the repo by default. Add them
 # under `DEMOS TESTING/` (or set the `DEMOS_DIR` env var to a path that has
@@ -34,6 +38,12 @@ jobs:
       - name: Lint (deny warnings)
         run: cargo build --release 2>&1 | tee build.log
             && ! grep -E "^warning" build.log
+
+      - name: Tests (unit, CLI contract, golden snapshots)
+        run: cargo test --all-targets
+
+      - name: Decode check over the fixtures (no FAIL)
+        run: ./target/release/demoscope --check tests/fixtures
 
       - name: Viewer runtime check (headless Chromium)
         env:
@@ -96,3 +106,35 @@ jobs:
           # are added; entity / sample / life counts are the meaningful ones.
           echo "$out" | grep -E "3 entities, 12637 samples, 3 named, 113 life transitions" \
             || { echo "Reference demo decode drifted!"; exit 1; }
+
+  wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
+      # The CLI version must match the wasm-bindgen crate in Cargo.lock exactly.
+      - name: Read wasm-bindgen version from Cargo.lock
+        id: wb
+        run: |
+          v=$(awk '/^name = "wasm-bindgen"$/{getline; gsub(/"/,"",$3); print $3}' Cargo.lock)
+          [ -n "$v" ] || { echo "wasm-bindgen not found in Cargo.lock"; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen-cli@${{ steps.wb.outputs.version }}
+
+      - name: Build native binary (for the parity check)
+        run: cargo build --release
+
+      - name: Build WASM bundle
+        run: bash scripts/build-wasm.sh
+
+      - name: Smoke test (wasm output must equal the CLI's)
+        run: node scripts/check-wasm.mjs
