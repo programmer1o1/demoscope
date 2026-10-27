@@ -36,7 +36,7 @@ with no fallback to the recorder camera.
 | Counter-Strike: Source | ✅ Full | `de_valley`: 24 tracks, 100k samples. `cs_office`: three demos, 14-19 tracks each |
 | Half-Life 2 Deathmatch | ✅ Full | `dm_overwatch`: 17 tracks, 65k samples |
 | Half-Life 2, Episode One / Two, Lost Coast | 🟡 Decodes through the generic Source 1 path; no sample to confirm | not yet verified on a named demo |
-| Half-Life: Source | 🟡 Recorder camera only. DataTables are not parsed, so there are no per-player tracks | Half-Life: Source demo (`game_dir` `hl1`): camera fallback |
+| Half-Life: Source | 🟡 Recorder camera only. DataTables are not parsed, so there are no per-player tracks | Half-Life: Source `background02` menu demo (`game_dir` `hl1`): 1 track, 1,497 samples, camera fallback |
 | Day of Defeat: Source | 🟡 Decodes through the generic Source 1 path; no sample to confirm | not yet verified on a named demo |
 | Portal | ✅ Native player track, camera. Single-player demos carry no networked events, so the event log is empty | Portal `testchmb_a_10` and a scripted `background1` menu demo: 1 native track each |
 | HL2 old engine (2004) | 🟡 Native player track, camera, inputs. Player names are not decoded | HL2 2004-engine demo: 1,976 native samples, 0 names |
