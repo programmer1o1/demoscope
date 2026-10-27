@@ -49,18 +49,25 @@ SVGs) and `.github/workflows/` (`regression`, `release`, `pages`).
 
 ## How a demo is routed
 
-The CLI and the wasm shim both pick an engine by sniffing the file, in this order:
+The wasm shim (`lib.rs`) and HTML generation (`render/html/mod.rs`) pick an
+engine by sniffing the file, in this order:
 
-1. **GoldSrc**: `goldsrc::is_goldsrc` (`HLDEMO` magic).
-2. **Source 2**: `source2::is_source2` (`PBDEMS2` magic).
-3. **Quake**: `quake::detect`, which goes by file extension (`.dem`, `.dm2`,
-   `.dm_66`…). It declines any file that starts with the `HL2DEMO`, `GMODEMO`
-   or `HLDEMO` magic.
+1. **Source 2**: `source2::is_source2` (`PBDEMS2` magic).
+2. **Quake**: `quake::detect`, which goes by file extension (`.dem`, `.dm2`,
+   `.mvd`, `.qwd`, `.dm_66`…). It declines any file that starts with the
+   `HL2DEMO`, `GMODEMO` or `HLDEMO` magic.
+3. **GoldSrc**: `goldsrc::is_goldsrc` (`HLDEMO` magic).
 4. **Source 1**: everything else goes through the `HL2DEMO` header parser.
 
-Quake detection is extension-based, so the magic checks have to run first (and
-`quake::detect` repeats them for Source and GoldSrc) so that a `.dem` file from
-another engine is never misread as NetQuake.
+The CLI summary path (`main.rs`) checks GoldSrc, then Source 2, then Quake. The
+result is the same, because the Source 2 and GoldSrc magics don't overlap with
+each other or with Source 1, and `quake::detect` declines `HLDEMO`.
+
+Quake detection is extension-based, so `quake::detect` repeats the Source and
+GoldSrc magic checks to keep a `.dem` file from another engine from being
+misread as NetQuake. The extension is still the only signal for Quake files: a
+renamed file can be misdetected (a `.dm2` renamed to `.dem` is read as
+NetQuake, and any `.dm_NN` is read as Quake 3, including Quake Live).
 
 ## Data flow
 
