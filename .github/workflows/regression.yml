@@ -1,23 +1,22 @@
 name: regression
 
-# Light-weight smoke tests: build the release binary, then run it against
-# every demo + reference BSP committed under `DEMOS TESTING/`. Asserts the
-# parser doesn't crash, produces a valid HTML, and emits a known count of
-# entities / samples on a couple of stable reference demos.
+# Build the release binary and run the test suite and smoke checks against the
+# demos in `tests/fixtures/`.
 #
 # The tracked demos in `tests/fixtures/` are always checked:
 #   - unit tests (debug), then the CLI contract tests and golden-output
 #     snapshots (release);
 #   - `demoscope --check tests/fixtures` (no FAIL allowed; WARN is reported);
+#   - scripts/smoke-run.sh: --summary, --check and --html on every fixture, and
+#     a syntax check of each page's script;
 #   - each viewer is loaded in headless Chromium and any JavaScript error fails
 #     the run (scripts/check-viewer.sh);
 #   - the wasm bundle is built and must return the same HTML as the CLI
 #     (scripts/check-wasm.mjs).
 #
-# Note: large demos / BSPs are NOT shipped in the repo by default. Add them
-# under `DEMOS TESTING/` (or set the `DEMOS_DIR` env var to a path that has
-# them) for the assertions to fire. Missing files → workflow skips them and
-# only enforces the build + smoke check.
+# The private demo corpus is NOT in the repo. Put it under `DEMOS TESTING/` (or
+# set the `DEMOS_DIR` env var) to run the corpus smoke-run and the reference-demo
+# stats; without it those two steps are skipped, with a notice in the run.
 
 on:
   push:
@@ -29,7 +28,7 @@ jobs:
   smoke:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
@@ -58,53 +57,40 @@ jobs:
           PLAYWRIGHT_WITH_DEPS: "1"
         run: ./scripts/check-viewer.sh
 
-      - name: Smoke-run on every demo
-        shell: bash
-        run: |
-          set -euo pipefail
-          DEMOS_DIR="${DEMOS_DIR:-DEMOS TESTING}"
-          if [ ! -d "$DEMOS_DIR" ]; then
-            echo "No demos directory at '$DEMOS_DIR' - skipping."
-            exit 0
-          fi
-          pass=0; fail=0
-          for d in "$DEMOS_DIR"/*.dem; do
-            [ -e "$d" ] || continue
-            echo "::group::$d"
-            if ./target/release/demoscope "$d" --summary; then
-              if ./target/release/demoscope "$d" --html /tmp/out.html > /dev/null 2>&1; then
-                # Quick HTML sanity check: must contain the script we generate
-                # and parse as syntactically valid JS via node.
-                grep -q 'const META' /tmp/out.html || { echo "missing META"; fail=$((fail+1)); continue; }
-                node -e "
-                  const fs = require('fs');
-                  const h = fs.readFileSync('/tmp/out.html','utf8');
-                  const m = h.match(/<script>([\s\S]*?)<\/script>\s*<\/body>/);
-                  if (!m) { console.error('no script tag'); process.exit(1); }
-                  try { new Function(m[1]); } catch (e) { console.error('JS:', e.message); process.exit(1); }
-                "
-                pass=$((pass+1))
-              else
-                fail=$((fail+1))
-              fi
-            else
-              fail=$((fail+1))
-            fi
-            echo "::endgroup::"
-          done
-          echo "Pass: $pass  Fail: $fail"
-          [ "$fail" -eq 0 ]
+      - name: Smoke-run on the fixtures
+        run: ./scripts/smoke-run.sh tests/fixtures
 
-      - name: Reference-demo parse stats
+      # The private corpus (`DEMOS TESTING/`, or $DEMOS_DIR) is not in the repo, so
+      # on GitHub the next two steps are skipped. Say so, instead of passing as if
+      # they had run.
+      - name: Detect the private demo corpus
+        id: corpus
+        shell: bash
+        run: |
+          dir="${DEMOS_DIR:-DEMOS TESTING}"
+          if [ -d "$dir" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+            echo "dir=$dir" >> "$GITHUB_OUTPUT"
+            echo "Private corpus found at '$dir'."
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Private corpus absent::No demo corpus at '$dir': the corpus smoke-run and the reference-demo stats were SKIPPED. Only tests/fixtures/ was exercised."
+          fi
+
+      - name: Smoke-run on the private corpus
+        if: steps.corpus.outputs.present == 'true'
+        run: ./scripts/smoke-run.sh "${{ steps.corpus.outputs.dir }}"
+
+      - name: Reference-demo parse stats (private corpus)
+        if: steps.corpus.outputs.present == 'true'
         shell: bash
         run: |
           set -euo pipefail
-          # If a known-good reference demo exists, assert the entity / sample
-          # counts haven't drifted. Add more references as the test corpus
-          # grows. Numbers track what was current at the time of writing -
-          # update when the decoder intentionally changes behaviour.
-          ref="DEMOS TESTING/2025-07-18_10-13-29.dem"
-          [ -e "$ref" ] || { echo "Reference demo not in repo - skipping."; exit 0; }
+          # Assert the entity / sample counts of one known-good reference demo
+          # haven't drifted. Numbers track what was current at the time of
+          # writing; update them when the decoder intentionally changes behaviour.
+          ref="${{ steps.corpus.outputs.dir }}/2025-07-18_10-13-29.dem"
+          [ -e "$ref" ] || { echo "FAIL: reference demo '$ref' is missing from the corpus"; exit 1; }
           out=$(./target/release/demoscope "$ref" --html /tmp/ref.html 2>&1)
           echo "$out"
           # Counts as of 2026-05-28: 3 entities, 12637 samples, 3 named,
@@ -118,7 +104,7 @@ jobs:
   wasm:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
         with:
