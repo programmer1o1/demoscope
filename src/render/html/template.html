@@ -1915,6 +1915,68 @@ if (currentPrimaryEid == null && _synthRecorderEid != null) currentPrimaryEid = 
 // that geometry is built when multi-player has real data.
 const MP_ACTIVE = (typeof mpEntities !== 'undefined') && mpEntities.length > 0;
 
+// ─── Eye height ───────────────────────────────────────────────────────────────
+// Height of the viewpoint above an entity's tracked position, in world units.
+// The first-person camera, the follow-camera target and the grenade-arc start
+// all derive from it. A tracked position is the engine's entity origin, and
+// that origin sits at a different height above the floor in each engine, so the
+// standing eye height (the engine's view offset) differs per engine. Standing
+// values; crouching is not modelled:
+//   Source 1 / Source 2   64  default view vectors (VEC_VIEW; HL2, CS:S, Portal,
+//                             CS:GO, CS2). Origin = feet. TF2 differs per class
+//                             and `m_vecViewOffset` is not embedded in the page,
+//                             so this is a fixed value (see the Source note below).
+//   GoldSrc               17  HLSDK pm_shared.h VEC_VIEW (VEC_DUCK_VIEW is 12).
+//                             Origin = hull centre, 36 above the floor.
+//   Quake 1 / QuakeWorld  22  progs client.qc: self.view_ofs = '0 0 22'.
+//                             Origin = 24 above the floor.
+//   Quake 2               22  game/g_client.c: ent->viewheight = 22.
+//                             Origin = 24 above the floor.
+//   Quake 3               26  game/bg_public.h DEFAULT_VIEWHEIGHT
+//                             (CROUCH_VIEWHEIGHT is 12). Origin = 24 above the floor.
+// Exception: the GoldSrc recorder's track is RefParams.vieworg, which already is
+// the eye, so its offset is 0.
+// Source note: a crouched Source 1 player's eye is lower (28 in the default view
+// vectors) but crouch state is not available to the viewer for every player, so
+// the standing value is used.
+const ENGINE = (() => {
+  const g = String(META.game || '');
+  if (/^quake(world|1|2|3)$/.test(g)) return g;
+  if (META.demo_protocol === 5) return 'goldsrc';   // Source 1 uses 2-4, Source 2 48+
+  return 'source';
+})();
+const STANDING_EYE = { source: 64, goldsrc: 17, quake1: 22, quakeworld: 22, quake2: 22, quake3: 26 };
+// The follow camera aims a little below the eye, and a thrown grenade leaves a
+// little below it (about chest / hand height). These keep the previous Source
+// values (64 - 14 = 50, 64 - 8 = 56).
+const FOLLOW_BELOW_EYE = 14, ARC_BELOW_EYE = 8;
+
+const _recorderCamCache = {};
+// True when the entity's track is the recorder camera path (every sample is also
+// in WORLD_POSITIONS, same tick and position), as on GoldSrc.
+function trackIsRecorderCamera(eid) {
+  const key = String(eid);
+  if (key in _recorderCamCache) return _recorderCamCache[key];
+  let ok = false;
+  const t = ENTITY_TRACKS[key];
+  if (t && t.length > 0 && WORLD_POSITIONS.length >= t.length) {
+    const byTick = new Map();
+    for (const w of WORLD_POSITIONS) byTick.set(w[0], w);
+    ok = t.every(s => {
+      const w = byTick.get(s[0]);
+      return w && w[1] === s[1] && w[2] === s[2] && w[3] === s[3];
+    });
+  }
+  return (_recorderCamCache[key] = ok);
+}
+
+function eyeOffset(eid) {
+  if (ENGINE === 'goldsrc' && eid != null && trackIsRecorderCamera(eid)) return 0;
+  return STANDING_EYE[ENGINE];
+}
+function followHeight(eid) { return eyeOffset(eid) - FOLLOW_BELOW_EYE; }
+function arcStartHeight(eid) { return eyeOffset(eid) - ARC_BELOW_EYE; }
+
 // Resolve the primary entity's interpolated world position at a given tick.
 // Returns null if the entity isn't alive at that tick or has no track.
 function mpPrimaryPositionAt(tick) {
@@ -4111,7 +4173,7 @@ function rebuildGrenadeMarkers() {
       const throwTick = Math.max(track[0][0], ev.tick - lead);
       const s = mpSampleAt(track, throwTick);
       if (s) {
-        const o = new THREE.Vector3(s[1], s[3] + 56, -s[2]); // ~eye/hand height
+        const o = new THREE.Vector3(s[1], s[3] + arcStartHeight(tEid), -s[2]); // ~hand height
         const d = new THREE.Vector3(dx, ev.z + 10, dz);
         const dist = o.distanceTo(d);
         if (dist > 30) {
@@ -4817,7 +4879,7 @@ function animate() {
         // is already sub-tick interpolated, so a direct set tracks smoothly
         // while turning instantly. (A lerp here lagged the camera ~30 frames
         // behind the player and made scrubbing feel like a smoothing cam.)
-        lerpTarget.set(tx, ty + 50, tz);
+        lerpTarget.set(tx, ty + followHeight(currentPrimaryEid), tz);
         controls.target.copy(lerpTarget);
       }
       controls.update();
@@ -4828,12 +4890,13 @@ function animate() {
       if (_eye) { pitch = _eye.pitch; yaw = _eye.yaw; }
       const _mpAim = MP_ACTIVE ? mpPrimaryAimAt(playbackGameTick) : null;
       if (_mpAim) { pitch = _mpAim.pitch; yaw = _mpAim.yaw; }
-      camera.position.set(tx, ty + 64, tz);
+      const _eyeH = eyeOffset(currentPrimaryEid);
+      camera.position.set(tx, ty + _eyeH, tz);
       const yawR = yaw * Math.PI / 180;
       const pitchR = pitch * Math.PI / 180;
       camera.lookAt(
         tx + Math.cos(pitchR) * Math.cos(yawR) * 200,
-        ty + 64 - Math.sin(pitchR) * 200,
+        ty + _eyeH - Math.sin(pitchR) * 200,
         tz - Math.cos(pitchR) * Math.sin(yawR) * 200
       );
     }
@@ -4921,13 +4984,14 @@ function animate() {
       if (!_deadNow) {
         // Snap (not lerp) - position is already interpolated, so this tracks
         // smoothly during playback yet turns instantly. See the scrub branch.
-        lerpTarget.set(camPx, camPz + 50, camPy);
+        lerpTarget.set(camPx, camPz + followHeight(currentPrimaryEid), camPy);
         controls.target.copy(lerpTarget);
       }
       controls.update();
     } else if (cameraMode === 'fps' && !_deadNow) {
-      camera.position.set(camPx, camPz + 64, camPy);
-      camera.lookAt(camPx + idir.x * 200, camPz + 64 + idir.y * 200, camPy + idir.z * 200);
+      const _eyeH = eyeOffset(currentPrimaryEid);
+      camera.position.set(camPx, camPz + _eyeH, camPy);
+      camera.lookAt(camPx + idir.x * 200, camPz + _eyeH + idir.y * 200, camPy + idir.z * 200);
     }
 
     if (lo >= CMDS.length - 1) {
@@ -5690,7 +5754,7 @@ if (window._mpHideLifePaths && typeof lifeObjects !== 'undefined') {
       const s = ent.samples[0];
       const px = s[1], py = -s[2], pz = s[3];
       // Three.js: X=px, Y=pz (height), Z=py
-      controls.target.set(px, pz + 50, py);
+      controls.target.set(px, pz + followHeight(currentPrimaryEid), py);
       camera.position.set(px + 600, pz + 800, py + 800);
       controls.update();
     }

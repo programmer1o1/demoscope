@@ -25,6 +25,16 @@
   `.dm_66`-`.dm_68` are experimental and report `WARN` whether or not they
   decode (never `PASS`, never `FAIL`), in both modes, so they can't make a sweep
   exit 1.
+- **First-person camera height fixed (viewer only).** The first-person camera, the
+  follow-camera target and the grenade-arc start used a fixed +64 above every
+  entity's tracked position, on every engine. They now use the engine's standing
+  eye height: GoldSrc 17, Quake 1 / QuakeWorld 22, Quake 2 22, Quake 3 26, Source
+  64 (unchanged). The GoldSrc recorder's track already is the eye
+  (`RefParams.vieworg`), so its offset is 0. Measured against the map floor with
+  the page's real camera: GoldSrc recorder 117 -> 53, GoldSrc other players 100 ->
+  53, Quake 3 recorder 88 -> 50 units above the floor. Source 1 is unchanged: a
+  crouched player's camera does not drop, because `m_vecViewOffset` is not
+  decoded or embedded.
 - **Test fixtures replaced.** `tests/fixtures/` now holds six maintainer-recorded
   demos plus one approved public demo (seven files) instead of two third-party ones, covering
   CS:S, CS2, CS:GO, Portal, Portal 2, Deadlock and the HL2 2004 engine. Each one
