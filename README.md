@@ -168,6 +168,7 @@ automatically; maps with no shared landmark keep their native coordinates. See
 |-----|----------|
 | [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) | Per-game support matrix, verification, and decoder notes |
 | [docs/FORMAT.md](docs/FORMAT.md) | Demo file format, packet layout, UserCmd bit format, button masks, proto-4 SendTable/PacketEntities wire format, CSV columns, decode notes |
+| [docs/OUTPUT.md](docs/OUTPUT.md) | Output contract: stable CLI / `--csv` / `--json` / `--check` behaviour, the internal HTML tables, versioning policy, and how to update snapshot tests |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Source layout, how a demo is routed to a decoder, and how to add a new engine |
 | [docs/PROTO4.md](docs/PROTO4.md) | How proto-4 (Portal 2 / Stanley / L4D) decode was reverse-engineered, plus the env-gated trace switches for investigating a new proto-4 game |
 | [scripts/p2_engine_trace.md](scripts/p2_engine_trace.md) | Raw `engine.dll` bit-trace of the Portal 2 player class, used as ground truth for PROTO4 |
