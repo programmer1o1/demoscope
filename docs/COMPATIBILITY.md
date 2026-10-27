@@ -5,7 +5,7 @@
 | Engine family | Games | Status | Map overlay | Details |
 |---------------|-------|:-:|---|---------|
 | Source 1 (`HL2DEMO`, `GMODEMO`) | TF2, HL2 family, CS:S, CS:GO, DoD:S, Portal, Portal 2, Stanley Parable, L4D1/2, GMod, Half-Life: Source | ✅ / 🟡 by game | VBSP `.bsp` (incl. LZMA lumps) | [Source-family formats](#source-family-formats) |
-| Source 2 (`PBDEMS2`) | CS2 ✅; Dota 2, Deadlock 🟡 | ✅ / 🟡 by game | CS2 `.vpk` collision mesh | [Source-family formats](#source-family-formats) |
+| Source 2 (`PBDEMS2`) | CS2 ✅; Dota 2, Deadlock 🟡 | ✅ / 🟡 by game | CS2 / Deadlock `.vpk` collision mesh | [Source-family formats](#source-family-formats) |
 | GoldSrc (`HLDEMO`) | CS 1.6 ✅; Condition Zero, Half-Life 1, DoD 🟡 | ✅ / 🟡 by game | v30 `.bsp`, multiple maps | [GoldSrc](#goldsrc-hldemo) |
 | Quake (`.dem`, `.mvd`, `.dm2`, `.dm_66`-`.dm_68`) | Quake 1, QuakeWorld (MVD), Quake 2, Quake 3 Arena | ✅ | Q1 / Q2 / Q3 `.bsp` | [Quake family](#quake-family) |
 | QuakeWorld client demos (`.qwd`) | QuakeWorld | ⚠ synthetic tests only | | [Quake family](#quake-family) |
@@ -48,9 +48,9 @@ with no fallback to the recorder camera.
 | Left 4 Dead 2 | 🟡 Positions, eye-yaw, weapons, names, life states, inputs, camera. Sparse on the one sample: 4 named players, 2 tracks (one with 9 samples) | `c8m2_subway`: 2 native tracks |
 | Left 4 Dead 1 | 🟡 Same engine path as Left 4 Dead 2 | not yet verified on a named demo |
 | CS:GO (Source 1, net protocol 13xxx, pre-CS2) | ✅ Positions, angles, life states, weapons, inputs, names, events, grenades, economy, scoreboard | Four demos, 7-11 native tracks each, incl. an `ar_monastery` GOTV match |
-| CS2 | ✅ Positions, names, deaths, events, kill attribution, rounds, grenades, inputs, held weapon, economy, scoreboard, map overlay from `.vpk` | `de_nuke` match (build 10924): 10 tracks, 779k samples, 0 failed packets, 1,544 events. Three more recordings, one on build 10772: 1-11 tracks, 0 failed packets |
-| Deadlock | 🟡 Positions, names. Events: sparse (observed on 2 of 3 sample demos). No held weapon, no recorded inputs (the viewer infers them from movement), no map overlay | Three demos: 6, 3 and 12 tracks |
-| Dota 2 | 🟡 Positions, names, life states. Events: none observed on the sample demo. No held weapon, no recorded inputs (the viewer infers them from movement), no map overlay | One demo: 10 tracks, 147k samples, 0 failed packets, 65 death transitions |
+| CS2 | ✅ Positions, names, deaths, events, kill attribution, rounds, grenades, inputs (client recordings only), held weapon, economy, scoreboard, map overlay from `.vpk` | `de_nuke` match (build 10924): 10 tracks, 779k samples, 0 failed packets, 1,544 events. Three more recordings, one on build 10772: 1-11 tracks, 0 failed packets |
+| Deadlock | 🟡 Positions, names. Events: sparse (observed on 2 of 3 sample demos). No held weapon, no recorded inputs (the viewer infers them from movement). Map overlay loads from a `.vpk` (107,887 verts on the one map tried), not checked against the tracks | Three demos: 6, 3 and 12 tracks |
+| Dota 2 | 🟡 Positions, names, life states. Events: none observed on the sample demo. No held weapon, no recorded inputs (the viewer infers them from movement). Map overlay not verified (no `.vpk` available) | One demo: 10 tracks, 147k samples, 0 failed packets, 65 death transitions |
 | SFM (DMX) / Titanfall (`R1DEMO`) | ✗ Different file format, rejected on magic | n/a: rejected on magic |
 
 Source 1 decodes player entities natively in every game: any entity with index
