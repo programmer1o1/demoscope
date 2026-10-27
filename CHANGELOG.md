@@ -8,6 +8,12 @@
   `--json is only supported for Source 1 demos` (or `--csv`) to stderr, print
   nothing to stdout, and exit with code 1. `--summary`, `--html` and `--all` are
   unchanged.
+- **Behavior change: `--check` no longer passes camera-only demos.** A demo whose
+  only track is the recorder camera copied in as a fallback (Half-Life: Source,
+  some GMod builds, GoldSrc demos with no decodable players) is now `WARN`
+  instead of `PASS`. A new `decode` column shows `native`, `mixed`, `fallback`
+  or `-` per file. `PASS` now means native tracks were decoded. `--check` also
+  reports real player-name counts for GoldSrc instead of always 0.
 - **Source 2 HTML no longer embeds a local path.** `META.game` held the
   recorder's absolute game directory (for example
   `D:\SteamLibrary\steamapps\common\Deadlock\game\citadel`). It now holds

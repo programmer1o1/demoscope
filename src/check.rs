@@ -3,15 +3,20 @@
 // breaks one game's decode (a desync, a panic, zero tracks) shows up as a FAIL
 // across the test-demo set instead of going unnoticed.
 //
-// Wired to the CLI as `--check <file|dir>`; a directory is swept for `*.dem`.
-// Exit code is non-zero if any demo FAILs, so it doubles as a CI gate.
+// Wired to the CLI as `--check <file|dir>`; a directory is swept for the demo
+// extensions in `is_supported_demo_path`. Exit code is non-zero if any demo
+// FAILs, so it doubles as a CI gate.
 //
 // Health tiers:
-//   PASS: decoded and produced player tracks.
-//   WARN: decoded with tracks, but with a soft concern (e.g. Source 2 packet
-//          decode failures: the file still yields tracks, but some packets
-//          desynced: worth surfacing, not a hard break).
-//   FAIL: panicked, errored, or produced zero tracks.
+//   PASS: decoded and produced native player tracks (not just the recorder
+//          camera copied into a track).
+//   WARN: usable, with a soft concern: only the recorder-camera fallback
+//          produced tracks, or some packets failed to decode (Source 2).
+//   FAIL: panicked, errored, or produced no tracks.
+//
+// The `decode` column says where the tracks came from: `native` (entity
+// decode), `mixed` (the recorder track is the camera copy, other players are
+// native), `fallback` (camera only) or `-` (nothing decoded / no gameplay).
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
@@ -38,6 +43,8 @@ pub struct DemoHealth {
     pub tracks: usize,
     pub samples: usize,
     pub named: usize,
+    /// Where the tracks came from: native / mixed / fallback / -.
+    pub decode: &'static str,
     pub note: String,
     pub status: Status,
 }
@@ -50,6 +57,7 @@ impl DemoHealth {
             tracks: 0,
             samples: 0,
             named: 0,
+            decode: "-",
             note: note.into(),
             status: Status::Warn,
         }
@@ -62,6 +70,7 @@ impl DemoHealth {
             tracks: 0,
             samples: 0,
             named: 0,
+            decode: "-",
             note: note.into(),
             status: Status::Fail,
         }
@@ -101,6 +110,7 @@ pub fn check_demo(bytes: &[u8], name_hint: &str) -> DemoHealth {
                 tracks,
                 samples,
                 named,
+                decode: if tracks == 0 { "-" } else { "native" },
                 note,
                 status,
             }
@@ -121,13 +131,15 @@ pub fn check_demo(bytes: &[u8], name_hint: &str) -> DemoHealth {
                     } else {
                         Status::Pass
                     };
+                    let note = format!("{:?} {}", kind, d.meta.map);
                     DemoHealth {
                         name: name_hint.to_string(),
                         format: "quake",
                         tracks,
                         samples,
                         named,
-                        note: format!("{:?} {}", kind, d.meta.map),
+                        decode: if tracks == 0 { "-" } else { "native" },
+                        note,
                         status,
                     }
                 }
@@ -145,18 +157,38 @@ pub fn check_demo(bytes: &[u8], name_hint: &str) -> DemoHealth {
             let ents = super::goldsrc::entities::extract_entities(bytes, &meta);
             let tracks = ents.tracks.len();
             let samples = ents.tracks.values().map(|v| v.len()).sum();
-            let status = if tracks == 0 {
-                Status::Fail
+            let named = ents.names.values().filter(|n| !n.trim().is_empty()).count();
+            // No decoded players: the viewer falls back to the recorder camera,
+            // when that camera actually moves.
+            let (status, decode, note) = if tracks > 0 {
+                (Status::Pass, "native", format!("map {}", meta.map_name))
             } else {
-                Status::Pass
+                let cam = super::goldsrc::extract_camera(bytes, &meta);
+                let moves = cam.first().is_some_and(|c| {
+                    cam.iter().any(|s| {
+                        (s.1 - c.1).abs() > 1.0
+                            || (s.2 - c.2).abs() > 1.0
+                            || (s.3 - c.3).abs() > 1.0
+                    })
+                });
+                if moves {
+                    (
+                        Status::Warn,
+                        "fallback",
+                        format!("map {}, recorder camera only", meta.map_name),
+                    )
+                } else {
+                    (Status::Fail, "-", format!("map {}", meta.map_name))
+                }
             };
             DemoHealth {
                 name: name_hint.to_string(),
                 format: "goldsrc",
                 tracks,
                 samples,
-                named: 0,
-                note: format!("map {}", meta.map_name),
+                named,
+                decode,
+                note,
                 status,
             }
         });
@@ -166,11 +198,27 @@ pub fn check_demo(bytes: &[u8], name_hint: &str) -> DemoHealth {
     guard(
         name_hint,
         "source1",
-        || match super::source::multi_player::extract_from_bytes(bytes) {
+        || match super::source::player_tracks::extract_from_bytes(bytes) {
             Ok(d) => {
                 let tracks = d.tracks.len();
                 let samples = d.tracks.values().map(|v| v.len()).sum();
                 let named = d.names.values().filter(|n| !n.name.is_empty()).count();
+                // Tracks that came from entity decode. When the camera fallback
+                // ran, entity 1 is a copy of the recorder camera, not a decode.
+                let native = d
+                    .tracks
+                    .iter()
+                    .filter(|(eid, v)| !v.is_empty() && !(d.camera_fallback && **eid == 1))
+                    .count();
+                let decode = if tracks == 0 {
+                    "-"
+                } else if native == 0 {
+                    "fallback"
+                } else if d.camera_fallback {
+                    "mixed"
+                } else {
+                    "native"
+                };
                 // 0 tracks is ambiguous: it can mean a decode gap, OR a recording that
                 // was started and stopped instantly (decodes cleanly but has no
                 // gameplay). The header tick count tells them apart: an empty
@@ -178,12 +226,16 @@ pub fn check_demo(bytes: &[u8], name_hint: &str) -> DemoHealth {
                 let ticks = super::header::parse_header(bytes)
                     .map(|h| h.ticks)
                     .unwrap_or(0);
-                let (status, note) = if tracks > 0 {
-                    (Status::Pass, String::new())
-                } else if ticks <= 1 {
-                    (Status::Pass, format!("no gameplay, {ticks} ticks"))
+                let (status, note) = if tracks == 0 {
+                    if ticks <= 1 {
+                        (Status::Pass, format!("no gameplay, {ticks} ticks"))
+                    } else {
+                        (Status::Fail, format!("0 tracks despite {ticks} ticks"))
+                    }
+                } else if native == 0 {
+                    (Status::Warn, "recorder camera fallback only".to_string())
                 } else {
-                    (Status::Fail, format!("0 tracks despite {ticks} ticks"))
+                    (Status::Pass, String::new())
                 };
                 DemoHealth {
                     name: name_hint.to_string(),
@@ -191,6 +243,7 @@ pub fn check_demo(bytes: &[u8], name_hint: &str) -> DemoHealth {
                     tracks,
                     samples,
                     named,
+                    decode,
                     note,
                     status,
                 }
@@ -245,8 +298,8 @@ pub fn run(path: &std::path::Path) -> std::io::Result<usize> {
     }
 
     println!(
-        "{:<6} {:<8} {:>6} {:>9} {:>6}  demo",
-        "status", "format", "tracks", "samples", "named"
+        "{:<6} {:<8} {:>6} {:>9} {:>6} {:<8}  demo",
+        "status", "format", "tracks", "samples", "named", "decode"
     );
     let (mut pass, mut warn, mut fail) = (0usize, 0usize, 0usize);
     for f in &files {
@@ -265,12 +318,13 @@ pub fn run(path: &std::path::Path) -> std::io::Result<usize> {
             Status::Fail => fail += 1,
         }
         println!(
-            "{:<6} {:<8} {:>6} {:>9} {:>6}  {}{}",
+            "{:<6} {:<8} {:>6} {:>9} {:>6} {:<8}  {}{}",
             h.status.tag(),
             h.format,
             h.tracks,
             h.samples,
             h.named,
+            h.decode,
             h.name,
             if h.note.is_empty() {
                 String::new()

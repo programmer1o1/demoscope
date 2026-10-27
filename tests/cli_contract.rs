@@ -87,6 +87,12 @@ fn check_passes_fixtures_with_exit_zero() {
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(stdout.contains("PASS"));
     assert!(!stdout.contains("FAIL"));
+    // Both fixtures decode natively, and the table has a `decode` column.
+    let header = stdout.lines().next().unwrap_or_default();
+    assert!(header.contains("decode"), "header: {header}");
+    for line in stdout.lines().filter(|l| l.starts_with("PASS")) {
+        assert!(line.contains(" native "), "row: {line}");
+    }
 }
 
 #[test]

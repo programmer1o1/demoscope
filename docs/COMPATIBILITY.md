@@ -125,14 +125,19 @@ run:
 demoscope --check /path/to/demos
 ```
 
-`PASS` means the format-specific decoder produced usable tracks (tracks > 0).
-It does not distinguish native decoding from the recorder-camera fallback, so a
-camera-only demo also passes. `WARN` means the result is usable with partial
-packet loss, and `FAIL` makes the command exit non-zero. A directory sweep
-checks `.dem`, `.dm2`, `.dm_66`-`.dm_68`, `.mvd` and `.qwd` files; Quake Live
-files are skipped in a sweep but can be checked individually. Historical corpus
-counts are kept in the changelog alongside the version they describe rather
-than presented here as current results.
+`PASS` means native tracks were decoded: player tracks that come from the
+demo's entity data. A demo whose only track is the recorder camera copied in as
+a fallback is `WARN`, and the `decode` column shows `fallback` (or `mixed` when
+other players decoded natively). `WARN` also means a usable result with partial
+packet loss. `FAIL` means the decoder errored or produced nothing, and makes the
+command exit non-zero. `PASS` still says nothing about how complete the decode
+is: a demo with a single native sample passes.
+
+A directory sweep checks `.dem`, `.dm2`, `.mvd`, `.qwd` and every `.dm_NN`
+file. Quake 3 files outside `.dm_66`-`.dm_68` (Quake Live) are attempted and
+reported as `WARN` ("experimental") when they decode, never `PASS`. Historical
+corpus counts are kept in the changelog alongside the version they describe
+rather than presented here as current results.
 
 ## Decoder notes
 

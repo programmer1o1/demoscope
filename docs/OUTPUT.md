@@ -109,18 +109,26 @@ prints one row per demo. The first column is a status word:
 
 | Word | Meaning |
 |------|---------|
-| `PASS` | Usable tracks were decoded (tracks > 0). Does not distinguish native decoding from the recorder-camera fallback. |
-| `WARN` | Usable result with partial packet loss. |
+| `PASS` | Native tracks were decoded: player tracks that come from the demo's entity data, not only the recorder camera. |
+| `WARN` | Usable, with a caveat: only the recorder-camera fallback produced tracks, or the result has partial packet loss. |
 | `FAIL` | The decoder errored, panicked, or produced no tracks. |
+
+The `decode` column says where the tracks came from: `native`, `mixed` (the
+recorder's track is the camera copy but other players decoded natively),
+`fallback` (the recorder camera only) or `-` (nothing decoded).
+
+A Source 1 demo with no gameplay (about 0 ticks) and no tracks is `PASS` with
+decode `-`. Before 1.0, `PASS` meant "tracks > 0" and camera-only demos passed;
+they are now `WARN`.
 
 Exit code: `0` when no demo is `FAIL` (`WARN` is not a failure), `1` otherwise.
 A path that can't be read counts as `FAIL`. A directory with no supported demo
 files prints a message to stderr, writes nothing to stdout and exits `1`. A
-directory sweep covers
-`.dem`, `.dm2`, `.dm_66`-`.dm_68`, `.mvd` and `.qwd` files; other files can be
-checked individually.
+directory sweep covers `.dem`, `.dm2`, `.dm_66`-`.dm_68`, `.mvd` and `.qwd` files;
+other files can be checked individually.
 
-The row layout after the status word is not covered.
+Apart from the status word, the layout of a row, including the `decode` column,
+is informational and not covered.
 
 ## 2. Embedded HTML tables (internal, unstable)
 

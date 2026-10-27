@@ -89,6 +89,9 @@ pub struct PlayerTrackData {
     /// Used as a position-track fallback when entity decode is unavailable
     /// (e.g. old-engine demos where the prop flat-list order differs from OB).
     pub camera_track: Vec<(i32, f32, f32, f32)>,
+    /// True when `camera_track` was copied into `tracks[1]` because the entity
+    /// decode produced no usable recorder track. Reporting only (`--check`).
+    pub camera_fallback: bool,
 }
 
 fn le_i32(d: &[u8], off: usize) -> i32 {
@@ -627,6 +630,7 @@ pub fn extract_from_bytes(data: &[u8]) -> Result<PlayerTrackData, Box<dyn Error>
         && ((all_tracks_empty && entity_one_len == 0) || old_engine_sparse)
     {
         out.tracks.insert(1, out.camera_track.clone());
+        out.camera_fallback = true;
         // Synthesize a minimal name entry so the viewer can label this track.
         if !out.names.contains_key(&1) {
             out.names.insert(
