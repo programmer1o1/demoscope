@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Behavior change: `--json` and `--csv` now fail on non-Source 1 demos.** On
+  GoldSrc, Source 2 and Quake demos they used to print the human summary banner
+  to stdout (so `--json` output was not valid JSON). They now print
+  `--json is only supported for Source 1 demos` (or `--csv`) to stderr, print
+  nothing to stdout, and exit with code 1. `--summary`, `--html` and `--all` are
+  unchanged.
 - **Compatibility matrix rewritten.** `docs/COMPATIBILITY.md` now has a status
   legend (✅ supported, 🟡 partial, ⚠ experimental, ✗ rejected), a "Verified on"
   entry for every row (game / map / mode and measured track counts, or "not yet

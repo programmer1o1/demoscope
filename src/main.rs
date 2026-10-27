@@ -69,8 +69,24 @@ fn print_usage(prog: &str) {
     eprintln!("  --map FILE           Add a BSP/VPK map layer (repeatable; HTML mode)");
     eprintln!();
     eprintln!("HTML/check support: Source 1, Source 2, GoldSrc, and Quake 1-3 demos");
-    eprintln!("Text, CSV, and JSON packet output applies to Source 1 HL2DEMO/GMODEMO files");
+    eprintln!(
+        "Text, CSV, and JSON packet output applies to Source 1 HL2DEMO/GMODEMO files; --csv and --json exit non-zero on other engines"
+    );
     eprintln!("Summary and HTML output support every decoded engine family");
+}
+
+/// `--csv` / `--json` only exist for Source 1 usercmds. On any other engine,
+/// fail with nothing on stdout so a consumer never parses a text banner as data.
+fn exit_unsupported_packet_output(csv_mode: bool, json_mode: bool, engine: &str) -> ! {
+    let flags = match (csv_mode, json_mode) {
+        (true, true) => "--csv and --json are",
+        (true, false) => "--csv is",
+        _ => "--json is",
+    };
+    eprintln!(
+        "Error: {flags} only supported for Source 1 demos (this is a {engine} demo; use --summary or --html)"
+    );
+    std::process::exit(1);
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
@@ -165,8 +181,11 @@ fn main() -> io::Result<()> {
     // HTML mode has always auto-routed every supported engine family. Normal
     // CLI mode now does the same for summaries instead of sending GoldSrc,
     // Source 2, and Quake files through the HL2DEMO-only header parser.
-    let packet_output_requested = csv_mode || json_mode || show_all;
+    let structured_output_requested = csv_mode || json_mode;
     if goldsrc::is_goldsrc(&data) {
+        if structured_output_requested {
+            exit_unsupported_packet_output(csv_mode, json_mode, "GoldSrc");
+        }
         let meta = goldsrc::parse(&data).ok_or_else(|| {
             io::Error::new(io::ErrorKind::InvalidData, "malformed GoldSrc HLDEMO file")
         })?;
@@ -189,9 +208,9 @@ fn main() -> io::Result<()> {
             meta.duration, meta.frame_count
         );
         println!("╚══ ({} bytes on disk)", data.len());
-        if packet_output_requested {
+        if show_all {
             eprintln!(
-                "Note: packet/CSV/JSON output is currently Source 1-only; use --html for GoldSrc playback."
+                "Note: --all packet output is currently Source 1-only; use --html for GoldSrc playback."
             );
         } else if !summary_only {
             println!("\nUse --html to generate the interactive GoldSrc viewer.");
@@ -199,6 +218,9 @@ fn main() -> io::Result<()> {
         return Ok(());
     }
     if source2::is_source2(&data) {
+        if structured_output_requested {
+            exit_unsupported_packet_output(csv_mode, json_mode, "Source 2");
+        }
         let meta = source2::container::parse_meta(&data).ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::InvalidData,
@@ -226,9 +248,9 @@ fn main() -> io::Result<()> {
             meta.playback_time, meta.playback_ticks, meta.playback_frames
         );
         println!("╚══ ({} bytes on disk)", data.len());
-        if packet_output_requested {
+        if show_all {
             eprintln!(
-                "Note: packet/CSV/JSON output is currently Source 1-only; use --html for Source 2 playback."
+                "Note: --all packet output is currently Source 1-only; use --html for Source 2 playback."
             );
         } else if !summary_only {
             println!("\nUse --html to generate the interactive Source 2 viewer.");
@@ -240,6 +262,9 @@ fn main() -> io::Result<()> {
         .unwrap_or_default()
         .to_string_lossy();
     if let Some(kind) = quake::detect(&name_hint, &data) {
+        if structured_output_requested {
+            exit_unsupported_packet_output(csv_mode, json_mode, "Quake");
+        }
         let demo = quake::parse(kind, &data, &name_hint).map_err(|e| {
             io::Error::new(
                 io::ErrorKind::InvalidData,
@@ -260,9 +285,9 @@ fn main() -> io::Result<()> {
             samples
         );
         println!("╚══ ({} bytes on disk)", data.len());
-        if packet_output_requested {
+        if show_all {
             eprintln!(
-                "Note: packet/CSV/JSON output is currently Source 1-only; use --html for Quake playback."
+                "Note: --all packet output is currently Source 1-only; use --html for Quake playback."
             );
         } else if !summary_only {
             println!("\nUse --html to generate the interactive Quake viewer.");
