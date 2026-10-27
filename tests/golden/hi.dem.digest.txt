@@ -1,6 +1,6 @@
 # demoscope embedded-table digest (internal, unstable)
 fixture: hi.dem
-table META kind=object entries=9 bytes=224 hash=fnv1a64:9043e43936fe0f02
+table META kind=object entries=9 bytes=171 hash=fnv1a64:35c9af5ca526e6ac
   first: "map":"dl_hideout"
   last:  "jump_threshold":0.0
 table CMDS kind=array entries=0 bytes=2 hash=fnv1a64:09612b07b5ecb5a5

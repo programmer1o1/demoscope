@@ -207,8 +207,9 @@ Recorded as they are. They are not being fixed in this release.
    engine-specific prefixes left in place (`rocketlauncher`, `cweaponmedigun`,
    `cknife`, `deagle`).
 5. **`META` fields mean different things.** `game` is the game directory on
-   Source 1 and GoldSrc (`tf`, `czero`), an absolute path on Source 2, and a
-   family id on Quake (`quake1`, `quakeworld`, `quake2`, `quake3`).
+   Source 1 and GoldSrc (`tf`, `czero`), the final component of the game
+   directory on Source 2 (`csgo`, `citadel`, `dota`; the recorder's absolute
+   path is dropped), and a family id on Quake (`quake1`, `quakeworld`, `quake2`, `quake3`).
    `demo_protocol` is the demo protocol on Source 1 and GoldSrc, the network
    protocol on Source 2 (for example 14165 on CS2, 48 on Deadlock) and the game
    protocol on Quake (15, 28, 34, 68). On Quake 1 and 2, `map` is the level's

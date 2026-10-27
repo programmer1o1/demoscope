@@ -114,6 +114,16 @@ pub fn generate_quake_html(
     Ok(html)
 }
 
+/// The Source 2 header stores the recorder's absolute game directory (for
+/// example `D:\\SteamLibrary\\...\\citadel`). Only the last component is kept so
+/// a shared HTML file doesn't carry a local path. Handles both separators.
+fn final_path_component(path: &str) -> &str {
+    path.trim_end_matches(['/', '\\'])
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or("")
+}
+
 // Source 2 (`PBDEMS2`: CS2 / Dota 2 / Deadlock) HTML generator.
 //
 // Metadata comes from the container header, `CDemoFileHeader` (map / server /
@@ -316,7 +326,7 @@ pub fn generate_source2_html(
         &map_name,
         &meta.client_name,
         &meta.server_name,
-        &meta.game_directory,
+        final_path_component(&meta.game_directory),
         meta.network_protocol,
         meta.playback_time,
         meta.playback_frames.max(0) as usize,
@@ -1066,5 +1076,20 @@ mod tests {
         assert_eq!(quake_point_budget(-5.0), QUAKE_MIN_POINTS);
         assert_eq!(quake_point_budget(1216.4), 14_596);
         assert_eq!(quake_point_budget(1.0e6), QUAKE_MAX_POINTS);
+    }
+
+    #[test]
+    fn final_path_component_drops_directories() {
+        assert_eq!(
+            final_path_component("G:\\SteamLibrary\\steamapps\\common\\Deadlock\\game\\citadel"),
+            "citadel"
+        );
+        assert_eq!(
+            final_path_component("/opt/srcds/cs2/csgo_v2000922/csgo"),
+            "csgo"
+        );
+        assert_eq!(final_path_component("csgo/"), "csgo");
+        assert_eq!(final_path_component("dota"), "dota");
+        assert_eq!(final_path_component(""), "");
     }
 }

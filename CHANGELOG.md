@@ -8,6 +8,10 @@
   `--json is only supported for Source 1 demos` (or `--csv`) to stderr, print
   nothing to stdout, and exit with code 1. `--summary`, `--html` and `--all` are
   unchanged.
+- **Source 2 HTML no longer embeds a local path.** `META.game` held the
+  recorder's absolute game directory (for example
+  `D:\SteamLibrary\steamapps\common\Deadlock\game\citadel`). It now holds
+  only the last component (`citadel`). The `--summary` text output is unchanged.
 - **`--csv` and `--json` together are rejected.** The combination used to print
   CSV rows followed by a stray `]`. It now exits 1 with a message on stderr and
   nothing on stdout.
