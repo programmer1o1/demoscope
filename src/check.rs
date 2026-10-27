@@ -238,8 +238,10 @@ pub fn run(path: &std::path::Path) -> std::io::Result<usize> {
     }
 
     if files.is_empty() {
+        // Checking nothing is not a pass: count it as one failure so the exit
+        // code is non-zero.
         eprintln!("no supported demo files found under {}", path.display());
-        return Ok(0);
+        return Ok(1);
     }
 
     println!(

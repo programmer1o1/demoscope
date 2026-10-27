@@ -14,6 +14,8 @@
 - **Closed stdout no longer panics.** `demoscope demo.dem --csv | head -n 1`
   used to abort with a panic (exit 101). A closed pipe now ends the run quietly
   with exit 0; other stdout write errors print an error and exit 1.
+- **`--check` on a directory with no supported demos now fails.** It used to
+  print a note and exit 0; it now exits 1.
 - **Output contract documented.** New `docs/OUTPUT.md` defines what is stable
   from 1.0 (CLI flags, exit codes, `--csv` columns, `--json` keys and types,
   `--check` status words and exit code), documents the embedded HTML tables as

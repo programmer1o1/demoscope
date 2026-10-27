@@ -138,3 +138,18 @@ fn closed_stdout_exits_zero_without_panicking() {
         assert!(err.is_empty(), "{flag}: unexpected stderr: {err}");
     }
 }
+
+#[test]
+fn check_on_a_directory_without_demos_exits_one() {
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("check-no-demos");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("notes.txt"), "not a demo").unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_demoscope"))
+        .arg("--check")
+        .arg(&dir)
+        .output()
+        .expect("failed to run demoscope");
+    assert_eq!(out.status.code(), Some(1));
+    assert!(out.stdout.is_empty(), "stdout must be empty");
+    assert!(String::from_utf8_lossy(&out.stderr).contains("no supported demo files found"));
+}

@@ -40,7 +40,7 @@ message goes to stderr and the exit code is 1.
 | Code | Meaning |
 |------|---------|
 | `0` | Success. Also `--help`, `--check` runs with no `FAIL`, and a reader that closes stdout early (`demoscope demo.dem --csv \| head -n 1`): the run stops quietly with no message. |
-| `1` | Any error: no arguments, unreadable file, unsupported or corrupt demo, a failed `--html`, `--csv` and `--json` together, `--csv` / `--json` on a non-Source 1 demo, or a `--check` run with at least one `FAIL`. |
+| `1` | Any error: no arguments, unreadable file, unsupported or corrupt demo, a failed `--html`, `--csv` and `--json` together, `--csv` / `--json` on a non-Source 1 demo, or a `--check` run with at least one `FAIL` or with no supported demo files to check. |
 
 A stdout write that fails for any other reason (for example a full disk) prints
 an error to stderr and exits `1`. No other exit codes are promised. A panic
@@ -111,7 +111,8 @@ prints one row per demo. The first column is a status word:
 
 Exit code: `0` when no demo is `FAIL` (`WARN` is not a failure), `1` otherwise.
 A path that can't be read counts as `FAIL`. A directory with no supported demo
-files prints a message to stderr and exits `0`. A directory sweep covers
+files prints a message to stderr, writes nothing to stdout and exits `1`. A
+directory sweep covers
 `.dem`, `.dm2`, `.dm_66`-`.dm_68`, `.mvd` and `.qwd` files; other files can be
 checked individually.
 
