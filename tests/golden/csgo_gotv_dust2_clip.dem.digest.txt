@@ -1,0 +1,65 @@
+# demoscope embedded-table digest (internal, unstable)
+fixture: csgo_gotv_dust2_clip.dem
+table META kind=object entries=9 bytes=154 hash=fnv1a64:00c3de1d419ca8f3
+  first: "map":"de_dust2"
+  last:  "jump_threshold":0.0
+table CMDS kind=array entries=0 bytes=2 hash=fnv1a64:09612b07b5ecb5a5
+  first: 
+  last:  
+table LIFE_BREAKS kind=array entries=0 bytes=2 hash=fnv1a64:09612b07b5ecb5a5
+  first: 
+  last:  
+table TELEPORT_BREAKS kind=array entries=0 bytes=2 hash=fnv1a64:09612b07b5ecb5a5
+  first: 
+  last:  
+table EVENTS kind=array entries=130 bytes=13222 hash=fnv1a64:9e6f6bee2644928f
+  first: {"event":"player_spawn","tick":0,"userid":2,"teamnum":0}
+  last:  {"event":"player_death","tick":1919,"userid":13,"attacker":2,"assister":18,"assistedflash":false,"we…
+table WORLD_POSITIONS kind=array entries=0 bytes=2 hash=fnv1a64:09612b07b5ecb5a5
+  first: 
+  last:  
+table BSP_VERTS kind=string entries=1 bytes=2 hash=fnv1a64:07cc7607b4949e25
+  first: ""
+  last:  ""
+table BSP_IDX kind=string entries=1 bytes=2 hash=fnv1a64:07cc7607b4949e25
+  first: ""
+  last:  ""
+table BSP_SPAWN kind=array entries=3 bytes=7 hash=fnv1a64:2b67371b45bed2b9
+  first: 0
+  last:  0
+table VIEW_SWITCHES kind=array entries=0 bytes=2 hash=fnv1a64:09612b07b5ecb5a5
+  first: 
+  last:  
+table ENTITY_TRACKS kind=object entries=11 samples=3672 bytes=117156 hash=fnv1a64:d2c7757501d2077c
+  first: "1": [255,258.159,2480.55,-121.076]
+  last:  "9": [1756,-482.221,1069.506,-8.466]
+table ENTITY_NAMES kind=object entries=11 bytes=1934 hash=fnv1a64:8f596758b3c36931
+  first: "1":{"name":"Sierra","steam_id":"STEAM_1:0:594013346","user_id":2,"is_fake":false,"is_hltv":false,"a…
+  last:  "9":{"name":"Albert","steam_id":"BOT","user_id":19,"is_fake":false,"is_hltv":false,"aliases":["Alber…
+table GHOST_EIDS kind=array entries=0 bytes=2 hash=fnv1a64:09612b07b5ecb5a5
+  first: 
+  last:  
+table PRIMARY_ENTITY kind=scalar entries=1 bytes=1 hash=fnv1a64:af63ac4c86019afc
+  first: 1
+  last:  1
+table ENTITY_LIFE_STATES kind=object entries=10 samples=18 bytes=215 hash=fnv1a64:6d786bb7e48e0170
+  first: "1": [255,0]
+  last:  "9": [1544,2]
+table ENTITY_OBSERVER kind=object entries=11 samples=22 bytes=256 hash=fnv1a64:c6560d5dfb15db9a
+  first: "1": [255,0]
+  last:  "9": [1756,6]
+table ENTITY_YAWS kind=object entries=10 samples=1309 bytes=22273 hash=fnv1a64:8d4cb2dbf5681b60
+  first: "1": [255,292.5,0.0]
+  last:  "9": [1756,272.2,356.9]
+table VIEW_ANGLES kind=array entries=956 bytes=15806 hash=fnv1a64:11d85e774f22e63d
+  first: [0,0.00,0.00]
+  last:  [2090,0.00,0.00]
+table ENTITY_WEAPONS kind=object entries=10 samples=28 bytes=351 hash=fnv1a64:4e0199d8fef2a10d
+  first: "1": [255,350]
+  last:  "9": [1491,2047]
+table WEAPON_CLASSES kind=object entries=23 bytes=484 hash=fnv1a64:a462d12f83a8d096
+  first: "349":"cdeagle"
+  last:  "476":"cc4"
+table ENTITY_BUTTONS kind=object entries=0 bytes=2 hash=fnv1a64:08f44b07b5901a25
+  first: 
+  last:  

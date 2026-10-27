@@ -89,3 +89,8 @@ for the detailed results):
 Plus a broader smoke-test corpus (~450 demos across TF2, CS:S, CS:GO, HL2 +
 episodes, DoD:S, Portal, Portal 2, Stanley, L4D1/2, DIPRIP, Dystopia, CS2 and
 Dota 2) used for crash/regression testing.
+
+- **Demo Submissions** (posted publicly, for use in a video): the 2004-engine
+  Half-Life 2 demo `gmancheapledemo`, kept as the test fixture
+  `tests/fixtures/hl2_2004_trainstation.dem`. It has no explicit redistribution
+  license and will be removed on request.

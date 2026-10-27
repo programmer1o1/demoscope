@@ -1,0 +1,65 @@
+# demoscope embedded-table digest (internal, unstable)
+fixture: deadlock_bots_clip.dem
+table META kind=object entries=9 bytes=173 hash=fnv1a64:0b3e004140fb8038
+  first: "map":"new_player_basics"
+  last:  "jump_threshold":0.0
+table CMDS kind=array entries=0 bytes=2 hash=fnv1a64:09612b07b5ecb5a5
+  first: 
+  last:  
+table LIFE_BREAKS kind=array entries=0 bytes=2 hash=fnv1a64:09612b07b5ecb5a5
+  first: 
+  last:  
+table TELEPORT_BREAKS kind=array entries=0 bytes=2 hash=fnv1a64:09612b07b5ecb5a5
+  first: 
+  last:  
+table EVENTS kind=array entries=0 bytes=2 hash=fnv1a64:09612b07b5ecb5a5
+  first: 
+  last:  
+table WORLD_POSITIONS kind=array entries=0 bytes=2 hash=fnv1a64:09612b07b5ecb5a5
+  first: 
+  last:  
+table BSP_VERTS kind=string entries=1 bytes=2 hash=fnv1a64:07cc7607b4949e25
+  first: ""
+  last:  ""
+table BSP_IDX kind=string entries=1 bytes=2 hash=fnv1a64:07cc7607b4949e25
+  first: ""
+  last:  ""
+table BSP_SPAWN kind=array entries=3 bytes=7 hash=fnv1a64:2b67371b45bed2b9
+  first: 0
+  last:  0
+table VIEW_SWITCHES kind=array entries=0 bytes=2 hash=fnv1a64:09612b07b5ecb5a5
+  first: 
+  last:  
+table ENTITY_TRACKS kind=object entries=5 samples=12525 bytes=315360 hash=fnv1a64:551ddc350f3a6c78
+  first: "49": [0,2176,-1152,-8.156]
+  last:  "114": [3340,91.75,558,-127.969]
+table ENTITY_NAMES kind=object entries=5 bytes=816 hash=fnv1a64:58992e599a5ad566
+  first: "49":{"name":"Bot11","steam_id":"","user_id":49,"is_fake":false,"is_hltv":false,"aliases":["Bot11"],…
+  last:  "114":{"name":"Sierra","steam_id":"","user_id":114,"is_fake":false,"is_hltv":false,"aliases":["Sierr…
+table GHOST_EIDS kind=array entries=0 bytes=2 hash=fnv1a64:09612b07b5ecb5a5
+  first: 
+  last:  
+table PRIMARY_ENTITY kind=scalar entries=1 bytes=3 hash=fnv1a64:456c3918181fa639
+  first: 114
+  last:  114
+table ENTITY_LIFE_STATES kind=object entries=5 samples=5 bytes=67 hash=fnv1a64:71503387b482f2ef
+  first: "49": [0,0]
+  last:  "114": [0,0]
+table ENTITY_OBSERVER kind=object entries=0 bytes=2 hash=fnv1a64:08f44b07b5901a25
+  first: 
+  last:  
+table ENTITY_YAWS kind=object entries=5 samples=12525 bytes=202379 hash=fnv1a64:ab9e76d55d019fa4
+  first: "49": [0,179.8,4.9]
+  last:  "114": [3340,142.4,8.3]
+table VIEW_ANGLES kind=array entries=0 bytes=2 hash=fnv1a64:09612b07b5ecb5a5
+  first: 
+  last:  
+table ENTITY_WEAPONS kind=object entries=0 bytes=2 hash=fnv1a64:08f44b07b5901a25
+  first: 
+  last:  
+table WEAPON_CLASSES kind=object entries=0 bytes=2 hash=fnv1a64:08f44b07b5901a25
+  first: 
+  last:  
+table ENTITY_BUTTONS kind=object entries=0 bytes=2 hash=fnv1a64:08f44b07b5901a25
+  first: 
+  last:  

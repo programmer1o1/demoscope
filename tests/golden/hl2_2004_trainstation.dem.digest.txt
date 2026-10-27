@@ -1,0 +1,65 @@
+# demoscope embedded-table digest (internal, unstable)
+fixture: hl2_2004_trainstation.dem
+table META kind=object entries=9 bytes=170 hash=fnv1a64:5efa4c613bb6e21b
+  first: "map":"d1_trainstation_05"
+  last:  "jump_threshold":0.0
+table CMDS kind=array entries=3770 bytes=132508 hash=fnv1a64:e8ef37cf0607be03
+  first: [0,16.606,161.499,0,0,0,0]
+  last:  [3651,-0.374,121.707,400,-400,512,0]
+table LIFE_BREAKS kind=array entries=0 bytes=2 hash=fnv1a64:09612b07b5ecb5a5
+  first: 
+  last:  
+table TELEPORT_BREAKS kind=array entries=0 bytes=2 hash=fnv1a64:09612b07b5ecb5a5
+  first: 
+  last:  
+table EVENTS kind=array entries=162 bytes=9186 hash=fnv1a64:074678d0cd3fb0c2
+  first: {"event":"console_cmd","tick":0,"cmd":"dsp_db_mixdrop \"0.5\""}
+  last:  {"event":"console_cmd","tick":3651,"cmd":"cd pause"}
+table WORLD_POSITIONS kind=array entries=3394 bytes=114819 hash=fnv1a64:b3e2e3139f9a157f
+  first: [0,-6686.182,-6507.229,-95.969]
+  last:  [3651,-7101.812,-6419.125,-95.969]
+table BSP_VERTS kind=string entries=1 bytes=2 hash=fnv1a64:07cc7607b4949e25
+  first: ""
+  last:  ""
+table BSP_IDX kind=string entries=1 bytes=2 hash=fnv1a64:07cc7607b4949e25
+  first: ""
+  last:  ""
+table BSP_SPAWN kind=array entries=3 bytes=7 hash=fnv1a64:2b67371b45bed2b9
+  first: 0
+  last:  0
+table VIEW_SWITCHES kind=array entries=0 bytes=2 hash=fnv1a64:09612b07b5ecb5a5
+  first: 
+  last:  
+table ENTITY_TRACKS kind=object entries=1 samples=1976 bytes=67207 hash=fnv1a64:1c883e10fa8b641c
+  first: "1": [97,-6687.094,-6507.312,-95.969]
+  last:  "1": [3531,-7101.844,-6419.469,-95.969]
+table ENTITY_NAMES kind=object entries=0 bytes=2 hash=fnv1a64:08f44b07b5901a25
+  first: 
+  last:  
+table GHOST_EIDS kind=array entries=0 bytes=2 hash=fnv1a64:09612b07b5ecb5a5
+  first: 
+  last:  
+table PRIMARY_ENTITY kind=scalar entries=1 bytes=1 hash=fnv1a64:af63ac4c86019afc
+  first: 1
+  last:  1
+table ENTITY_LIFE_STATES kind=object entries=0 bytes=2 hash=fnv1a64:08f44b07b5901a25
+  first: 
+  last:  
+table ENTITY_OBSERVER kind=object entries=0 bytes=2 hash=fnv1a64:08f44b07b5901a25
+  first: 
+  last:  
+table ENTITY_YAWS kind=object entries=0 bytes=2 hash=fnv1a64:08f44b07b5901a25
+  first: 
+  last:  
+table VIEW_ANGLES kind=array entries=3394 bytes=64678 hash=fnv1a64:22a31a1197586fa9
+  first: [0,16.61,161.50]
+  last:  [3651,-0.38,121.71]
+table ENTITY_WEAPONS kind=object entries=0 bytes=2 hash=fnv1a64:08f44b07b5901a25
+  first: 
+  last:  
+table WEAPON_CLASSES kind=object entries=0 bytes=2 hash=fnv1a64:08f44b07b5901a25
+  first: 
+  last:  
+table ENTITY_BUTTONS kind=object entries=0 bytes=2 hash=fnv1a64:08f44b07b5901a25
+  first: 
+  last:  

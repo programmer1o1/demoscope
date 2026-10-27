@@ -1,0 +1,65 @@
+# demoscope embedded-table digest (internal, unstable)
+fixture: css_bots_cs_office.dem
+table META kind=object entries=9 bytes=168 hash=fnv1a64:a414642f156fb902
+  first: "map":"cs_office"
+  last:  "jump_threshold":0.0
+table CMDS kind=array entries=3091 bytes=94901 hash=fnv1a64:729ac18ca59bfc37
+  first: [13,-0.879,-157.401,0,0,0,0]
+  last:  [3122,-0.005,-145.71,0,0,65536,0]
+table LIFE_BREAKS kind=array entries=12 bytes=50 hash=fnv1a64:5b7bb864fce8c1ee
+  first: 78
+  last:  2280
+table TELEPORT_BREAKS kind=array entries=0 bytes=2 hash=fnv1a64:09612b07b5ecb5a5
+  first: 
+  last:  
+table EVENTS kind=array entries=54 bytes=3850 hash=fnv1a64:7c3dd45955f4a3c3
+  first: {"event":"console_cmd","tick":0,"cmd":"dsp_dist_min \"0\""}
+  last:  {"event":"console_cmd","tick":2989,"cmd":"spec_next"}
+table WORLD_POSITIONS kind=array entries=2848 bytes=94189 hash=fnv1a64:0076d5fa5ca788fd
+  first: [0,924.969,-1017.503,-108.99]
+  last:  [3122,884.601,-1442.754,-329.002]
+table BSP_VERTS kind=string entries=1 bytes=2 hash=fnv1a64:07cc7607b4949e25
+  first: ""
+  last:  ""
+table BSP_IDX kind=string entries=1 bytes=2 hash=fnv1a64:07cc7607b4949e25
+  first: ""
+  last:  ""
+table BSP_SPAWN kind=array entries=3 bytes=7 hash=fnv1a64:2b67371b45bed2b9
+  first: 0
+  last:  0
+table VIEW_SWITCHES kind=array entries=3 bytes=34 hash=fnv1a64:143344d346945c2f
+  first: [16,193]
+  last:  [2734,3055]
+table ENTITY_TRACKS kind=object entries=18 samples=7489 bytes=244094 hash=fnv1a64:f01f1a01a30e2ba5
+  first: "1": [0,925.422,-1018.46,-103.17]
+  last:  "9": [410,961.562,-829.281,-95.969]
+table ENTITY_NAMES kind=object entries=18 bytes=3184 hash=fnv1a64:273d9eb7233b8ef0
+  first: "1":{"name":"Sierra","steam_id":"[U:1:1188026692]","user_id":39,"is_fake":false,"is_hltv":false,"ali…
+  last:  "9":{"name":"Brett","steam_id":"BOT","user_id":47,"is_fake":true,"is_hltv":false,"aliases":["Brett"]…
+table GHOST_EIDS kind=array entries=0 bytes=2 hash=fnv1a64:09612b07b5ecb5a5
+  first: 
+  last:  
+table PRIMARY_ENTITY kind=scalar entries=1 bytes=1 hash=fnv1a64:af63ac4c86019afc
+  first: 1
+  last:  1
+table ENTITY_LIFE_STATES kind=object entries=13 samples=21 bytes=238 hash=fnv1a64:0791d35465bfdef0
+  first: "10": [16,0]
+  last:  "9": [410,1]
+table ENTITY_OBSERVER kind=object entries=14 samples=22 bytes=250 hash=fnv1a64:e81a4372ff5fa6d3
+  first: "1": [0,4]
+  last:  "9": [410,1]
+table ENTITY_YAWS kind=object entries=14 samples=2791 bytes=47457 hash=fnv1a64:96798a2489cd0a64
+  first: "1": [0,166.7,11.4]
+  last:  "9": [406,264.0,15.5]
+table VIEW_ANGLES kind=array entries=2848 bytes=53610 hash=fnv1a64:38f3bb5ad45c709b
+  first: [0,-0.28,-166.71]
+  last:  [3122,-0.00,-145.71]
+table ENTITY_WEAPONS kind=object entries=13 samples=30 bytes=378 hash=fnv1a64:21d0532c3cd181fa
+  first: "10": [16,401]
+  last:  "9": [410,2047]
+table WEAPON_CLASSES kind=object entries=20 bytes=343 hash=fnv1a64:90aa48adb88d285e
+  first: "213":"cknife"
+  last:  "469":"chegrenade"
+table ENTITY_BUTTONS kind=object entries=0 bytes=2 hash=fnv1a64:08f44b07b5901a25
+  first: 
+  last:  
