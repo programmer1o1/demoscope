@@ -31,7 +31,7 @@ For **demo_protocol = 4** (L4D, Portal 2, Stanley, CS:GO …) there is an extra 
 
 ```
 flags          (i32)
-viewOrigin     (3× f32) ← recorder eye position in world units
+viewOrigin     (3× f32) ← recorder origin in world units (matches the entity's m_vecOrigin on all sampled demos, not the eye position)
 viewAngles     (3× f32)
 localViewAngles(3× f32)
 viewOrigin2    (3× f32)
@@ -126,8 +126,8 @@ Empty fields = unchanged from previous frame. Fill-forward to get the current va
 
 ## Notes
 
-- **Recorder position** is read from `democmdinfo.viewOrigin` in every cmd=1/2 packet - the engine-recorded eye position. Captures rocket jumps, teleporters, and all game physics accurately.
-- **Per-player positions** are extracted from `CTFPlayer.m_vecOrigin` / `m_vecOrigin[2]` SendProps in `svc_PacketEntities` messages. Names and SteamIDs come from the `userinfo` string table.
-- **Spectators** don't get `m_vecOrigin` updates after spawn - demoscope falls back to `viewOrigin` for sparse-sample entities so their avatar, path, and minimap dot still track the actual viewpoint.
+- **Recorder position** is read from `democmdinfo.viewOrigin` in every cmd=1/2 packet. On all sampled demos it matches the recorder entity's `m_vecOrigin`, not the eye position. Captures rocket jumps, teleporters, and all game physics accurately.
+- **Per-player positions** are extracted from the `m_vecOrigin` / `m_vecOrigin[2]` SendProps of any entity with index 1-64 whose class name contains `Player` (`CTFPlayer`, `CCSPlayer`, `CPortal_Player` and so on) in `svc_PacketEntities` messages. Some player classes carry more than one `m_vecOrigin` copy; `OriginTracker` (`src/source/player_tracks/scan.rs`) counts which copy actually moves and uses that one. Names and SteamIDs come from the `userinfo` string table.
+- **Spectators** don't get `m_vecOrigin` updates after spawn. The viewer (`src/render/html/template.html`), not the decoder, falls back to `viewOrigin` for sparse-sample entities so their avatar, path, and minimap dot still track the actual viewpoint.
 - **BSP lookup** searches the demo's directory and the binary's directory for `<map_name>.bsp`. LZMA-compressed lumps are decompressed automatically.
 - Truncated demos (no `dem_stop` packet) parse cleanly up to the last complete packet.
