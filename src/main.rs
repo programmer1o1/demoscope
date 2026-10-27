@@ -81,6 +81,7 @@ use self::util::constants::{
 fn print_usage(prog: &str) {
     eprintln!("Usage: {prog} <demo-file> [--all] [--csv] [--json] [--summary] [--html [FILE]]");
     eprintln!("       {prog} --check <demo.dem|dir>   decode self-check (exit 1 on any FAIL)");
+    eprintln!("       {prog} --version");
     eprintln!();
     eprintln!("  --all      Print every packet (not just usercmds)");
     eprintln!("  --csv      Output usercmds as CSV");
@@ -119,6 +120,10 @@ fn exit_unsupported_packet_output(csv_mode: bool, engine: &str) -> ! {
 
 fn main() -> io::Result<()> {
     let args: Vec<String> = env::args().collect();
+    if args.iter().skip(1).any(|a| a == "--version" || a == "-V") {
+        println!("demoscope {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
     if args.len() < 2 || args.iter().any(|a| a == "--help" || a == "-h") {
         print_usage(&args[0]);
         std::process::exit(if args.len() < 2 { 1 } else { 0 });

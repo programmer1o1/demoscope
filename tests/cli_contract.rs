@@ -200,3 +200,20 @@ fn check_sweep_includes_quake_live_and_matches_single_file_result() {
     };
     assert_eq!(row(&sweep), row(&single));
 }
+
+#[test]
+fn version_flag_prints_the_crate_version_and_exits_zero() {
+    for flag in ["--version", "-V"] {
+        let out = Command::new(env!("CARGO_BIN_EXE_demoscope"))
+            .arg(flag)
+            .output()
+            .expect("failed to run demoscope");
+        assert_eq!(out.status.code(), Some(0), "{flag}");
+        assert_eq!(
+            String::from_utf8_lossy(&out.stdout).trim(),
+            format!("demoscope {}", env!("CARGO_PKG_VERSION")),
+            "{flag}"
+        );
+        assert!(out.stderr.is_empty(), "{flag}");
+    }
+}

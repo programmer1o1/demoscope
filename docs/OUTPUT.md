@@ -29,6 +29,7 @@ Everything else works on every engine through `--html` and `--check`.
 | `--map FILE` | Add a BSP / VPK map layer. Repeatable. |
 | `--check <file\|dir>` | Decode self-check. |
 | `--help`, `-h` | Print usage and exit 0. |
+| `--version`, `-V` | Print `demoscope X.Y.Z` to stdout and exit 0. |
 
 Standard output carries the requested data. Diagnostics go to standard error.
 With `--csv` and `--json`, nothing but the data is written to stdout. Passing
