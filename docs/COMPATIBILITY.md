@@ -6,7 +6,7 @@
 |---------------|-------|:-:|---|---------|
 | Source 1 (`HL2DEMO`, `GMODEMO`) | TF2, HL2 family, CS:S, CS:GO, DoD:S, Portal, Portal 2, Stanley Parable, L4D1/2, GMod, Half-Life: Source | ✅ / 🟡 by game | VBSP `.bsp` (incl. LZMA lumps) | [Source-family formats](#source-family-formats) |
 | Source 2 (`PBDEMS2`) | CS2 ✅; Dota 2, Deadlock 🟡 | ✅ / 🟡 by game | CS2 `.vpk` collision mesh | [Source-family formats](#source-family-formats) |
-| GoldSrc (`HLDEMO`) | CS 1.6, Condition Zero ✅; Half-Life 1, DoD 🟡 | ✅ / 🟡 by game | v30 `.bsp`, multiple maps | [GoldSrc](#goldsrc-hldemo) |
+| GoldSrc (`HLDEMO`) | CS 1.6 ✅; Condition Zero, Half-Life 1, DoD 🟡 | ✅ / 🟡 by game | v30 `.bsp`, multiple maps | [GoldSrc](#goldsrc-hldemo) |
 | Quake (`.dem`, `.mvd`, `.dm2`, `.dm_66`-`.dm_68`) | Quake 1, QuakeWorld (MVD), Quake 2, Quake 3 Arena | ✅ | Q1 / Q2 / Q3 `.bsp` | [Quake family](#quake-family) |
 | QuakeWorld client demos (`.qwd`) | QuakeWorld | ⚠ synthetic tests only | | [Quake family](#quake-family) |
 | Quake Live (`.dm_71`+) | | ⚠ attempted with a warning; correctness unverified | | [Quake family](#quake-family) |
@@ -84,7 +84,7 @@ Demo protocol 5, net protocol 48.
 | Game | Status | Verified on |
 |------|--------|-------------|
 | Counter-Strike 1.6 | ✅ Recorder camera, per-player tracks, names, map overlay | `de_nuke`: 10 tracks, ~150k samples. `de_tuscan`: 10 tracks, ~139k samples |
-| Condition Zero | ✅ Recorder camera, per-player tracks, names, map overlay | `cs_assault`: 12 tracks, 5,082 samples |
+| Condition Zero | 🟡 Recorder camera, per-player tracks, map overlay. Only the recorder is named; other players show as `player N` | `cs_assault`: 12 tracks, 5,082 samples, 1 of 12 players named |
 | Half-Life 1, Day of Defeat | 🟡 Same decoder as CS 1.6 | not yet verified on a named demo |
 
 GoldSrc viewers can load several maps at once with repeatable `--map` flags or
@@ -109,6 +109,8 @@ builds; they don't change a game's status above.
   is available.
 - **Old engine (HL2 2004, GMod Classic) and the GMod 2021 sample:** player
   names are not decoded.
+- **Condition Zero:** only the recorder's name decodes on the sample; other
+  players are labelled `player N`. Counter-Strike 1.6 names decode.
 - **Quake Live:** not rejected, so decoding is attempted and may desync. The
   `.dm_91` sample decoded no player names.
 
