@@ -109,6 +109,11 @@ policy in [docs/OUTPUT.md](docs/OUTPUT.md).
   the private demo corpus are skipped with a notice when it is absent, instead of
   passing silently. `check-viewer.sh` sweeps every demo extension the decoders
   accept.
+- **Release workflow.** The GitHub Release body is the CHANGELOG section for the
+  tag (`scripts/release-notes.sh`), not auto-generated notes. Running the
+  workflow by hand is a rehearsal: verify, all three builds, the artifacts and
+  the notes extraction, without publishing. The Windows and macOS build jobs now
+  run `cargo test --release` too.
 - **Actions updated** to their Node 24 majors in all three workflows
   (`checkout` v7, `upload-artifact` v7, `download-artifact` v8,
   `upload-pages-artifact` v5, `deploy-pages` v5, `action-gh-release` v3).

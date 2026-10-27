@@ -1,9 +1,14 @@
 name: Release
 
+# A `v*` tag push builds, tests and publishes a release. Running the workflow by
+# hand (Actions > Release > Run workflow) is a rehearsal: it runs everything up to
+# and including the release-notes extraction (for the version in Cargo.toml) but
+# skips the tag/version gate and does not publish.
 on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -17,6 +22,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Check tag matches Cargo version
+        if: github.event_name == 'push'
         shell: bash
         run: |
           version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -1)"
@@ -44,6 +50,7 @@ jobs:
           mv demoscope-${{ github.ref_name }}-linux-x86_64.tar.gz $GITHUB_WORKSPACE/
       - uses: actions/upload-artifact@v7
         with:
+          retention-days: ${{ github.event_name == 'push' && 90 || 1 }}
           name: linux-x86_64
           path: demoscope-${{ github.ref_name }}-linux-x86_64.tar.gz
 
@@ -56,6 +63,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
+      # Tests run on the host target. The Linux build is covered by `verify`.
+      - name: Test
+        run: cargo test --release
       - name: Build
         run: cargo build --release --target x86_64-pc-windows-msvc
       - name: Package
@@ -66,6 +76,7 @@ jobs:
             -DestinationPath "demoscope-${{ github.ref_name }}-windows-x86_64.zip"
       - uses: actions/upload-artifact@v7
         with:
+          retention-days: ${{ github.event_name == 'push' && 90 || 1 }}
           name: windows-x86_64
           path: demoscope-${{ github.ref_name }}-windows-x86_64.zip
 
@@ -78,6 +89,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-apple-darwin,aarch64-apple-darwin
+      # Tests run on the host (arm64) target; the x86_64 slice is built, not run.
+      - name: Test
+        run: cargo test --release
       - name: Build x86_64
         run: cargo build --release --target x86_64-apple-darwin
       - name: Build arm64
@@ -93,6 +107,7 @@ jobs:
           tar czf demoscope-${{ github.ref_name }}-macos-universal.tar.gz demoscope-universal
       - uses: actions/upload-artifact@v7
         with:
+          retention-days: ${{ github.event_name == 'push' && 90 || 1 }}
           name: macos-universal
           path: demoscope-${{ github.ref_name }}-macos-universal.tar.gz
 
@@ -106,16 +121,32 @@ jobs:
         with:
           path: artifacts
           merge-multiple: true
+      - name: Check the artifacts
+        shell: bash
+        run: |
+          ls -l artifacts
+          test "$(ls artifacts | wc -l | tr -d ' ')" -eq 3
       # The release body is the CHANGELOG section for this tag (the step fails
-      # if there isn't one), not GitHub's auto-generated notes.
+      # if there isn't one), not GitHub's auto-generated notes. A manual run has
+      # no tag, so it uses the version in Cargo.toml.
       - name: Extract release notes from CHANGELOG.md
         id: notes
         shell: bash
         run: |
-          ./scripts/release-notes.sh "${GITHUB_REF_NAME}" > release-notes.md
-          echo "title=$(./scripts/release-notes.sh --title "${GITHUB_REF_NAME}")" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            tag="$GITHUB_REF_NAME"
+          else
+            tag="v$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -1)"
+          fi
+          echo "Release notes for $tag"
+          ./scripts/release-notes.sh "$tag" > release-notes.md
+          echo "title=$(./scripts/release-notes.sh --title "$tag")" >> "$GITHUB_OUTPUT"
           cat release-notes.md
+      - name: Rehearsal complete
+        if: github.event_name != 'push'
+        run: echo "::notice title=Rehearsal::Verify, all builds, artifacts and release notes passed. Publishing was skipped (manual run)."
       - name: Create release
+        if: github.event_name == 'push'
         uses: softprops/action-gh-release@v3
         with:
           name: ${{ steps.notes.outputs.title }}
