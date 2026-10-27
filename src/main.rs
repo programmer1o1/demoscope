@@ -11,6 +11,36 @@
 // re-exported here so `lib.rs` can reach them as `cli::generate_html_string`.
 #![allow(dead_code, unused_imports)]
 
+// Stdout writes must not panic when the reader goes away (`demoscope --csv |
+// head -n 1`). These shadow the std macros for this file and its submodules: a
+// closed pipe ends the run quietly with exit code 0, any other write error is
+// reported on stderr with exit code 1.
+macro_rules! print {
+    ($($arg:tt)*) => {{
+        use std::io::Write as _;
+        if let Err(e) = write!(std::io::stdout().lock(), $($arg)*) {
+            if e.kind() == std::io::ErrorKind::BrokenPipe {
+                std::process::exit(0);
+            }
+            eprintln!("Error: failed writing to stdout: {e}");
+            std::process::exit(1);
+        }
+    }};
+}
+
+macro_rules! println {
+    ($($arg:tt)*) => {{
+        use std::io::Write as _;
+        if let Err(e) = writeln!(std::io::stdout().lock(), $($arg)*) {
+            if e.kind() == std::io::ErrorKind::BrokenPipe {
+                std::process::exit(0);
+            }
+            eprintln!("Error: failed writing to stdout: {e}");
+            std::process::exit(1);
+        }
+    }};
+}
+
 use std::env;
 use std::fs::File;
 use std::io::{self, Read, Write as IoWrite};

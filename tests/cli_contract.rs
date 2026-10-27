@@ -1,8 +1,9 @@
 // CLI contract tests: exit codes and stdout/stderr behaviour documented in
 // docs/OUTPUT.md. These run the built binary against the tracked fixtures.
 
+use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -110,5 +111,30 @@ fn csv_and_json_together_exit_one_with_empty_stdout() {
             err.contains("--csv and --json can't be used together"),
             "{demo}: unexpected stderr: {err}"
         );
+    }
+}
+
+#[test]
+fn closed_stdout_exits_zero_without_panicking() {
+    // The JSON output is larger than a pipe buffer, so the process is still
+    // writing when the reader goes away.
+    for flag in ["--json", "--csv"] {
+        let mut child = Command::new(env!("CARGO_BIN_EXE_demoscope"))
+            .arg(fixture("backgrounddem.dem"))
+            .arg(flag)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("failed to run demoscope");
+        let stdout = child.stdout.take().unwrap();
+        let mut first = String::new();
+        BufReader::new(stdout).read_line(&mut first).unwrap();
+        assert!(!first.is_empty(), "{flag}: no output");
+        // The BufReader (and the pipe) is dropped here, like `head -n 1`.
+        let out = child.wait_with_output().unwrap();
+        assert_eq!(out.status.code(), Some(0), "{flag}");
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(!err.contains("panicked"), "{flag}: {err}");
+        assert!(err.is_empty(), "{flag}: unexpected stderr: {err}");
     }
 }

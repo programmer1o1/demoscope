@@ -39,11 +39,12 @@ message goes to stderr and the exit code is 1.
 
 | Code | Meaning |
 |------|---------|
-| `0` | Success. Also `--help`, and `--check` runs with no `FAIL`. |
+| `0` | Success. Also `--help`, `--check` runs with no `FAIL`, and a reader that closes stdout early (`demoscope demo.dem --csv \| head -n 1`): the run stops quietly with no message. |
 | `1` | Any error: no arguments, unreadable file, unsupported or corrupt demo, a failed `--html`, `--csv` and `--json` together, `--csv` / `--json` on a non-Source 1 demo, or a `--check` run with at least one `FAIL`. |
 
-No other exit codes are promised. A panic (for example, writing to a closed
-pipe) exits with Rust's default of 101 and is a bug, not part of the contract.
+A stdout write that fails for any other reason (for example a full disk) prints
+an error to stderr and exits `1`. No other exit codes are promised. A panic
+exits with Rust's default of 101 and is a bug, not part of the contract.
 
 ### `--csv`
 
