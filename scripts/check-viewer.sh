@@ -5,6 +5,10 @@
 #   ./scripts/check-viewer.sh                 # every demo in tests/fixtures/
 #   ./scripts/check-viewer.sh a.dem b.dem     # specific demos
 #
+# The default sweep takes every extension the decoders accept: .dem, .dm2,
+# .mvd, .qwd and .dm_NN (any case). Other files (READMEs, maps) are ignored.
+# Set DEMOSCOPE_FIXTURES_DIR to sweep a different directory.
+#
 # Playwright and its Chromium are installed on first run into
 # $DEMOSCOPE_PLAYWRIGHT_DIR (default ~/.cache/demoscope-playwright). They are
 # dev-only tools, not project dependencies. Needs network access for the
@@ -19,7 +23,13 @@ BIN="$ROOT/target/release/demoscope"
 if [ "$#" -gt 0 ]; then
   demos=("$@")
 else
-  demos=("$ROOT"/tests/fixtures/*.dem)
+  fixtures_dir="${DEMOSCOPE_FIXTURES_DIR:-$ROOT/tests/fixtures}"
+  demos=()
+  while IFS= read -r f; do
+    demos+=("$f")
+  done < <(find "$fixtures_dir" -maxdepth 1 -type f \
+    \( -iname '*.dem' -o -iname '*.dm2' -o -iname '*.mvd' -o -iname '*.qwd' \
+       -o -iname '*.dm_[0-9]*' \) | LC_ALL=C sort)
 fi
 
 if [ ! -x "$BIN" ]; then
