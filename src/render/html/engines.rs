@@ -419,10 +419,16 @@ pub fn generate_source2_html(
         format!("{{{}}}", parts.join(","))
     };
     let weapon_classes_json = {
-        let parts: Vec<String> = tracks
+        // `weapon_names` is a HashMap: sort by class id so the output is
+        // byte-identical from run to run.
+        let mut names: Vec<(&i32, &String)> = tracks
             .weapon_names
             .iter()
             .filter(|(_, n)| !n.is_empty())
+            .collect();
+        names.sort_by_key(|(cid, _)| **cid);
+        let parts: Vec<String> = names
+            .into_iter()
             .map(|(cid, n)| format!("\"{}\":\"{}\"", cid, escape_json_str(n)))
             .collect();
         format!("{{{}}}", parts.join(","))
