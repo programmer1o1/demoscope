@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+- **Compatibility matrix rewritten.** `docs/COMPATIBILITY.md` now has a status
+  legend (✅ supported, 🟡 partial, ⚠ experimental, ✗ rejected), a "Verified on"
+  entry for every row (game / map / mode and measured track counts, or "not yet
+  verified on a named demo"), and a Known issues section. Several rows move from
+  ✅ to 🟡: Deadlock, Dota 2, Garry's Mod 13, Garry's Mod Classic and the HL2
+  2004 engine, plus Stanley Parable, L4D1, DoD:S and the other games with no
+  named sample. `.qwd` is ⚠ everywhere. Half-Life: Source is listed as
+  camera-only, and Quake Live as attempted with a warning, not rejected.
+- **Docs corrected.** Source 1 player tracking is described as any `Player`
+  class (entity 1-64) with a per-demo camera fallback, not a per-game list.
+  `democmdinfo.viewOrigin` is documented as the entity origin, not the eye
+  position. CS:GO is described by net protocol (13xxx, pre-CS2) instead of a
+  date range. The routing order and the extension-based Quake detection are
+  described as the code does them.
+- **`--check` documented.** `PASS` means tracks > 0 and does not distinguish
+  native decoding from the camera fallback; directory sweeps skip Quake Live
+  extensions.
+- The Quake 1 decode line no longer says the NetQuake path is unverified.
+
 ## v0.8.0: "Strafe"
 
 - **QuakeWorld `.mvd` decoding.** MVDSV / KTX multi-view recordings now decode
