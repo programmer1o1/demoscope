@@ -51,21 +51,23 @@ exits with Rust's default of 101 and is a bug, not part of the contract.
 Source 1 only. On any other engine the command writes nothing to stdout, prints
 `--csv is only supported for Source 1 demos` to stderr and exits 1.
 
-The first line is the header, in this order:
+The first line is the header. It currently reads:
 
 ```
 tick,cmd_num,pitch,yaw,roll,fwd,side,up,buttons,impulse,weapon,mousedx,mousedy
 ```
 
-One row per usercmd, in demo order. An empty field means the value is
-unchanged from the previous row (fill forward to get the current value).
+Consumers must read columns by header name, not position: columns can be added
+(and reordered) in a minor release. One row per usercmd, in demo order. An empty
+field means the value is unchanged from the previous row (fill forward to get
+the current value).
 
 | Column | Type | Unit / meaning |
 |--------|------|----------------|
 | `tick` | integer | Demo tick of the packet. |
 | `cmd_num` | integer | Usercmd command number. |
-| `pitch`, `yaw`, `roll` | decimal, 4 places | Degrees. |
-| `fwd`, `side`, `up` | decimal, 2 places | Movement request in Source units. |
+| `pitch`, `yaw`, `roll` | decimal, at least 4 places | Degrees. |
+| `fwd`, `side`, `up` | decimal, at least 2 places | Movement request in Source units. |
 | `buttons` | integer | Button bitmask (`IN_*` flags). |
 | `impulse` | integer | Impulse command. |
 | `weapon` | integer | Weapon-select value. |
@@ -94,8 +96,10 @@ object", like an empty CSV field.
 | `weapon_sub` | integer | Weapon subtype. JSON only: there is no CSV column. |
 | `mousedx`, `mousedy` | integer | Mouse delta. |
 
-Key order and whitespace are not part of the contract, and consumers should not
-rely on them. The golden test pins the exact bytes so that any change is
+Numbers are printed with at least 4 decimal places for `pitch`, `yaw` and `roll`
+and at least 2 for `fwd`, `side` and `up`; the exact number of places is not
+part of the contract, so don't compare the text. Key order and whitespace are
+not part of the contract either. The golden test pins the exact bytes so that any change is
 noticed and reviewed (see [Snapshot tests](#4-snapshot-tests)).
 
 ### `--check`
@@ -236,7 +240,8 @@ stable contract in section 1.
 
 - removing or renaming a CLI flag;
 - removing or renaming a `--csv` column or a `--json` key;
-- changing the type or unit of a `--csv` column or `--json` key;
+- changing the type or unit of a `--csv` column or `--json` key, the coordinate
+  convention of a value, or what a field means (even if the fix is a bug fix);
 - changing an exit code or the meaning of one;
 - renaming `PASS`, `WARN` or `FAIL`, or changing which results make `--check` exit non-zero.
 
@@ -244,12 +249,13 @@ stable contract in section 1.
 
 - adding a CLI flag;
 - adding a `--json` key (consumers must ignore keys they don't know);
-- adding a `--csv` column at the end, only if the new column is documented in the release notes;
+- adding a `--csv` column (consumers read columns by header name);
 - adding a supported engine, format or game.
 
 **Patch (1.0.1, …)** changes: bug fixes that keep the contract, including
 decoder fixes that change *values* in the output for a demo that was decoded
-wrongly before.
+wrongly before. A decoder fix is a patch unless it changes a unit, a coordinate
+convention or the meaning of a field; that is a major change.
 
 **Not versioned:** the embedded HTML tables, the viewer, the HTML file
 contents, human-readable text, stderr wording, and the layout of the `--check`
