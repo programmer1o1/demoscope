@@ -91,11 +91,12 @@ policy in [docs/OUTPUT.md](docs/OUTPUT.md).
 
 ### Testing and CI
 
-- **Public test fixtures.** `tests/fixtures/` holds seven demos recorded by the
-  maintainer plus one public demo with the maintainer's approval (eight files,
-  8.6 MB): CS:S, HL2DM, CS2, CS:GO, Portal, Portal 2, Deadlock and the HL2 2004
-  engine. Each is documented in `tests/fixtures/README.md` (source, license,
-  personal data, SHA-256). They replace two third-party files.
+- **Public test fixtures.** `tests/fixtures/` holds eight files (8.6 MB): seven
+  demos recorded by the maintainer, plus one publicly posted community demo (no
+  explicit license; removed on request). They cover CS:S, HL2DM, CS2, CS:GO,
+  Portal, Portal 2, Deadlock and the HL2 2004 engine. Each is documented in
+  `tests/fixtures/README.md` (source, license, personal data, SHA-256). They
+  replace two third-party files.
 - **Golden tests.** `tests/golden.rs` snapshots `--json` output and a digest of
   the embedded HTML tables for every fixture, and checks that pages are
   byte-identical between runs. Update snapshots with
